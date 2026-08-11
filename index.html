@@ -326,6 +326,39 @@
   .ocr-contenu { padding: 0 var(--ocr-e4); }
 }
 
+/* ─────────────────────────────────────────────────────────────
+   MOUVEMENT & RELIEF — partagé par toutes les surfaces
+   Discret, rapide, et respecte prefers-reduced-motion.
+   ───────────────────────────────────────────────────────────── */
+.ocr-btn--primaire {
+  background: linear-gradient(180deg, #E5342F, #C21A18);
+  box-shadow: 0 6px 18px rgba(214,32,30,.26), inset 0 1px 0 rgba(255,255,255,.14);
+}
+.ocr-btn--primaire:hover { background: linear-gradient(180deg, #EC4540, #D6201E); }
+.ocr-btn:active { transform: scale(.97); }
+.ocr-chip[aria-pressed="true"] { box-shadow: 0 4px 14px rgba(214,32,30,.3); }
+
+.voile { animation: ocrVoile .16s ease-out; }
+.boite { animation: ocrBoite .22s cubic-bezier(.2,.9,.3,1.15); }
+.toast { animation: ocrToast .28s cubic-bezier(.2,.9,.3,1.3); }
+@keyframes ocrVoile { from { opacity: 0; } }
+@keyframes ocrBoite { from { opacity: 0; transform: scale(.94) translateY(10px); } }
+@keyframes ocrToast { from { opacity: 0; transform: translateY(12px); } }
+
+@media (hover: hover) {
+  .ocr-carte { transition: border-color .2s ease, transform .2s ease; }
+  .fiche:hover, .presta:hover { transform: translateY(-1px); }
+}
+* { scrollbar-width: thin; scrollbar-color: #2A2A2F transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #2A2A2F; border-radius: 999px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .voile, .boite, .toast { animation: none; }
+  .ocr-btn:active { transform: none; }
+  .fiche:hover, .presta:hover { transform: none; }
+}
+
 
 /* ---- propre à la caisse ---- */
 html,body{margin:0;padding:0;min-height:100dvh}
@@ -357,7 +390,10 @@ body{padding-bottom:env(safe-area-inset-bottom)}
   display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;
   font-family:var(--ocr-titre);font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
 .onglet .ic{font-size:18px;line-height:1}
+.onglet{transition:color .18s ease}
 .onglet[aria-current="page"]{color:var(--ocr-rouge-texte)}
+.onglet[aria-current="page"] .ic{filter:drop-shadow(0 0 7px rgba(232,82,78,.7))}
+@media (prefers-reduced-motion:reduce){.onglet{transition:none}}
 .onglet .pastille-nb{position:absolute;transform:translate(18px,-6px);background:var(--ocr-rouge);
   color:#fff;border-radius:999px;min-width:17px;height:17px;font-size:10px;font-weight:700;
   display:grid;place-items:center;padding:0 4px}
@@ -462,6 +498,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
     </div>
     <div style="flex:1"></div>
     <span class="ocr-pastille ocr-pastille--neutre" id="etatJour">—</span>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit masque" id="btnSecu" title="Double sécurité" aria-label="Double sécurité">🛡</button>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnSortie">Quitter</button>
   </header>
   <main class="corps" id="vue"></main>
@@ -977,6 +1014,10 @@ function creerClientDemo() {
     passages: [], passage_lignes: [], paiements: [], anomalies: [], journal: [],
     reservations: [], entreprises: [], pointages: [],
     reglages: [{ id: 1, lat: null, lng: null, rayon_m: 150 }],
+    baies: [
+      { id: 'A', nom: 'Baie A', active: true, motif: null },
+      { id: 'B', nom: 'Baie B', active: false, motif: 'Travaux en cours' },
+    ],
     objectifs: [
       { portee: 'jour', valeur: 25000, signatures: 4 },
       { portee: 'semaine', valeur: 150000, signatures: 20 },
@@ -1034,13 +1075,14 @@ function creerClientDemo() {
   D.reservations.push(
     { id: uid(), reference: ref(), client_id: 'c2', prestation: 'express', gabarit: 'petite',
       options: [], date_prevue: jourCourant, heure_prevue: '15:00:00', duree_min: 20,
-      montant_total: 2500, statut: 'confirmee', canal: 'comptoir', note: null },
+      montant_total: 2500, acompte_attendu: 500, statut: 'confirmee', canal: 'comptoir', note: null },
     { id: uid(), reference: ref(), client_id: 'c1', prestation: 'signature', gabarit: 'berline',
       options: [], date_prevue: jourCourant, heure_prevue: '16:30:00', duree_min: 75,
-      montant_total: 8000, statut: 'en_attente_paiement', canal: 'app', note: 'Réservé depuis l’application' },
+      montant_total: 8000, acompte_attendu: 8000, statut: 'en_attente_paiement', canal: 'app',
+      note: 'Réservé depuis l’application — a choisi de tout payer d’avance' },
     { id: uid(), reference: ref(), client_id: 'c4', prestation: 'signature', gabarit: 'berline',
       options: [], date_prevue: jourPlus(1), heure_prevue: '10:00:00', duree_min: 75,
-      montant_total: 8000, statut: 'confirmee', canal: 'comptoir', note: null },
+      montant_total: 8000, acompte_attendu: 1600, statut: 'confirmee', canal: 'comptoir', note: null },
   );
 
   // Pointages : l'équipe est là aujourd'hui, hier est complet,
@@ -1247,10 +1289,33 @@ function creerClientDemo() {
     ocr_encaisser(a) {
       const p = D.passages.find(x => x.id === a.p_passage);
       if (!p) throw new Error('Véhicule introuvable');
+      const motif = String(a.p_motif || '').trim();
+      if (a.p_mode === 'especes' && !motif)
+        throw new Error('Les espèces sont exceptionnelles : le motif est obligatoire');
       p.statut_paiement = 'paye'; p.mode_paiement = a.p_mode;
       D.paiements.push({ id: uid(), reference: p.reference, montant: p.montant_total, mode: a.p_mode,
         transaction_id: a.p_transaction || null, journee: p.journee, passage_id: p.id });
+      if (a.p_mode === 'especes') {
+        D.anomalies.push({ id: uid(), journee: p.journee, cle: 'depot-' + p.id, gravite: 'serieux',
+          titre: 'Espèces à déposer sur le compte MTN',
+          detail: p.reference + ' · ' + p.montant_total + ' F en espèces — motif : ' + motif +
+                  '. Dépôt à faire sur le 01 69 40 85 84 (compte KKiapay), puis justifier ici.',
+          passage_id: p.id, traitee: false });
+      }
       return [{ montant: p.montant_total, mode: a.p_mode }];
+    },
+    ocr_basculer_baie(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['manager', 'comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls le manager, le comptable et la direction gèrent les baies');
+      if (!String(a.p_motif || '').trim()) throw new Error('Le motif est obligatoire');
+      const b = D.baies.find(x => x.id === String(a.p_baie || '').toUpperCase().trim());
+      if (!b) throw new Error('Baie inconnue');
+      b.active = !!a.p_active; b.motif = String(a.p_motif).trim();
+      D.journal.push({ id: uid(), qui: emp.id, qui_nom: emp.nom,
+        quoi: b.nom + (b.active ? ' réactivée' : ' mise en pause') + ' — ' + b.motif, entite: 'baie' });
+      return [{ baie: b.id, active: b.active }];
     },
     ocr_pointer(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -1334,6 +1399,11 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;
 const auj = () => new Date().toLocaleDateString('en-CA');   // AAAA-MM-JJ, heure locale
 const heureCourte = h => (h || '').slice(0, 5);
 const MODE_DEMO = new URLSearchParams(location.search).has('demo');
+
+// Règle maison : pas de cash. Si exception, dépôt sur ce compte MTN (= compte KKiapay).
+const COMPTE_MTN = '01 69 40 85 84';
+// Double authentification exigée pour ces rôles (décision du 11 août).
+const ROLES_2FA = ['direction', 'comptable', 'manager'];
 
 let sb, moi = null, equipe = [], onglet = 'saisie', enCours = false;
 let jourVu = auj();                          // jour affiché dans Journée et Clôture
@@ -1471,6 +1541,12 @@ const API = {
     if (error) throw error;
     return data || [];
   },
+  // Réservations qui attendent une action (acompte à confirmer) — pour le badge.
+  async rdvEnAttente() {
+    const { data } = await sb.from('reservations').select('id')
+      .eq('statut', 'en_attente_paiement').gte('date_prevue', auj());
+    return (data || []).length;
+  },
   async clientParTelOuCreation(tel, nom) {
     const t = String(tel || '').trim();
     if (!t) throw new Error('Le téléphone est obligatoire pour un rendez-vous');
@@ -1483,6 +1559,14 @@ const API = {
   },
   creerRdv: r => sb.from('reservations').insert(r),
   majRdv: (id, patch) => sb.from('reservations').update(patch).eq('id', id),
+
+  /* --- baies --- */
+  async baies() {
+    const { data, error } = await sb.from('baies').select('*').order('id');
+    if (error) throw error;
+    return data || [];
+  },
+  basculerBaie: a => sb.rpc('ocr_basculer_baie', a),
 
   /* --- pointage --- */
   pointer: args => sb.rpc('ocr_pointer', args),
@@ -1568,6 +1652,7 @@ $('#formConnexion').addEventListener('submit', async e => {
   try {
     const { error } = await sb.auth.signInWithPassword({ email: $('#email').value.trim(), password: $('#mdp').value });
     if (error) throw error;
+    if (!MODE_DEMO && !(await exigerMFA())) return;   // code 2FA refusé → retour connexion
     await demarrer();
   } catch (ex) {
     err.textContent = '⛔ ' + (/Invalid login/i.test(ex.message) ? 'Adresse ou mot de passe incorrect.' : ex.message);
@@ -1596,10 +1681,155 @@ async function demarrer() {
   $('#quiNom').textContent = moi.nom;
   $('#quiRole').textContent = moi.role;
   onglet = 'saisie';
+  majBoucler();
   await rendre();
 }
 
 const peutCloturer = () => moi && (moi.role === 'comptable' || moi.role === 'direction');
+
+/* ==========================================================================
+   DOUBLE AUTHENTIFICATION (TOTP — Google Authenticator ou équivalent)
+   Si un facteur est activé sur le compte, le code est exigé à chaque
+   connexion. L'activation se fait depuis le bouclier 🛡 en haut.
+   En cas d'indisponibilité du service MFA, la connexion simple passe :
+   on ne bloque jamais la caisse un samedi à 18 h pour un service tiers.
+   ========================================================================== */
+async function exigerMFA() {
+  try {
+    const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (!aal || aal.currentLevel === aal.nextLevel) return true;   // pas de facteur actif
+    const { data: fl } = await sb.auth.mfa.listFactors();
+    const f = fl && fl.totp && fl.totp.find(x => x.status === 'verified');
+    if (!f) return true;
+    return await demanderCodeMFA(f.id);
+  } catch (e) { return true; }
+}
+
+function demanderCodeMFA(factorId) {
+  return new Promise(resoudre => {
+    const v = modale(`
+      <h3 class="ocr-h2">Code de sécurité</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Ouvre ton application d'authentification
+        et saisis le code à 6 chiffres.</p>
+      <input class="ocr-saisie" id="mfaCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+             style="text-align:center;font:700 24px/1.2 var(--ocr-texte);letter-spacing:.35em">
+      <div style="display:flex;gap:9px;margin-top:var(--ocr-e4)">
+        <button class="ocr-btn ocr-btn--fantome" data-non>Annuler</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-oui>Vérifier</button></div>`);
+    const champ = v.querySelector('#mfaCode'); champ.focus();
+    const valider = async () => {
+      const code = champ.value.trim();
+      if (code.length !== 6) return toast('Le code fait 6 chiffres.', true);
+      try {
+        const ch = await sb.auth.mfa.challenge({ factorId });
+        if (ch.error) throw ch.error;
+        const ve = await sb.auth.mfa.verify({ factorId, challengeId: ch.data.id, code });
+        if (ve.error) throw ve.error;
+        fermerModale(); resoudre(true);
+      } catch (ex) { toast('Code incorrect — réessaie.', true); champ.value = ''; champ.focus(); }
+    };
+    v.querySelector('[data-oui]').addEventListener('click', valider);
+    champ.addEventListener('keydown', e => { if (e.key === 'Enter') valider(); });
+    v.querySelector('[data-non]').addEventListener('click', async () => {
+      await sb.auth.signOut(); fermerModale(); resoudre(false);
+    });
+  });
+}
+
+async function boiteSecurite() {
+  let fl;
+  try { fl = (await sb.auth.mfa.listFactors()).data; }
+  catch (e) { return toast('Service de sécurité injoignable.', true); }
+  const actif = fl && fl.totp && fl.totp.find(x => x.status === 'verified');
+
+  if (actif) {
+    const v = modale(`
+      <h3 class="ocr-h2">Double sécurité</h3>
+      <div class="ocr-message ocr-message--succes" style="margin:var(--ocr-e4) 0"><span>✓</span><div>
+        <strong>Activée sur ce compte.</strong><br>Un code est demandé à chaque connexion.</div></div>
+      <div style="display:flex;gap:9px">
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-retirer style="color:var(--ocr-argent-2)">Désactiver</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-fermer>Fermer</button></div>`);
+    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+    v.querySelector('[data-retirer]').addEventListener('click', async e => {
+      e.target.disabled = true;
+      const { error } = await sb.auth.mfa.unenroll({ factorId: actif.id });
+      if (error) { toast(error.message, true); e.target.disabled = false; return; }
+      fermerModale(); toast('Double sécurité désactivée'); majBoucler();
+    });
+    return;
+  }
+
+  // activation : QR à scanner, puis premier code pour confirmer
+  const { data, error } = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'OCR Caisse' });
+  if (error) return toast(error.message, true);
+  const qr = data.totp && data.totp.qr_code || '';
+  const secret = data.totp && data.totp.secret || '';
+  const imgQR = qr.startsWith('data:') ? `<img src="${qr}" style="width:190px;height:190px;background:#fff;border-radius:12px;padding:8px">`
+                                       : `<div style="width:206px;background:#fff;border-radius:12px;padding:8px">${qr}</div>`;
+  const v = modale(`
+    <h3 class="ocr-h2">Activer la double sécurité</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">1 · Installe <strong>Google Authenticator</strong>
+      (ou FreeOTP). 2 · Scanne ce code. 3 · Saisis le code à 6 chiffres affiché.</p>
+    <div style="display:grid;place-items:center;margin-bottom:var(--ocr-e4)">${imgQR}</div>
+    ${secret ? `<p class="ocr-mini" style="text-align:center;margin:0 0 var(--ocr-e4);word-break:break-all">Saisie manuelle : ${esc(secret)}</p>` : ''}
+    <input class="ocr-saisie" id="mfaPremier" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+           placeholder="000000" style="text-align:center;font:700 24px/1.2 var(--ocr-texte);letter-spacing:.35em">
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e4)">
+      <button class="ocr-btn ocr-btn--fantome" data-non>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-oui>Activer</button></div>`);
+  v.querySelector('[data-non]').addEventListener('click', async () => {
+    try { await sb.auth.mfa.unenroll({ factorId: data.id }); } catch (e) {}
+    fermerModale();
+  });
+  v.querySelector('[data-oui]').addEventListener('click', async e => {
+    const code = v.querySelector('#mfaPremier').value.trim();
+    if (code.length !== 6) return toast('Le code fait 6 chiffres.', true);
+    e.target.disabled = true;
+    try {
+      const ch = await sb.auth.mfa.challenge({ factorId: data.id });
+      if (ch.error) throw ch.error;
+      const ve = await sb.auth.mfa.verify({ factorId: data.id, challengeId: ch.data.id, code });
+      if (ve.error) throw ve.error;
+      fermerModale(); toast('Double sécurité activée ✓'); majBoucler();
+    } catch (ex) { toast('Code incorrect — réessaie.', true); e.target.disabled = false; }
+  });
+}
+
+/* Le bouclier : visible pour les rôles concernés, avec un point rouge tant
+   que la double sécurité n'est pas activée. */
+async function majBoucler() {
+  const b = $('#btnSecu');
+  if (MODE_DEMO || !moi || !ROLES_2FA.includes(moi.role)) { b.classList.add('masque'); return; }
+  b.classList.remove('masque');
+  try {
+    const { data: fl } = await sb.auth.mfa.listFactors();
+    const actif = fl && fl.totp && fl.totp.some(x => x.status === 'verified');
+    b.textContent = actif ? '🛡' : '🛡·';
+    b.style.color = actif ? '' : 'var(--ocr-rouge-texte)';
+    if (!actif) toast('Pense à activer ta double sécurité (bouton 🛡)');
+  } catch (e) {}
+}
+$('#btnSecu').addEventListener('click', boiteSecurite);
+
+/* ---------- fraîcheur : l'écran se met à jour tout seul ----------
+   Toutes les 60 s (et au retour sur l'app), la vue se recharge depuis la
+   base — sauf si quelqu'un est en train de taper ou qu'une fenêtre est
+   ouverte : on ne coupe jamais une saisie en cours. */
+function rafraichirSansDeranger() {
+  if (!moi || document.hidden || enCours) return;
+  const a = document.activeElement;
+  if (a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName)) return;
+  if ($('#modales').children.length) return;
+  if (rdvOuvert || proEdite) return;
+  rendre();
+}
+window.__ocrRafraichir = rafraichirSansDeranger;   // testable
+setInterval(rafraichirSansDeranger, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) rafraichirSansDeranger(); });
 
 /* ---------- navigation ---------- */
 async function rendre() {
@@ -1625,9 +1855,17 @@ async function rendre() {
   if (peutCloturer()) items.push({ id: 'cloture', ic: '✓', l: 'Clôture' });
   if (!items.some(i => i.id === onglet)) onglet = items[0].id;
 
+  // badge : réservations en attente d'acompte (une action est attendue)
+  let badgeRdv = 0;
+  if (items.some(i => i.id === 'agenda')) {
+    try { badgeRdv = await API.rdvEnAttente(); } catch (e) {}
+  }
+
   $('#onglets').innerHTML = items.map(i =>
     '<button class="onglet" ' + (i.id === onglet ? 'aria-current="page"' : '') +
-    ' data-onglet="' + i.id + '"><span class="ic">' + i.ic + '</span>' + i.l + '</button>').join('');
+    ' data-onglet="' + i.id + '"><span class="ic">' + i.ic +
+    (i.id === 'agenda' && badgeRdv ? '<span class="pastille-nb">' + badgeRdv + '</span>' : '') +
+    '</span>' + i.l + '</button>').join('');
   $('#onglets').querySelectorAll('[data-onglet]').forEach(b =>
     b.addEventListener('click', () => { onglet = b.dataset.onglet; rendre(); }));
 
@@ -1895,8 +2133,9 @@ async function vueJournee(j) {
         <div class="sub">${T.impaye ? OCR.fcfa(T.impaye) + ' en attente' : 'tout est encaissé'}</div></div>
       <div class="tuile"><div class="lab">KKiapay</div><div class="val">${OCR.fcfa(T.kkiapay || 0)}</div>
         <div class="sub">mobile money</div></div>
-      <div class="tuile"><div class="lab">Espèces</div><div class="val">${OCR.fcfa(T.especes || 0)}</div>
-        <div class="sub">à déposer en caisse</div></div>
+      <div class="tuile"><div class="lab">Espèces</div>
+        <div class="val" style="${T.especes ? 'color:var(--ocr-ambre)' : ''}">${OCR.fcfa(T.especes || 0)}</div>
+        <div class="sub">${T.especes ? '⚠ à déposer sur le ' + COMPTE_MTN : 'aucune — c’est la règle'}</div></div>
     </div>
     ${obj ? carteObjectifs(obj, moisRows, sigRows) : ''}
     ${carteEquipe(pts, d)}
@@ -1995,16 +2234,35 @@ function boiteEncaissement(id, montant) {
     <p class="ocr-petit" style="margin:8px 0 var(--ocr-e5)"><strong style="color:var(--ocr-blanc)">${OCR.fcfa(montant)}</strong></p>
     <label class="ocr-champ"><span class="ocr-label">Référence KKiapay (facultatif)</span>
       <input class="ocr-saisie" id="txId" placeholder="KKP-…"></label>
-    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-mode="kkiapay" style="margin-bottom:9px">KKiapay · mobile money</button>
-    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-mode="especes" style="margin-bottom:9px">Espèces</button>
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-mode="kkiapay" style="margin-bottom:9px">KKiapay · Mobile Money</button>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" id="btnEspOuvre"
+      style="margin-bottom:9px;color:var(--ocr-argent-2)">Espèces — cas exceptionnel…</button>
+    <div id="zoneEsp" class="masque">
+      <div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>⚠</span><div>
+        <strong>Le cash n'est pas un mode de paiement normal chez OCR.</strong><br>
+        L'argent devra être déposé sur le compte MTN <strong>${COMPTE_MTN}</strong> (le compte KKiapay).
+        Un point de contrôle sera ajouté à la clôture de Guénolé.</div></div>
+      <label class="ocr-champ"><span class="ocr-label">Motif (obligatoire)</span>
+        <input class="ocr-saisie" id="espMotif" placeholder="Réseau Mobile Money en panne…"></label>
+      <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-mode="especes" style="margin-bottom:9px">Encaisser en espèces</button>
+    </div>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer>Annuler</button>`);
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('#btnEspOuvre').addEventListener('click', () => {
+    v.querySelector('#zoneEsp').classList.toggle('masque');
+  });
   v.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', async () => {
+    const mode = b.dataset.mode;
+    const motif = mode === 'especes' ? (v.querySelector('#espMotif').value || '').trim() : null;
+    if (mode === 'especes' && !motif) return toast('Les espèces sont exceptionnelles : le motif est obligatoire.', true);
     b.disabled = true;
-    const { error } = await API.encaisser({ p_passage: id, p_mode: b.dataset.mode,
-      p_transaction: (v.querySelector('#txId').value || '').trim() || null });
+    const { error } = await API.encaisser({ p_passage: id, p_mode: mode,
+      p_transaction: (v.querySelector('#txId').value || '').trim() || null,
+      p_motif: motif });
     if (error) { toast(error.message, true); b.disabled = false; return; }
-    fermerModale(); toast('Encaissement enregistré'); rendre();
+    fermerModale();
+    toast(mode === 'especes' ? 'Encaissé en espèces — dépôt à faire sur le ' + COMPTE_MTN : 'Encaissement enregistré');
+    rendre();
   }));
 }
 
@@ -2264,11 +2522,15 @@ function boiteObjectifs(obj) {
   });
 }
 
+// Le pointage ne concerne que ceux qui travaillent sur place à plein temps :
+// le manager et les techniciens. Direction et comptable n'y figurent pas.
+const equipePointage = () => equipe.filter(e => ['manager', 'technicien'].includes(e.role));
+
 function carteEquipe(pts, d) {
   const estAuj = d === auj();
   return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
     <div class="ocr-surtitre">Équipe ${estAuj ? 'du jour' : 'ce jour-là'}</div>
-    ${equipe.map(e => {
+    ${equipePointage().map(e => {
       const p = pts.find(x => x.employe_id === e.id);
       const duree = minutesPointage(p);
       const statut = !p || !p.arrivee ? (estAuj ? 'pas encore arrivé' : 'absent')
@@ -2304,7 +2566,7 @@ function brancherEquipe(pts, d) {
     } catch (ex) { toast(ex.message, true); b.disabled = false; }
   }));
   $('#vue').querySelectorAll('[data-corriger]').forEach(b => b.addEventListener('click', () => {
-    const emp = equipe.find(e => e.id === b.dataset.corriger);
+    const emp = equipePointage().find(e => e.id === b.dataset.corriger);
     const p = pts.find(x => x.employe_id === emp.id);
     boiteCorrectionPointage(emp, p, d);
   }));
@@ -2436,9 +2698,9 @@ const ETAT_RDV = {
   absente: ['Absent', 'erreur'],
 };
 
-function creneauxLibres(resas, prestationId, gabaritId, d) {
+function creneauxLibres(resas, prestationId, gabaritId, d, nbBaies) {
   const duree = OCR.duree(prestationId, gabaritId);
-  if (duree == null) return [];
+  if (duree == null || !nbBaies) return [];
   const buf = OCR.CONFIG.battementMin;
   const occ = resas
     .filter(r => r.statut === 'confirmee' || r.statut === 'en_attente_paiement')
@@ -2449,20 +2711,63 @@ function creneauxLibres(resas, prestationId, gabaritId, d) {
     const a = OCR.hm2min(hm), b = a + duree + buf;
     if (a < minMin) return false;
     for (let t = a; t < b; t += 5)
-      if (occ.filter(([x, y]) => t >= x && t < y).length >= OCR.CONFIG.baies) return false;
+      if (occ.filter(([x, y]) => t >= x && t < y).length >= nbBaies) return false;
     return true;
+  });
+}
+
+/* Carte d'état des baies : pause et réactivation, motif obligatoire, audité. */
+function carteBaies(baies) {
+  return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+    <div class="ocr-surtitre">Les baies</div>
+    ${baies.map(b => `
+      <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06);flex-wrap:wrap">
+        <span style="min-width:0">
+          <span style="font-weight:600">${esc(b.nom)}</span>
+          <span class="ocr-pastille ocr-pastille--${b.active ? 'succes' : 'erreur'}" style="margin-left:8px">${b.active ? 'Active' : 'En pause'}</span>
+          ${!b.active && b.motif ? `<span class="ocr-mini" style="display:block;margin-top:4px">${esc(b.motif)}</span>` : ''}
+        </span>
+        <span style="flex:1"></span>
+        ${peutCorriger() ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-baie="${b.id}" data-vers="${b.active ? 0 : 1}">
+          ${b.active ? 'Mettre en pause' : 'Réactiver'}</button>` : ''}
+      </div>`).join('')}
+  </div>`;
+}
+
+function boiteBaie(b, activer) {
+  const v = modale(`
+    <h3 class="ocr-h2">${activer ? 'Réactiver' : 'Mettre en pause'} — ${esc(b.nom)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">${activer
+      ? 'La baie redevient réservable immédiatement, à la caisse comme en ligne.'
+      : 'Plus aucun créneau ne sera proposé sur cette baie, à la caisse comme en ligne. Les rendez-vous déjà pris restent valables.'}
+      Le changement est inscrit au journal à ton nom.</p>
+    <label class="ocr-champ"><span class="ocr-label">Motif (obligatoire)</span>
+      <input class="ocr-saisie" id="motifBaie" placeholder="${activer ? 'Travaux terminés' : 'Travaux en cours'}"></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>${activer ? 'Réactiver' : 'Mettre en pause'}</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const motif = v.querySelector('#motifBaie').value.trim();
+    if (!motif) return toast('Le motif est obligatoire.', true);
+    e.target.disabled = true;
+    const { error } = await API.basculerBaie({ p_baie: b.id, p_active: activer, p_motif: motif });
+    if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    fermerModale(); toast(b.nom + (activer ? ' réactivée' : ' mise en pause')); rendre();
   });
 }
 
 async function vueAgenda() {
   const d = jourAgenda;
-  const resas = await API.rdvJour(d);
+  const [resas, baies] = await Promise.all([API.rdvJour(d), API.baies()]);
+  const nbActives = baies.filter(b => b.active).length;
   const actifs = resas.filter(r => r.statut === 'confirmee' || r.statut === 'en_attente_paiement');
-  const minutesJour = OCR.CONFIG.baies * (OCR.CONFIG.fermetureMin - OCR.CONFIG.ouvertureMin);
+  const minutesJour = Math.max(1, nbActives) * (OCR.CONFIG.fermetureMin - OCR.CONFIG.ouvertureMin);
   const minutesPrises = actifs.reduce((s, r) => s + (r.duree_min || 60) + OCR.CONFIG.battementMin, 0);
   const tauxOcc = Math.min(100, Math.round(minutesPrises / minutesJour * 100));
   const estAuj = d === auj();
-  const libres = rdvOuvert ? creneauxLibres(resas, rdvForm.prestation, rdvForm.gabarit, d) : [];
+  const libres = rdvOuvert ? creneauxLibres(resas, rdvForm.prestation, rdvForm.gabarit, d, nbActives) : [];
 
   const prestasRdv = OCR.PRESTATIONS.filter(p => p.famille !== 'devis' && OCR.prix(p.id, rdvForm.gabarit) != null);
 
@@ -2480,9 +2785,14 @@ async function vueAgenda() {
     <div class="tuiles" style="grid-template-columns:repeat(2,1fr)">
       <div class="tuile"><div class="lab">Rendez-vous</div><div class="val">${actifs.length}</div>
         <div class="sub">${resas.filter(r => r.statut === 'honoree').length} honoré(s)</div></div>
-      <div class="tuile"><div class="lab">Baies réservées</div><div class="val">${tauxOcc} %</div>
-        <div class="sub">${OCR.CONFIG.baies} baies · ${OCR.min2hm(OCR.CONFIG.ouvertureMin)} – ${OCR.min2hm(OCR.CONFIG.fermetureMin)}</div></div>
+      <div class="tuile"><div class="lab">Réservation</div><div class="val">${tauxOcc} %</div>
+        <div class="sub">${nbActives} baie(s) active(s) · ${OCR.min2hm(OCR.CONFIG.ouvertureMin)} – ${OCR.min2hm(OCR.CONFIG.fermetureMin)}</div></div>
     </div>
+
+    ${carteBaies(baies)}
+
+    ${nbActives === 0 ? `<div class="ocr-message ocr-message--erreur" style="margin-bottom:var(--ocr-e4)"><span>⛔</span><div>
+      <strong>Aucune baie active.</strong><br>Aucun créneau ne peut être proposé, ni ici ni en ligne.</div></div>` : ''}
 
     ${rdvOuvert ? `
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(214,32,30,.35)">
@@ -2514,7 +2824,8 @@ async function vueAgenda() {
           Réserver ${rdvForm.heure || ''}</button>
       </div>
     </div>` : `
-    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="rOuvrir" style="margin-bottom:var(--ocr-e4)">＋ Nouveau rendez-vous</button>`}
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="rOuvrir" style="margin-bottom:var(--ocr-e4)"
+      ${nbActives === 0 ? 'disabled' : ''}>＋ Nouveau rendez-vous</button>`}
 
     ${resas.length ? resas.map(r => {
       const et = ETAT_RDV[r.statut] || ['—', 'neutre'];
@@ -2530,6 +2841,10 @@ async function vueAgenda() {
         </div>
         <div class="ocr-petit" style="margin-top:5px">${esc(p ? p.nom : r.prestation)} · ${esc((OCR.gabarit(r.gabarit) || {}).nom || r.gabarit)}
           <span class="ocr-mini">· ${esc(r.reference)}${r.note ? ' · ' + esc(r.note) : ''}</span></div>
+        ${r.montant_total ? `<div class="ocr-mini" style="margin-top:4px">
+          ${r.acompte_attendu >= r.montant_total
+            ? '<span style="color:var(--ocr-succes)">💰 Totalité réglée d’avance — rien à encaisser sur place</span>'
+            : 'Avance : ' + OCR.fcfa(r.acompte_attendu || 0) + ' · reste sur place : ' + OCR.fcfa(r.montant_total - (r.acompte_attendu || 0))}</div>` : ''}
         ${passe ? '' : `<div class="actions">
           ${estAuj && r.statut !== 'en_attente_paiement' ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-arrive="${r.id}">Arrivé → saisie</button>` : ''}
           ${r.statut === 'en_attente_paiement' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-confirmer="${r.id}">Confirmer</button>` : ''}
@@ -2545,6 +2860,12 @@ async function vueAgenda() {
     jourAgenda = n === 0 ? auj() : decaleJour(jourAgenda, n);
     rdvForm.heure = '';
     rendre();
+  }));
+
+  // gestion des baies
+  $('#vue').querySelectorAll('[data-baie]').forEach(b => b.addEventListener('click', () => {
+    const baie = baies.find(x => x.id === b.dataset.baie);
+    boiteBaie(baie, b.dataset.vers === '1');
   }));
 
   // formulaire
@@ -3029,9 +3350,10 @@ function ilYA(n) {
 
 async function vueBilan() {
   const du = ilYA(bilanJours), au = auj();
-  const [{ jours, mix }, ptsRH] = await Promise.all([
-    API.periode(du, au), API.pointagesPeriode(du, au),
+  const [{ jours, mix }, ptsRH, baiesRH] = await Promise.all([
+    API.periode(du, au), API.pointagesPeriode(du, au), API.baies().catch(() => []),
   ]);
+  const nbBaiesActives = Math.max(1, baiesRH.filter(b => b.active).length);
 
   const S = (a, k) => a.reduce((s, x) => s + (Number(x[k]) || 0), 0);
   const ca = S(jours, 'ca'), veh = S(jours, 'vehicules'), impaye = S(jours, 'impaye');
@@ -3039,7 +3361,7 @@ async function vueBilan() {
   const minutes = S(mix, 'minutes_baie');
   const caLavages = S(mix, 'ca');
   const rendement = minutes > 0 ? Math.round(caLavages / (minutes / 60)) : 0;
-  const capacite = OCR.CONFIG.baies * ((OCR.CONFIG.fermetureMin - OCR.CONFIG.ouvertureMin) / 60) * bilanJours;
+  const capacite = nbBaiesActives * ((OCR.CONFIG.fermetureMin - OCR.CONFIG.ouvertureMin) / 60) * bilanJours;
   const occupation = capacite > 0 ? Math.round(minutes / 60 / capacite * 100) : 0;
 
   // regroupement par prestation sur toute la période
@@ -3085,7 +3407,7 @@ async function vueBilan() {
       <div class="tuile"><div class="lab">Véhicules</div><div class="val">${veh}</div>
         <div class="sub">${(veh / bilanJours).toFixed(1).replace('.', ',')} par jour</div></div>
       <div class="tuile"><div class="lab">Baies occupées</div><div class="val">${occupation} %</div>
-        <div class="sub">${impaye ? OCR.fcfa(impaye) + ' encore impayés' : 'tout est encaissé'}</div></div>
+        <div class="sub">sur ${nbBaiesActives} active(s)${impaye ? ' · ' + OCR.fcfa(impaye) + ' impayés' : ''}</div></div>
     </div>
 
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
@@ -3119,8 +3441,8 @@ async function vueBilan() {
 
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
       <div class="ocr-surtitre">Équipe — présence</div>
-      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Le rendement se mesure en équipe (voir les objectifs) — ici, seulement la présence de chacun.</p>
-      ${equipe.map(e => {
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Le rendement se mesure en équipe (voir les objectifs) — ici, seulement la présence de ceux qui pointent.</p>
+      ${equipePointage().map(e => {
         const pe = ptsRH.filter(x => x.employe_id === e.id);
         const joursP = pe.filter(x => x.arrivee).length;
         const minutes = pe.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
