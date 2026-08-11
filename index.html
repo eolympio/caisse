@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>OCR Brillance — Caisse</title>
+<meta name="theme-color" content="#0A0A0B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OCR Caisse">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
 <style>
 /* ============================================================================
    OCR BRILLANCE — SOCLE COMMUN · ocr-tokens.css
@@ -385,6 +392,13 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 
 .fiche{background:var(--ocr-surface);border:1px solid var(--ocr-filet);border-radius:var(--ocr-r-m);
   padding:13px 15px;margin-bottom:9px}
+.fiche--annule{opacity:.55}
+.fiche--annule .ligne1 > span:first-child{text-decoration:line-through}
+.barre-jour{display:flex;align-items:center;gap:10px;background:var(--ocr-surface);
+  border:1px solid var(--ocr-filet);border-radius:var(--ocr-r-m);padding:9px 11px;margin-bottom:var(--ocr-e4)}
+.barre-jour .bj-centre{flex:1;text-align:center;min-width:0}
+.barre-jour .bj-date{font:600 14px/1.2 var(--ocr-titre);text-transform:capitalize}
+.barre-jour .bj-lien{all:unset;cursor:pointer;color:var(--ocr-rouge-texte);text-decoration:underline;font:inherit}
 .fiche .ligne1{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .fiche .actions{display:flex;gap:7px;margin-top:11px;padding-top:11px;border-top:1px solid rgba(244,244,245,.06);flex-wrap:wrap}
 
@@ -429,7 +443,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
     <form id="formConnexion">
       <label class="ocr-champ"><span class="ocr-label">Adresse</span>
         <input class="ocr-saisie" type="email" id="email" autocomplete="username" required
-               placeholder="samuel@ocrbrillance.bj"></label>
+               placeholder="samuel@ocrbrillance.com"></label>
       <label class="ocr-champ"><span class="ocr-label">Mot de passe</span>
         <input class="ocr-saisie" type="password" id="mdp" autocomplete="current-password" required></label>
       <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnConnexion" type="submit">Se connecter</button>
@@ -943,11 +957,11 @@ function creerClientDemo() {
 
   const D = {
     employes: [
-      { id: 'e1', user_id: 'u1', nom: 'Edwin Olympio', role: 'direction',  email: 'edwin@ocrbrillance.bj', actif: true },
-      { id: 'e2', user_id: 'u2', nom: 'Guénolé',       role: 'comptable',  email: 'guenole@ocrbrillance.bj', actif: true },
-      { id: 'e3', user_id: 'u3', nom: 'Samuel',        role: 'manager',    email: 'samuel@ocrbrillance.bj', actif: true },
-      { id: 'e4', user_id: null, nom: 'Abel',          role: 'technicien', email: 'abel@ocrbrillance.bj', actif: true },
-      { id: 'e5', user_id: null, nom: 'Cabo',          role: 'technicien', email: 'cabo@ocrbrillance.bj', actif: true },
+      { id: 'e1', user_id: 'u1', nom: 'Edwin Olympio', role: 'direction',  email: 'edwin@ocrbrillance.com', actif: true },
+      { id: 'e2', user_id: 'u2', nom: 'Guénolé',       role: 'comptable',  email: 'guenole@ocrbrillance.com', actif: true },
+      { id: 'e3', user_id: 'u3', nom: 'Samuel',        role: 'manager',    email: 'samuel@ocrbrillance.com', actif: true },
+      { id: 'e4', user_id: 'u4', nom: 'Abel',          role: 'technicien', email: 'abel@ocrbrillance.com', actif: true },
+      { id: 'e5', user_id: 'u5', nom: 'Cabo',          role: 'technicien', email: 'cabo@ocrbrillance.com', actif: true },
     ],
     clients: [
       { id: 'c1', nom: 'Koffi Adjovi', telephone: '+229 01 97 45 12 30' },
@@ -961,26 +975,100 @@ function creerClientDemo() {
     ],
     journees: [{ date: jourCourant, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null }],
     passages: [], passage_lignes: [], paiements: [], anomalies: [], journal: [],
+    reservations: [], entreprises: [], pointages: [],
+    reglages: [{ id: 1, lat: null, lng: null, rayon_m: 150 }],
+    objectifs: [
+      { portee: 'jour', valeur: 25000, signatures: 4 },
+      { portee: 'semaine', valeur: 150000, signatures: 20 },
+      { portee: 'mois', valeur: 600000, signatures: 80 },
+    ],
   };
 
-  // Trois véhicules déjà passés aujourd'hui, dont une anomalie volontaire.
-  function semer(clientId, vehId, gab, presta, opts, statutAtelier, statutPaiement, mode, remise) {
+  // Véhicules déjà passés, dont une anomalie volontaire aujourd'hui.
+  const jourMoins = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString('en-CA'); };
+
+  function semer(clientId, vehId, gab, presta, opts, statutAtelier, statutPaiement, mode, remise, ilYa) {
+    const jour = jourMoins(ilYa || 0);
     const p = OCR.prestation(presta), prix = OCR.prix(presta, gab) || 0;
     const lignes = [{ type: 'prestation', code: presta, libelle: p.nom, prix, duree_min: OCR.duree(presta, gab) }];
     opts.forEach(o => { const op = OCR.option(o); lignes.push({ type: 'option', code: o, libelle: op.nom, prix: op.prix, duree_min: op.duree }); });
     const brut = lignes.reduce((s, l) => s + l.prix, 0);
     const id = uid();
     D.passages.push({
-      id, reference: ref(), journee: jourCourant, client_id: clientId, vehicule_id: vehId, gabarit: gab,
+      id, reference: ref(), journee: jour, client_id: clientId, vehicule_id: vehId, gabarit: gab,
       heure_arrivee: ['08:40:00', '10:15:00', '12:05:00', '14:30:00'][D.passages.length % 4],
       montant_brut: brut, remise: remise || 0, montant_total: brut - (remise || 0),
       statut_atelier: statutAtelier, statut_paiement: statutPaiement, mode_paiement: mode, equipe: ['e4'],
     });
     lignes.forEach(l => D.passage_lignes.push({ id: uid(), passage_id: id, ...l }));
+    // Hier reste volontairement « ouverte » : pour s'entraîner à rattraper
+    // une clôture oubliée. Les jours plus anciens sont déjà signés.
+    if (jour !== jourCourant && !D.journees.some(x => x.date === jour))
+      D.journees.push(jour === jourMoins(1)
+        ? { date: jour, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null }
+        : { date: jour, statut: 'validee', valide_par: 'e2', valide_le: jour + 'T21:05:00Z', totaux: null });
   }
+  // aujourd'hui
   semer('c1', 'v1', 'berline',  'signature', ['hydrofuge'], 'livre', 'paye',   'kkiapay', 0);
   semer('c2', 'v2', 'petite',   'express',   [],            'livre', 'paye',   'especes', 0);
   semer('c3', 'v3', 'grandsuv', 'signature', [],            'livre', 'impaye', null,      2500);
+  // les jours précédents, pour que le bilan ait de quoi montrer
+  [[1, 'express', 'petite'], [1, 'signature', 'berline'], [1, 'express', 'berline'],
+   [2, 'signature', 'grandsuv'], [2, 'express', 'petite'],
+   [3, 'express', 'berline'], [3, 'express', 'petite'], [3, 'signature', 'berline'],
+   [4, 'interieur', 'berline'], [4, 'express', 'grandsuv'],
+   [5, 'signature', 'petite'], [5, 'express', 'berline'], [5, 'express', 'petite'],
+   [6, 'signature', 'berline'], [6, 'express', 'petite'],
+  ].forEach(([n, presta, gab], i) => semer(
+    ['c1', 'c2', 'c3'][i % 3], ['v1', 'v2', 'v3'][i % 3], gab, presta, [],
+    'livre', 'paye', i % 3 === 0 ? 'especes' : 'kkiapay', 0, n));
+
+  // Un client parti depuis 40 jours — pour la liste « à relancer ».
+  D.clients.push({ id: 'c4', nom: 'Pascal Houngbo', telephone: '+229 01 55 20 41 07' });
+  D.vehicules.push({ id: 'v4', client_id: 'c4', gabarit: 'berline', marque: 'Peugeot', modele: '3008', immatriculation: '7788 AD 4' });
+  semer('c4', 'v4', 'berline', 'signature', ['cire'], 'livre', 'paye', 'kkiapay', 0, 40);
+  semer('c4', 'v4', 'berline', 'signature', [],       'livre', 'paye', 'kkiapay', 0, 47);
+
+  // Rendez-vous : deux aujourd'hui, un demain.
+  const jourPlus = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
+  D.reservations.push(
+    { id: uid(), reference: ref(), client_id: 'c2', prestation: 'express', gabarit: 'petite',
+      options: [], date_prevue: jourCourant, heure_prevue: '15:00:00', duree_min: 20,
+      montant_total: 2500, statut: 'confirmee', canal: 'comptoir', note: null },
+    { id: uid(), reference: ref(), client_id: 'c1', prestation: 'signature', gabarit: 'berline',
+      options: [], date_prevue: jourCourant, heure_prevue: '16:30:00', duree_min: 75,
+      montant_total: 8000, statut: 'en_attente_paiement', canal: 'app', note: 'Réservé depuis l’application' },
+    { id: uid(), reference: ref(), client_id: 'c4', prestation: 'signature', gabarit: 'berline',
+      options: [], date_prevue: jourPlus(1), heure_prevue: '10:00:00', duree_min: 75,
+      montant_total: 8000, statut: 'confirmee', canal: 'comptoir', note: null },
+  );
+
+  // Pointages : l'équipe est là aujourd'hui, hier est complet,
+  // et Cabo a oublié de pointer son départ avant-hier.
+  const semerPointage = (empId, ilYa, arr, dep) => D.pointages.push({
+    id: uid(), employe_id: empId, jour: jourMoins(ilYa), arrivee: arr, depart: dep,
+    arrivee_par: empId, depart_par: dep ? empId : null, note: null });
+  semerPointage('e3', 0, '07:55:00', null);
+  semerPointage('e4', 0, '08:05:00', null);
+  semerPointage('e5', 0, '08:20:00', null);
+  [1, 3, 4, 5, 6].forEach(n => {
+    semerPointage('e3', n, '07:50:00', '18:30:00');
+    semerPointage('e4', n, '08:00:00', '18:00:00');
+    if (n !== 4) semerPointage('e5', n, '08:10:00', '17:45:00');
+  });
+  semerPointage('e5', 2, '08:15:00', null);   // départ oublié
+
+  // Prospection : deux entreprises, dont une relance en retard.
+  D.entreprises.push(
+    { id: uid(), nom: 'Clinique Étoile', contact_nom: 'Mme Dossou', contact_role: 'Directrice',
+      telephone: '+229 01 62 30 88 14', email: null, statut: 'devis', flotte_estimee: 6,
+      prochaine_action: 'Rappeler pour le devis flotte', prochaine_le: jourMoins(2), note: '4 ambulances + 2 berlines de direction.',
+      cree_le: jourMoins(9) + 'T10:00:00Z', maj_le: jourMoins(2) + 'T10:00:00Z' },
+    { id: uid(), nom: 'EHU Motors', contact_nom: 'Guénolé', contact_role: 'Gérant',
+      telephone: '+229 01 97 00 11 22', email: null, statut: 'contacte', flotte_estimee: 12,
+      prochaine_action: 'Proposer un essai sur 2 véhicules', prochaine_le: jourPlus(3), note: 'Véhicules d’occasion à préparer avant vente.',
+      cree_le: jourMoins(5) + 'T10:00:00Z', maj_le: jourMoins(1) + 'T10:00:00Z' },
+  );
 
   const lier = p => ({
     ...p,
@@ -989,7 +1077,7 @@ function creerClientDemo() {
     passage_lignes: D.passage_lignes.filter(l => l.passage_id === p.id),
   });
   const totaux = d => {
-    const ps = D.passages.filter(p => p.journee === d);
+    const ps = D.passages.filter(p => p.journee === d && !p.annule);
     if (!ps.length) return null;
     const S = f => ps.filter(f).reduce((s, p) => s + p.montant_total, 0);
     return {
@@ -1004,20 +1092,114 @@ function creerClientDemo() {
     };
   };
 
+  // Vues calculées, comme en base.
+  const mixPrestations = () => {
+    const g = {};
+    D.passage_lignes.filter(l => l.type === 'prestation').forEach(l => {
+      const p = D.passages.find(x => x.id === l.passage_id);
+      if (!p || p.annule) return;
+      const k = p.journee + '|' + l.code;
+      const o = g[k] || (g[k] = { journee: p.journee, prestation: l.code, nombre: 0, ca: 0, minutes_baie: 0 });
+      o.nombre++; o.ca += l.prix; o.minutes_baie += (l.duree_min || 0) + 15;
+    });
+    return Object.values(g).map(o => ({ ...o,
+      f_par_heure_baie: o.minutes_baie > 0 ? Math.round(o.ca / (o.minutes_baie / 60)) : null }));
+  };
+  const fidelite = () => {
+    const g = {};
+    D.passages.filter(p => p.statut_atelier === 'livre' && !p.annule).forEach(p => {
+      const c = D.clients.find(x => x.id === p.client_id); if (!c) return;
+      const o = g[c.id] || (g[c.id] = { client_id: c.id, nom: c.nom, telephone: c.telephone,
+                                        tampons: 0, passages: 0, dernier_passage: p.journee });
+      D.passage_lignes.filter(l => l.passage_id === p.id && l.type === 'prestation').forEach(l => {
+        o.tampons += l.code === 'express' ? 0.5 : 1; o.passages++;
+      });
+      if (p.journee > o.dernier_passage) o.dernier_passage = p.journee;
+    });
+    return Object.values(g);
+  };
+
+  const clientsStats = () => {
+    const fid = fidelite();
+    return D.clients.map(c => {
+      const ps = D.passages.filter(p => p.client_id === c.id && !p.annule);
+      const x = fid.find(y => y.client_id === c.id);
+      return { client_id: c.id, nom: c.nom, telephone: c.telephone, est_pro: false, societe: null,
+               passages: ps.length, depense: ps.reduce((s, p) => s + p.montant_total, 0),
+               dernier_passage: ps.length ? ps.map(p => p.journee).sort().pop() : null,
+               tampons: x ? x.tampons : 0 };
+    });
+  };
+
   let session = null;
 
+  // Comparaison : numérique si possible, texte sinon (les dates AAAA-MM-JJ trient bien en texte).
+  const cmp = (a, b) => {
+    const x = Number(a), y = Number(b);
+    return !isNaN(x) && !isNaN(y) && String(a).trim() !== '' ? x - y : String(a).localeCompare(String(b));
+  };
+
   function requete(table) {
-    const f = [];
+    const f = [];              // prédicats
+    let borne = null, tri = null;
+    const motif = m => new RegExp('^' + String(m).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                                    .replace(/%/g, '.*').replace(/_/g, '.') + '$', 'i');
     const src = () => {
-      if (table === 'v_journee_totaux') { const t = totaux(jourCourant); return t ? [t] : []; }
-      if (table === 'passages') return D.passages.map(lier);
+      if (table === 'v_journee_totaux')
+        return [...new Set(D.passages.map(p => p.journee))].sort().map(totaux).filter(Boolean);
+      if (table === 'v_mix_prestations') return mixPrestations();
+      if (table === 'v_fidelite')        return fidelite();
+      if (table === 'v_clients_stats')   return clientsStats();
+      if (table === 'passages')          return D.passages.map(lier);
+      if (table === 'vehicules')         return D.vehicules.map(v =>
+        ({ ...v, clients: D.clients.find(c => c.id === v.client_id) || null }));
       return D[table] || [];
     };
-    const filtrer = () => src().filter(r => f.every(([k, v]) => String(r[k]) === String(v)));
+    const filtrer = () => {
+      let r = src().filter(x => f.every(p => p(x)));
+      if (tri) r = [...r].sort((a, b) => (tri[1] ? 1 : -1) * cmp(a[tri[0]], b[tri[0]]));
+      return borne == null ? r : r.slice(0, borne);
+    };
     const api = {
       select() { return api; },
-      order()  { return api; },
-      eq(k, v) { f.push([k, v]); return api; },
+      order(k, o) { tri = [k, !o || o.ascending !== false]; return api; },
+      limit(n) { borne = n; return api; },
+      eq(k, v) { f.push(r => String(r[k]) === String(v)); return api; },
+      gte(k, v) { f.push(r => String(r[k]) >= String(v)); return api; },
+      lte(k, v) { f.push(r => String(r[k]) <= String(v)); return api; },
+      lt(k, v) { f.push(r => r[k] != null && cmp(r[k], v) < 0); return api; },
+      gt(k, v) { f.push(r => r[k] != null && cmp(r[k], v) > 0); return api; },
+      in(k, arr) { const s = (arr || []).map(String); f.push(r => s.includes(String(r[k]))); return api; },
+      insert(rows) {
+        const arr = (Array.isArray(rows) ? rows : [rows]).map(r => {
+          const base = { id: uid(), cree_le: new Date().toISOString() };
+          if (table === 'reservations' || table === 'carnets') base.reference = ref();
+          if (table === 'entreprises') base.maj_le = base.cree_le;
+          return { ...base, ...r };
+        });
+        arr.forEach(r => (D[table] || (D[table] = [])).push(r));
+        return {
+          select() {
+            return {
+              single: () => Promise.resolve({ data: arr[0], error: null }),
+              maybeSingle: () => Promise.resolve({ data: arr[0], error: null }),
+              then: res => Promise.resolve({ data: arr, error: null }).then(res),
+            };
+          },
+          then(res) { return Promise.resolve({ data: null, error: null }).then(res); },
+        };
+      },
+      ilike(k, m) { const re = motif(m); f.push(r => re.test(String(r[k] == null ? '' : r[k]))); return api; },
+      or(expr) {
+        const tests = String(expr).split(/,(?=[a-z_]+\.)/).map(part => {
+          const [k, op, ...reste] = part.split('.');
+          const val = reste.join('.').replace(/^"|"$/g, '');
+          if (op === 'ilike') { const re = motif(val); return r => re.test(String(r[k] == null ? '' : r[k])); }
+          return r => String(r[k]) === val;
+        });
+        f.push(r => tests.some(t => t(r)));
+        return api;
+      },
       maybeSingle() { return Promise.resolve({ data: filtrer()[0] || null, error: null }); },
       single()      { return Promise.resolve({ data: filtrer()[0] || null, error: null }); },
       update(patch) {
@@ -1056,6 +1238,10 @@ function creerClientDemo() {
         montant_brut: brut, remise, montant_total: brut - remise,
         statut_atelier: 'en_cours', statut_paiement: 'impaye', mode_paiement: null, equipe: a.p_equipe || [] });
       lignes.forEach(l => D.passage_lignes.push({ id: uid(), passage_id: id, ...l }));
+      if (a.p_reservation) {
+        const resa = D.reservations.find(x => x.reference === String(a.p_reservation).toUpperCase().trim());
+        if (resa) resa.statut = 'honoree';
+      }
       return [{ reference: r, id, montant_total: brut - remise }];
     },
     ocr_encaisser(a) {
@@ -1065,6 +1251,38 @@ function creerClientDemo() {
       D.paiements.push({ id: uid(), reference: p.reference, montant: p.montant_total, mode: a.p_mode,
         transaction_id: a.p_transaction || null, journee: p.journee, passage_id: p.id });
       return [{ montant: p.montant_total, mode: a.p_mode }];
+    },
+    ocr_pointer(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['arrivee', 'depart'].includes(a.p_sens)) throw new Error('Sens inconnu');
+      let pt = D.pointages.find(x => x.employe_id === emp.id && x.jour === jourCourant);
+      if (!pt) { pt = { id: uid(), employe_id: emp.id, jour: jourCourant, arrivee: null, depart: null }; D.pointages.push(pt); }
+      const heure = new Date().toTimeString().slice(0, 8);
+      if (a.p_sens === 'arrivee') { if (!pt.arrivee) pt.arrivee = heure; pt.arrivee_par = emp.id; }
+      else { pt.depart = heure; pt.depart_par = emp.id; }
+      D.journal.push({ id: uid(), qui: emp.id, qui_nom: emp.nom,
+        quoi: emp.nom + (a.p_sens === 'arrivee' ? ' est arrivé à ' : ' est parti à ') + heure.slice(0, 5), entite: 'pointage' });
+      return [{ jour_pointe: pt.jour, heure_arrivee: pt.arrivee, heure_depart: pt.depart }];
+    },
+    ocr_annuler_passage(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!String(a.p_motif || '').trim()) throw new Error('Le motif est obligatoire');
+      const p = D.passages.find(x => x.id === a.p_passage);
+      if (!p) throw new Error('Véhicule introuvable');
+      if (p.annule) throw new Error(p.reference + ' est déjà annulé');
+      const j = D.journees.find(x => x.date === p.journee);
+      if (j && j.statut !== 'ouverte') throw new Error('Journée ' + p.journee + ' clôturée : annulation impossible');
+      if (p.statut_paiement !== 'impaye' && !['comptable', 'direction'].includes(emp.role))
+        throw new Error('Déjà encaissé : seuls le comptable et la direction peuvent annuler');
+      Object.assign(p, { annule: true, annule_motif: String(a.p_motif).trim(),
+                         annule_par: emp.id, annule_le: new Date().toISOString() });
+      D.paiements.filter(x => x.passage_id === p.id).forEach(x => { x.statut = 'annule'; });
+      D.anomalies.filter(x => x.passage_id === p.id && !x.traitee).forEach(x =>
+        Object.assign(x, { traitee: true, justification: 'Véhicule annulé — ' + String(a.p_motif).trim(),
+                           traitee_par: emp.id, traitee_le: new Date().toISOString() }));
+      return [{ reference: p.reference }];
     },
     ocr_cloturer_journee(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -1118,6 +1336,10 @@ const heureCourte = h => (h || '').slice(0, 5);
 const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 
 let sb, moi = null, equipe = [], onglet = 'saisie', enCours = false;
+let jourVu = auj();                          // jour affiché dans Journée et Clôture
+
+const decaleJour = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toLocaleDateString('en-CA'); };
+const jourLong = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
 /* ---------- petites briques d'interface ---------- */
 function toast(msg, erreur) {
@@ -1185,9 +1407,148 @@ const API = {
     const { data } = await sb.from('anomalies').select('*').eq('journee', d);
     return data || [];
   },
+
+  /* --- fichier client --- */
+  // Cherche sur le nom, le téléphone et la plaque d'un seul geste.
+  async chercherClients(q) {
+    const t = String(q || '').trim();
+    if (t.length < 2) return [];
+    // Trois recherches séparées plutôt qu'un « ou » : un numéro contient des
+    // points, des espaces et un « + », que la syntaxe du « ou » interpréterait
+    // comme des séparateurs. Ici chaque valeur est encodée proprement.
+    const m = '%' + t.replace(/[%_]/g, ' ').trim() + '%';
+    const [n, tel, v] = await Promise.all([
+      sb.from('clients').select('id,nom,telephone').ilike('nom', m).limit(20),
+      sb.from('clients').select('id,nom,telephone').ilike('telephone', m).limit(20),
+      sb.from('vehicules').select('immatriculation,clients(id,nom,telephone)').ilike('immatriculation', m).limit(20),
+    ]);
+    if (n.error) throw n.error;
+    if (tel.error) throw tel.error;
+    const vus = new Map();
+    [...(n.data || []), ...(tel.data || [])].forEach(x => vus.set(x.id, x));
+    (v.data || []).forEach(x => { if (x.clients && !vus.has(x.clients.id)) vus.set(x.clients.id, x.clients); });
+    return [...vus.values()].sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''), 'fr'));
+  },
+  async ficheClient(id) {
+    const [cl, veh, pass, fid] = await Promise.all([
+      sb.from('clients').select('*').eq('id', id).maybeSingle(),
+      sb.from('vehicules').select('*').eq('client_id', id),
+      sb.from('passages').select('*, passage_lignes(*), vehicules(marque,modele,immatriculation)')
+        .eq('client_id', id).order('journee', { ascending: false }).limit(40),
+      sb.from('v_clients_stats').select('*').eq('client_id', id).maybeSingle(),
+    ]);
+    if (!cl.data) throw new Error('Client introuvable');
+    return { client: cl.data, vehicules: veh.data || [], passages: pass.data || [], fidelite: fid.data || null };
+  },
+  // Listes rapides : clients à relancer (30 j sans visite) et meilleurs clients.
+  async listeClients(mode) {
+    let q = sb.from('v_clients_stats').select('*');
+    if (mode === 'relance') {
+      const d30 = decaleJour(auj(), -30);
+      q = q.lt('dernier_passage', d30).order('depense', { ascending: false }).limit(25);
+    } else {
+      q = q.gt('passages', 0).order('depense', { ascending: false }).limit(15);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  },
+
+  /* --- entreprises (prospection) --- */
+  async entreprises() {
+    const { data, error } = await sb.from('entreprises').select('*').order('maj_le', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+  creerEntreprise: r => sb.from('entreprises').insert(r),
+  majEntreprise: (id, patch) => sb.from('entreprises').update(patch).eq('id', id),
+
+  /* --- rendez-vous --- */
+  async rdvJour(d) {
+    const { data, error } = await sb.from('reservations').select('*')
+      .eq('date_prevue', d).in('statut', ['en_attente_paiement', 'confirmee', 'honoree', 'absente'])
+      .order('heure_prevue');
+    if (error) throw error;
+    return data || [];
+  },
+  async clientParTelOuCreation(tel, nom) {
+    const t = String(tel || '').trim();
+    if (!t) throw new Error('Le téléphone est obligatoire pour un rendez-vous');
+    const { data } = await sb.from('clients').select('id,nom').eq('telephone', t).maybeSingle();
+    if (data) return data.id;
+    const { data: cree, error } = await sb.from('clients')
+      .insert({ nom: String(nom || '').trim() || 'Client de passage', telephone: t }).select('id').single();
+    if (error) throw error;
+    return cree.id;
+  },
+  creerRdv: r => sb.from('reservations').insert(r),
+  majRdv: (id, patch) => sb.from('reservations').update(patch).eq('id', id),
+
+  /* --- pointage --- */
+  pointer: args => sb.rpc('ocr_pointer', args),
+  async reglages() {
+    const { data } = await sb.from('reglages').select('*').eq('id', 1).maybeSingle();
+    return data || null;
+  },
+  async objectifs() {
+    const { data, error } = await sb.from('objectifs').select('*');
+    if (error) throw error;
+    const o = { jour: { ca: 0, signatures: 0 }, semaine: { ca: 0, signatures: 0 }, mois: { ca: 0, signatures: 0 } };
+    (data || []).forEach(x => { o[x.portee] = { ca: x.valeur || 0, signatures: x.signatures || 0 }; });
+    return o;
+  },
+  majObjectif: (portee, ca, signatures) => sb.from('objectifs')
+    .update({ valeur: ca, signatures, defini_par: moi.id }).eq('portee', portee),
+  async totauxDepuis(du) {
+    const { data, error } = await sb.from('v_journee_totaux').select('date,ca').gte('date', du);
+    if (error) throw error;
+    return data || [];
+  },
+  async signaturesDepuis(du) {
+    const { data, error } = await sb.from('v_mix_prestations').select('journee,nombre')
+      .eq('prestation', 'signature').gte('journee', du);
+    if (error) throw error;
+    return data || [];
+  },
+  async pointagesJour(d) {
+    const { data, error } = await sb.from('pointages').select('*').eq('jour', d);
+    if (error) throw error;
+    return data || [];
+  },
+  async pointagesPeriode(du, au, empId) {
+    let q = sb.from('pointages').select('*').gte('jour', du).lte('jour', au).order('jour', { ascending: false });
+    if (empId) q = q.eq('employe_id', empId);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  },
+  corrigerPointage(ligneId, empId, d, patch) {
+    return ligneId
+      ? sb.from('pointages').update(patch).eq('id', ligneId)
+      : sb.from('pointages').insert({ employe_id: empId, jour: d, ...patch });
+  },
+  async passagesPeriode(du, au) {
+    const { data, error } = await sb.from('passages')
+      .select('journee,montant_total,equipe,annule').gte('journee', du).lte('journee', au);
+    if (error) throw error;
+    return (data || []).filter(p => !p.annule);
+  },
+  tracer: quoi => sb.from('journal').insert({ qui: moi.id, qui_nom: moi.nom, quoi, entite: 'pointage' }),
+
+  /* --- bilan sur une période --- */
+  async periode(du, au) {
+    const [t, m] = await Promise.all([
+      sb.from('v_journee_totaux').select('*').gte('date', du).lte('date', au).order('date'),
+      sb.from('v_mix_prestations').select('*').gte('journee', du).lte('journee', au),
+    ]);
+    if (t.error) throw t.error;
+    if (m.error) throw m.error;
+    return { jours: t.data || [], mix: m.data || [] };
+  },
   enregistrer: a => sb.rpc('ocr_enregistrer_passage', a),
   encaisser:   a => sb.rpc('ocr_encaisser', a),
   cloturer:    a => sb.rpc('ocr_cloturer_journee', a),
+  annuler:     a => sb.rpc('ocr_annuler_passage', a),
   avancer(id, statut) {
     const p = { statut_atelier: statut };
     if (statut === 'livre') p.heure_livraison = new Date().toTimeString().slice(0, 8);
@@ -1229,6 +1590,7 @@ async function demarrer() {
     return;
   }
   equipe = await API.equipe();
+  REGLAGES = await API.reglages().catch(() => null);
   $('#connexion').classList.add('masque');
   $('#appli').classList.remove('masque');
   $('#quiNom').textContent = moi.nom;
@@ -1241,17 +1603,27 @@ const peutCloturer = () => moi && (moi.role === 'comptable' || moi.role === 'dir
 
 /* ---------- navigation ---------- */
 async function rendre() {
-  const j = await API.journee(auj());
-  const verrou = j.statut !== 'ouverte';
+  const jAuj = await API.journee(auj());
+  const jVu = jourVu === auj() ? jAuj : await API.journee(jourVu);
+  // La pastille du haut suit le jour affiché sur Journée et Clôture,
+  // et reste sur aujourd'hui partout ailleurs.
+  const jPast = (onglet === 'journee' || onglet === 'cloture') ? jVu : jAuj;
+  const verrou = jPast.statut !== 'ouverte';
   $('#etatJour').textContent = verrou ? 'Journée clôturée' : 'Journée ouverte';
   $('#etatJour').className = 'ocr-pastille ' + (verrou ? 'ocr-pastille--succes' : 'ocr-pastille--marque');
 
-  const items = [
-    { id: 'saisie',  ic: '＋', l: 'Saisie' },
-    { id: 'journee', ic: '▤',  l: 'Journée' },
-  ];
+  // Un technicien n'a que son pointage : simple, sans risque d'erreur de caisse.
+  const items = moi.role === 'technicien'
+    ? [{ id: 'pointage', ic: '◉', l: 'Pointage' }]
+    : [
+        { id: 'saisie',  ic: '＋', l: 'Saisie' },
+        { id: 'journee', ic: '▤',  l: 'Journée' },
+        { id: 'agenda',  ic: '◷',  l: 'Agenda' },
+        { id: 'clients', ic: '☺',  l: 'Clients' },
+      ];
+  if (peutCloturer()) items.push({ id: 'bilan',   ic: '◫', l: 'Bilan' });
   if (peutCloturer()) items.push({ id: 'cloture', ic: '✓', l: 'Clôture' });
-  if (!items.some(i => i.id === onglet)) onglet = 'saisie';
+  if (!items.some(i => i.id === onglet)) onglet = items[0].id;
 
   $('#onglets').innerHTML = items.map(i =>
     '<button class="onglet" ' + (i.id === onglet ? 'aria-current="page"' : '') +
@@ -1261,9 +1633,13 @@ async function rendre() {
 
   $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
   try {
-    if (onglet === 'saisie')  await vueSaisie(j);
-    if (onglet === 'journee') await vueJournee(j);
-    if (onglet === 'cloture') await vueCloture(j);
+    if (onglet === 'saisie')   await vueSaisie(jAuj);
+    if (onglet === 'journee')  await vueJournee(jVu);
+    if (onglet === 'agenda')   await vueAgenda();
+    if (onglet === 'clients')  await vueClients();
+    if (onglet === 'bilan')    await vueBilan();
+    if (onglet === 'cloture')  await vueCloture(jVu);
+    if (onglet === 'pointage') await vuePointage();
   } catch (ex) {
     $('#vue').innerHTML = '<div class="ocr-message ocr-message--erreur"><span>⛔</span><div>' +
       '<strong>Impossible de charger</strong><br>' + esc(ex.message) + '</div></div>';
@@ -1274,7 +1650,7 @@ async function rendre() {
    SAISIE
    ========================================================================== */
 const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque: '', modele: '', immat: '',
-               prestation: null, options: [], equipe: [], remise: 0, manuel: 0, note: '' };
+               prestation: null, options: [], equipe: [], remise: 0, manuel: 0, note: '', reservation: null };
 
 function totalForm() {
   let cat = 0, devis = 0;
@@ -1299,6 +1675,8 @@ async function vueSaisie(j) {
   const familles = [['lavage', 'Lavages voiture'], ['moto', 'Motos'], ['devis', 'Sur devis']];
 
   $('#vue').innerHTML = `
+  ${form.reservation ? `<div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e4)"><span>◷</span><div>
+    <strong>Rendez-vous ${esc(form.reservation)}</strong><br>Fiche pré-remplie — le rendez-vous sera marqué honoré à l'enregistrement.</div></div>` : ''}
   <div class="deux">
     <div>
       <div class="ocr-carte">
@@ -1449,12 +1827,13 @@ async function enregistrer() {
       p_remise: Math.max(0, Number(form.remise) || 0),
       p_marque: form.marque, p_modele: form.modele, p_immat: form.immat,
       p_equipe: form.equipe, p_note: form.note,
+      p_reservation: form.reservation,
     });
     if (error) throw error;
     const r = Array.isArray(data) ? data[0] : data;
     toast(r.reference + ' enregistré · ' + OCR.fcfa(r.montant_total));
     Object.assign(form, { tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
-                          prestation: null, options: [], remise: 0, manuel: 0, note: '' });
+                          prestation: null, options: [], remise: 0, manuel: 0, note: '', reservation: null });
     onglet = 'journee';
     await rendre();
   } catch (ex) {
@@ -1470,11 +1849,43 @@ async function enregistrer() {
    ========================================================================== */
 const ETAT_ATELIER = { en_cours: ['En cours', 'marque'], pret: ['Prêt', 'neutre'], livre: ['Livré', 'succes'] };
 
+/* Barre de navigation par jour, partagée entre Journée et Clôture. */
+function barreJour(j) {
+  const estAuj = jourVu === auj();
+  const etat = estAuj ? 'Aujourd’hui'
+             : j.statut === 'ouverte' ? '⚠ jamais clôturée' : 'clôturée et signée';
+  return `<div class="barre-jour">
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-jnav="-1" aria-label="Jour précédent">‹</button>
+    <div class="bj-centre">
+      <div class="bj-date">${jourLong(jourVu)}</div>
+      <div class="ocr-mini" style="margin-top:2px">${etat}${estAuj ? '' :
+        ' · <button class="bj-lien" data-jnav="0">revenir à aujourd’hui</button>'}</div>
+    </div>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-jnav="1"
+            aria-label="Jour suivant" ${estAuj ? 'disabled' : ''}>›</button>
+  </div>`;
+}
+function brancherJour() {
+  $('#vue').querySelectorAll('[data-jnav]').forEach(b => b.addEventListener('click', () => {
+    const n = Number(b.dataset.jnav);
+    jourVu = n === 0 ? auj() : decaleJour(jourVu, n);
+    rendre();
+  }));
+}
+
 async function vueJournee(j) {
-  const [T, ps] = await Promise.all([API.totaux(auj()), API.passages(auj())]);
+  const d = jourVu;
+  const estAuj = d === auj();
+  const [T, ps, pts, obj, moisRows, sigRows] = await Promise.all([
+    API.totaux(d), API.passages(d), API.pointagesJour(d),
+    estAuj ? API.objectifs().catch(() => null) : Promise.resolve(null),
+    estAuj ? API.totauxDepuis(debutMois()) : Promise.resolve([]),
+    estAuj ? API.signaturesDepuis(debutMois()).catch(() => []) : Promise.resolve([]),
+  ]);
   const verrou = j.statut !== 'ouverte';
 
   $('#vue').innerHTML = `
+    ${barreJour(j)}
     ${verrou ? `<div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e4)"><span>🔒</span><div>
       <strong>Journée clôturée et signée</strong><br>Lecture seule.</div></div>` : ''}
     <div class="tuiles">
@@ -1487,9 +1898,15 @@ async function vueJournee(j) {
       <div class="tuile"><div class="lab">Espèces</div><div class="val">${OCR.fcfa(T.especes || 0)}</div>
         <div class="sub">à déposer en caisse</div></div>
     </div>
+    ${obj ? carteObjectifs(obj, moisRows, sigRows) : ''}
+    ${carteEquipe(pts, d)}
     ${ps.length ? ps.map(p => ficheePassage(p, verrou)).join('') :
-      '<div class="ocr-carte vide">Aucun véhicule enregistré aujourd’hui.</div>'}`;
+      `<div class="ocr-carte vide">Aucun véhicule enregistré ${estAuj ? 'aujourd’hui' : 'ce jour-là'}.</div>`}`;
 
+  brancherJour();
+  brancherEquipe(pts, d);
+  const bo = $('#btnObjectifs');
+  if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
   $('#vue').querySelectorAll('[data-avance]').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true;
     const { error } = await API.avancer(b.dataset.avance, b.dataset.vers);
@@ -1498,6 +1915,8 @@ async function vueJournee(j) {
   }));
   $('#vue').querySelectorAll('[data-encaisser]').forEach(b =>
     b.addEventListener('click', () => boiteEncaissement(b.dataset.encaisser, Number(b.dataset.montant))));
+  $('#vue').querySelectorAll('[data-annuler]').forEach(b =>
+    b.addEventListener('click', () => boiteAnnulation(b.dataset.annuler, b.dataset.ref, b.dataset.paye === '1')));
 }
 
 function ficheePassage(p, verrou) {
@@ -1506,6 +1925,20 @@ function ficheePassage(p, verrou) {
   const paye = p.statut_paiement !== 'impaye';
   const presta = (p.passage_lignes || []).filter(l => l.type === 'prestation').map(l => l.libelle).join(' + ');
   const opts = (p.passage_lignes || []).filter(l => l.type === 'option').map(l => l.libelle).join(', ');
+
+  if (p.annule) {
+    return `<div class="fiche fiche--annule">
+      <div class="ligne1">
+        <span style="font:600 14.5px/1.2 var(--ocr-texte)">${esc(c.nom || 'Client de passage')}</span>
+        <span class="ocr-pastille ocr-pastille--erreur">Annulé</span>
+        <span style="margin-left:auto;font:700 16px/1 var(--ocr-texte);text-decoration:line-through;
+          font-variant-numeric:tabular-nums">${OCR.fcfa(p.montant_total)}</span>
+      </div>
+      <div class="ocr-mini" style="margin-top:4px">${heureCourte(p.heure_arrivee)} · ${esc(p.reference)} · ${esc(presta)}</div>
+      <div class="ocr-mini" style="margin-top:5px">Motif : « ${esc(p.annule_motif || '')} »</div>
+    </div>`;
+  }
+
   return `<div class="fiche">
     <div class="ligne1">
       <span style="font:600 14.5px/1.2 var(--ocr-texte)">${esc(c.nom || 'Client de passage')}</span>
@@ -1523,8 +1956,37 @@ function ficheePassage(p, verrou) {
         ${p.statut_atelier === 'en_cours' ? 'Marquer prêt' : 'Marquer livré'}</button>` : ''}
       ${!paye ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
         data-encaisser="${p.id}" data-montant="${p.montant_total}">Encaisser</button>` : ''}
+      ${(!paye || peutCloturer()) ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
+        data-annuler="${p.id}" data-ref="${esc(p.reference)}" data-paye="${paye ? 1 : 0}"
+        style="margin-left:auto;color:var(--ocr-argent-2)">Annuler…</button>` : ''}
     </div>`}
   </div>`;
+}
+
+function boiteAnnulation(id, ref, paye) {
+  const v = modale(`
+    <h3 class="ocr-h2">Annuler ${esc(ref)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      ${paye ? 'Ce véhicule a déjà été encaissé : son paiement sera marqué annulé aussi.<br>' : ''}
+      Le véhicule restera visible, barré, avec le motif. Tout est inscrit au journal
+      au nom de <strong style="color:var(--ocr-blanc)">${esc(moi.nom)}</strong>.</p>
+    <label class="ocr-champ"><span class="ocr-label">Motif (obligatoire)</span>
+      <textarea class="ocr-saisie" id="motifAnnul" rows="3"
+        placeholder="Erreur de saisie — mauvaise prestation choisie…"></textarea></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e4)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Garder</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Annuler le véhicule</button>
+    </div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const motif = v.querySelector('#motifAnnul').value.trim();
+    if (!motif) return toast('Le motif est obligatoire.', true);
+    e.target.disabled = true;
+    const { error } = await API.annuler({ p_passage: id, p_motif: motif });
+    if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    fermerModale(); toast(ref + ' annulé'); rendre();
+  });
 }
 
 function boiteEncaissement(id, montant) {
@@ -1552,6 +2014,7 @@ function boiteEncaissement(id, montant) {
 function calculerAnomalies(ps) {
   const out = [];
   ps.forEach(p => {
+    if (p.annule) return;                    // un véhicule annulé ne compte plus
     const c = p.clients || {};
     if (p.statut_atelier === 'livre' && p.statut_paiement === 'impaye')
       out.push({ cle: 'impaye-' + p.id, gravite: 'critique', titre: 'Véhicule livré sans encaissement',
@@ -1571,7 +2034,7 @@ function calculerAnomalies(ps) {
 }
 
 async function vueCloture(j) {
-  const d = auj();
+  const d = jourVu;
   const [T, ps] = await Promise.all([API.totaux(d), API.passages(d)]);
 
   if (j.statut === 'ouverte' && ps.length) {
@@ -1584,15 +2047,22 @@ async function vueCloture(j) {
 
   if (j.statut !== 'ouverte') {
     const t = j.totaux || T;
+    const signataire = (equipe.find(e => e.id === j.valide_par) || {}).nom || '—';
     $('#vue').innerHTML = `
+      ${barreJour(j)}
       <div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e5)"><span>✓</span><div>
-        <strong>Journée du ${new Date(d).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' })} validée</strong><br>
-        Signée par ${esc(j.valide_par ? 'le comptable' : '—')} le ${esc((j.valide_le || '').replace('T', ' à ').slice(0, 19))}.</div></div>
+        <strong>Journée du ${jourLong(d)} validée</strong><br>
+        Signée par ${esc(signataire)} le ${esc((j.valide_le || '').replace('T', ' à ').slice(0, 19))}.</div></div>
       ${carteRecap(t)}`;
+    brancherJour();
     return;
   }
 
   $('#vue').innerHTML = `
+    ${barreJour(j)}
+    ${d !== auj() ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>⚠</span><div>
+      <strong>Cette journée n’a jamais été clôturée.</strong><br>
+      Tu peux la contrôler et la signer maintenant — elle sera figée à sa date d’origine.</div></div>` : ''}
     <div class="tuiles">
       <div class="tuile"><div class="lab">Chiffre d’affaires</div><div class="val">${OCR.fcfa(T.ca || 0)}</div><div class="sub">${T.vehicules || 0} véhicule(s)</div></div>
       <div class="tuile"><div class="lab">KKiapay</div><div class="val">${OCR.fcfa(T.kkiapay || 0)}</div><div class="sub">mobile money</div></div>
@@ -1620,6 +2090,7 @@ async function vueCloture(j) {
         ${bloquantes ? 'Clôture bloquée' : 'Valider et clôturer la journée'}</button>
     </div>`;
 
+  brancherJour();
   $('#vue').querySelectorAll('[data-justifier]').forEach(b => b.addEventListener('click', () => {
     const v = modale(`<h3 class="ocr-h2">Justifier</h3>
       <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">La justification est horodatée et conservée.</p>
@@ -1641,7 +2112,9 @@ async function vueCloture(j) {
   const bc = $('#btnCloturer');
   if (bc) bc.addEventListener('click', () => {
     const v = modale(`<h3 class="ocr-h2">Signature</h3>
-      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Vous clôturez la journée en votre nom : <strong style="color:var(--ocr-blanc)">${esc(moi.nom)}</strong>.</p>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Vous clôturez la journée du
+        <strong style="color:var(--ocr-blanc)">${jourLong(d)}</strong> en votre nom :
+        <strong style="color:var(--ocr-blanc)">${esc(moi.nom)}</strong>.</p>
       ${carteRecap(T)}
       <div style="display:flex;gap:9px;margin-top:var(--ocr-e5)">
         <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
@@ -1668,6 +2141,1031 @@ function carteRecap(t) {
     ['Ticket moyen', OCR.fcfa(t.ticket_moyen || 0)],
   ].map(([k, v]) => '<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06)">' +
       '<span class="ocr-petit">' + k + '</span><span style="font-weight:600;font-variant-numeric:tabular-nums">' + v + '</span></div>').join('') + '</div>';
+}
+
+/* ==========================================================================
+   POINTAGE
+   L'heure vient toujours du serveur (fuseau de Cotonou) : le téléphone
+   ne peut pas mentir. L'arrivée ne s'écrase jamais, le départ garde la
+   dernière valeur. Corrections réservées au manager, comptable, direction.
+   ========================================================================== */
+const peutCorriger = () => moi && ['manager', 'comptable', 'direction'].includes(moi.role);
+
+let REGLAGES = null;   // position de l'atelier, chargée à la connexion
+
+/* Position du téléphone. Rejette avec un message clair si refusée. */
+const maPosition = () => new Promise((res, rej) => {
+  if (!navigator.geolocation) return rej(new Error('Localisation non disponible sur cet appareil'));
+  navigator.geolocation.getCurrentPosition(
+    p => res({ lat: p.coords.latitude, lng: p.coords.longitude, precision: Math.round(p.coords.accuracy) }),
+    e => rej(new Error(e.code === 1
+      ? 'Autorise la localisation pour pointer (Réglages → Safari → Position)'
+      : 'Position introuvable — réessaie à ciel ouvert')),
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
+});
+
+/* Pointer, avec position si l'atelier est géolocalisé. Le serveur revérifie tout. */
+async function pointerAvecPosition(sens) {
+  let args = { p_sens: sens };
+  if (REGLAGES && REGLAGES.lat != null && REGLAGES.lng != null) {
+    const pos = await maPosition();
+    args = { ...args, p_lat: pos.lat, p_lng: pos.lng, p_precision: pos.precision };
+  }
+  return API.pointer(args);
+}
+
+const debutSemaine = () => {
+  const d = new Date(auj() + 'T12:00');
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // lundi
+  return d.toLocaleDateString('en-CA');
+};
+const debutMois = () => auj().slice(0, 8) + '01';
+
+function barreObjectif(fait, cible) {
+  if (!cible) return '<span class="ocr-mini">à définir</span>';
+  const pct = Math.min(100, Math.round(fait / cible * 100));
+  return `<div style="display:flex;align-items:center;gap:10px">
+    <div style="flex:1;height:8px;border-radius:999px;background:rgba(244,244,245,.08);overflow:hidden">
+      <div style="height:100%;width:${pct}%;border-radius:999px;background:${pct >= 100 ? 'var(--ocr-succes)' : 'var(--ocr-rouge)'}"></div>
+    </div>
+    <span style="font:600 12px/1 var(--ocr-texte);font-variant-numeric:tabular-nums;flex:none">${pct} %</span>
+  </div>`;
+}
+
+const fmtDuree = min => {
+  if (min == null || min <= 0) return '—';
+  return Math.floor(min / 60) + ' h ' + String(Math.round(min % 60)).padStart(2, '0');
+};
+const minutesPointage = p => (p && p.arrivee && p.depart)
+  ? Math.max(0, OCR.hm2min(heureCourte(p.depart)) - OCR.hm2min(heureCourte(p.arrivee))) : null;
+
+/* Objectifs d'équipe : CA et lavages Signature — jour, semaine, mois. */
+function carteObjectifs(obj, moisRows, sigRows) {
+  const dSem = debutSemaine();
+  const sCA = rows => rows.reduce((s, r) => s + (Number(r.ca) || 0), 0);
+  const sSig = rows => rows.reduce((s, r) => s + (Number(r.nombre) || 0), 0);
+  const periodes = [
+    ['Aujourd’hui', r => r === auj(), 'jour'],
+    ['Cette semaine', r => r >= dSem, 'semaine'],
+    ['Ce mois', () => true, 'mois'],
+  ];
+  const rienDefini = !periodes.some(([, , k]) => obj[k].ca || obj[k].signatures);
+  return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="ocr-surtitre">Objectifs de l’équipe</div>
+      <span style="flex:1"></span>
+      ${peutCloturer() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnObjectifs">Définir</button>' : ''}
+    </div>
+    ${rienDefini ? `<p class="ocr-petit" style="margin:10px 0 0">Aucun objectif défini${peutCloturer() ? ' — appuie sur « Définir »' : ''}.</p>`
+      : periodes.map(([lab, filtre, k]) => {
+        const o = obj[k];
+        if (!o.ca && !o.signatures) return '';
+        const caFait = sCA(moisRows.filter(r => filtre(r.date)));
+        const sigFait = sSig(sigRows.filter(r => filtre(r.journee)));
+        return `<div style="margin-top:14px">
+          <div style="font:600 13px/1.2 var(--ocr-texte);margin-bottom:6px">${lab}</div>
+          ${o.ca ? `<div style="display:flex;gap:8px;align-items:baseline;margin-bottom:4px">
+              <span class="ocr-mini" style="width:74px;flex:none">CA</span>
+              <span class="ocr-mini">${OCR.fcfa(caFait)} / ${OCR.fcfa(o.ca)}</span></div>${barreObjectif(caFait, o.ca)}` : ''}
+          ${o.signatures ? `<div style="display:flex;gap:8px;align-items:baseline;margin:${o.ca ? '8px' : '0'} 0 4px">
+              <span class="ocr-mini" style="width:74px;flex:none">Signature</span>
+              <span class="ocr-mini">${sigFait} / ${o.signatures} lavage(s)${sigFait >= o.signatures ? ' · 🎉 objectif atteint' : ''}</span></div>${barreObjectif(sigFait, o.signatures)}` : ''}
+        </div>`;
+      }).join('')}
+  </div>`;
+}
+
+function boiteObjectifs(obj) {
+  const v = modale(`
+    <h3 class="ocr-h2">Objectifs de l’équipe</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">CA en francs, Signature en nombre de lavages. Laisse à 0 pour ne pas suivre.</p>
+    ${[['jour', 'Par jour'], ['semaine', 'Par semaine'], ['mois', 'Par mois']].map(([k, lab]) => `
+      <div class="ocr-mini" style="margin:10px 0 6px;letter-spacing:.14em;text-transform:uppercase">${lab}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+        <label class="ocr-champ"><span class="ocr-label">CA (F)</span>
+          <input class="ocr-saisie" id="objca_${k}" type="number" min="0" step="5000" value="${obj[k].ca || ''}" placeholder="0"></label>
+        <label class="ocr-champ"><span class="ocr-label">Lavages Signature</span>
+          <input class="ocr-saisie" id="objsig_${k}" type="number" min="0" step="1" value="${obj[k].signatures || ''}" placeholder="0"></label>
+      </div>`).join('')}
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Enregistrer</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    for (const k of ['jour', 'semaine', 'mois']) {
+      const { error } = await API.majObjectif(k,
+        Math.max(0, Number(v.querySelector('#objca_' + k).value) || 0),
+        Math.max(0, Number(v.querySelector('#objsig_' + k).value) || 0));
+      if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    }
+    fermerModale(); toast('Objectifs enregistrés'); rendre();
+  });
+}
+
+function carteEquipe(pts, d) {
+  const estAuj = d === auj();
+  return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+    <div class="ocr-surtitre">Équipe ${estAuj ? 'du jour' : 'ce jour-là'}</div>
+    ${equipe.map(e => {
+      const p = pts.find(x => x.employe_id === e.id);
+      const duree = minutesPointage(p);
+      const statut = !p || !p.arrivee ? (estAuj ? 'pas encore arrivé' : 'absent')
+        : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(duree) : ' · présent');
+      const moiMeme = e.id === moi.id;
+      return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06);flex-wrap:wrap">
+        <span style="min-width:0">
+          <span style="font-weight:600;display:block">${esc(e.nom)}</span>
+          <span class="ocr-mini">${esc(e.role)} · ${statut}</span>
+        </span>
+        <span style="flex:1"></span>
+        <span style="display:flex;gap:6px">
+          ${moiMeme && estAuj && (!p || !p.arrivee) ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pointer="arrivee">J’arrive</button>` : ''}
+          ${moiMeme && estAuj && p && p.arrivee ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-pointer="depart">${p.depart ? 'Repartir' : 'Je pars'}</button>` : ''}
+          ${peutCorriger() && !moiMeme ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-corriger="${e.id}">Corriger</button>` : ''}
+        </span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function brancherEquipe(pts, d) {
+  $('#vue').querySelectorAll('[data-pointer]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      const { data, error } = await pointerAvecPosition(b.dataset.pointer);
+      if (error) throw new Error(error.message);
+      const r = Array.isArray(data) ? data[0] : data;
+      toast(b.dataset.pointer === 'arrivee'
+        ? 'Arrivée pointée à ' + heureCourte(r.heure_arrivee)
+        : 'Départ pointé à ' + heureCourte(r.heure_depart));
+      rendre();
+    } catch (ex) { toast(ex.message, true); b.disabled = false; }
+  }));
+  $('#vue').querySelectorAll('[data-corriger]').forEach(b => b.addEventListener('click', () => {
+    const emp = equipe.find(e => e.id === b.dataset.corriger);
+    const p = pts.find(x => x.employe_id === emp.id);
+    boiteCorrectionPointage(emp, p, d);
+  }));
+}
+
+function boiteCorrectionPointage(emp, p, d) {
+  const v = modale(`
+    <h3 class="ocr-h2">Corriger — ${esc(emp.nom)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">${jourLong(d)}. La correction est inscrite au journal à ton nom.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Arrivée</span>
+        <input class="ocr-saisie" id="cArr" type="time" value="${p && p.arrivee ? heureCourte(p.arrivee) : ''}"></label>
+      <label class="ocr-champ"><span class="ocr-label">Départ</span>
+        <input class="ocr-saisie" id="cDep" type="time" value="${p && p.depart ? heureCourte(p.depart) : ''}"></label>
+    </div>
+    <label class="ocr-champ"><span class="ocr-label">Motif</span>
+      <input class="ocr-saisie" id="cMotif" placeholder="Téléphone déchargé, pointage oublié…"></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Enregistrer</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const arr = v.querySelector('#cArr').value, dep = v.querySelector('#cDep').value;
+    const motif = v.querySelector('#cMotif').value.trim();
+    if (!arr && !dep) return toast('Renseigne au moins une heure.', true);
+    if (arr && dep && OCR.hm2min(dep) < OCR.hm2min(arr)) return toast('Le départ est avant l’arrivée.', true);
+    e.target.disabled = true;
+    const patch = { arrivee: arr || null, depart: dep || null, note: motif || null,
+                    arrivee_par: moi.id, depart_par: moi.id };
+    const { error } = await API.corrigerPointage(p ? p.id : null, emp.id, d, patch);
+    if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    await API.tracer('Pointage de ' + emp.nom + ' corrigé (' + d + (motif ? ' — ' + motif : '') + ')');
+    fermerModale(); toast('Pointage corrigé'); rendre();
+  });
+}
+
+/* Écran unique du technicien : pointer, voir ses heures et l'objectif du jour. */
+async function vuePointage() {
+  const [mes, obj, totJour, sigJour] = await Promise.all([
+    API.pointagesPeriode(debutMois(), auj(), moi.id),
+    API.objectifs().catch(() => null),
+    API.totaux(auj()),
+    API.signaturesDepuis(auj()).catch(() => []),
+  ]);
+  const auJour = mes.find(x => x.jour === auj());
+  const duree = minutesPointage(auJour);
+  const joursFaits = mes.filter(x => x.arrivee).length;
+  const totalMin = mes.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
+  const oublis = mes.filter(x => x.arrivee && !x.depart && x.jour < auj()).length;
+
+  $('#vue').innerHTML = `
+    <div class="ocr-carte" style="text-align:center;padding:var(--ocr-e6) var(--ocr-e4)">
+      <div class="ocr-surtitre" style="justify-content:center">${jourLong(auj())}</div>
+      <div style="font:700 34px/1.1 var(--ocr-titre);margin:14px 0 6px">
+        ${!auJour || !auJour.arrivee ? 'Pas encore pointé'
+          : heureCourte(auJour.arrivee) + (auJour.depart ? ' → ' + heureCourte(auJour.depart) : '')}
+      </div>
+      <div class="ocr-petit" style="margin-bottom:var(--ocr-e5)">
+        ${!auJour || !auJour.arrivee ? 'Appuie sur « J’arrive » en commençant ta journée.'
+          : auJour.depart ? 'Journée de ' + fmtDuree(duree) + ' — bonne soirée !' : 'Présent — bon travail !'}
+      </div>
+      ${!auJour || !auJour.arrivee
+        ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-pointer="arrivee" style="font-size:16px;padding:16px">🟢 J’arrive</button>`
+        : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-pointer="depart" style="font-size:16px;padding:16px">
+            ${auJour.depart ? 'Je repars (remplace ' + heureCourte(auJour.depart) + ')' : '🔴 Je pars'}</button>`}
+      <p class="ocr-mini" style="margin:12px 0 0">L’heure enregistrée est celle du serveur, pas celle du téléphone.${
+        REGLAGES && REGLAGES.lat != null ? ' Le pointage vérifie que tu es à l’atelier.' : ''}</p>
+    </div>
+
+    ${obj && (obj.jour.ca || obj.jour.signatures) ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      <div class="ocr-surtitre">Objectif du jour — toute l’équipe</div>
+      ${obj.jour.ca ? `<p class="ocr-petit" style="margin:10px 0 8px"><strong style="color:var(--ocr-blanc)">${OCR.fcfa(totJour.ca || 0)}</strong>
+        sur ${OCR.fcfa(obj.jour.ca)} visés</p>${barreObjectif(totJour.ca || 0, obj.jour.ca)}` : ''}
+      ${obj.jour.signatures ? (() => {
+        const faits = sigJour.filter(r => r.journee === auj()).reduce((s, r) => s + (Number(r.nombre) || 0), 0);
+        return `<p class="ocr-petit" style="margin:${obj.jour.ca ? '12px' : '10px'} 0 8px">
+          <strong style="color:var(--ocr-blanc)">${faits}</strong> lavage(s) Signature sur ${obj.jour.signatures} visés${faits >= obj.jour.signatures ? ' · 🎉' : ''}</p>
+          ${barreObjectif(faits, obj.jour.signatures)}`;
+      })() : ''}
+    </div>` : ''}
+
+    <div class="tuiles" style="grid-template-columns:repeat(2,1fr);margin-top:var(--ocr-e4)">
+      <div class="tuile"><div class="lab">Jours ce mois</div><div class="val">${joursFaits}</div>
+        <div class="sub">${oublis ? '⚠ ' + oublis + ' départ(s) non pointé(s)' : 'pointages complets'}</div></div>
+      <div class="tuile"><div class="lab">Heures ce mois</div><div class="val">${fmtDuree(totalMin)}</div>
+        <div class="sub">hors jours sans départ</div></div>
+    </div>
+
+    <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      <div class="ocr-surtitre">Mes journées</div>
+      ${mes.length ? mes.map(x => `
+        <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06)">
+          <span class="ocr-mini" style="width:46px;flex:none">${dateFr(x.jour)}</span>
+          <span style="font-variant-numeric:tabular-nums">${x.arrivee ? heureCourte(x.arrivee) : '—'} → ${x.depart ? heureCourte(x.depart) : '…'}</span>
+          <span style="flex:1"></span>
+          <span style="font-weight:600">${fmtDuree(minutesPointage(x))}</span>
+        </div>`).join('') : '<div class="vide">Aucun pointage ce mois.</div>'}
+    </div>`;
+
+  $('#vue').querySelectorAll('[data-pointer]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; const txt = b.textContent; b.textContent = '📍 Localisation…';
+    try {
+      const { data, error } = await pointerAvecPosition(b.dataset.pointer);
+      if (error) throw new Error(error.message);
+      const r = Array.isArray(data) ? data[0] : data;
+      toast(b.dataset.pointer === 'arrivee'
+        ? 'Bonne journée ! Arrivée : ' + heureCourte(r.heure_arrivee)
+        : 'À demain ! Départ : ' + heureCourte(r.heure_depart));
+      rendre();
+    } catch (ex) { toast(ex.message, true); b.disabled = false; b.textContent = txt; }
+  }));
+}
+
+/* ==========================================================================
+   AGENDA
+   Les créneaux proposés tiennent compte des 2 baies : un horaire n'est
+   offert que si, à chaque minute du lavage (battement compris), moins de
+   2 rendez-vous sont déjà en cours.
+   ========================================================================== */
+let jourAgenda = auj();
+let rdvOuvert = false;
+const rdvForm = { tel: '', nom: '', gabarit: 'berline', prestation: 'signature', heure: '', note: '' };
+
+const ETAT_RDV = {
+  en_attente_paiement: ['Attente d’acompte', 'neutre'],
+  confirmee: ['Confirmé', 'marque'],
+  honoree: ['Honoré ✓', 'succes'],
+  absente: ['Absent', 'erreur'],
+};
+
+function creneauxLibres(resas, prestationId, gabaritId, d) {
+  const duree = OCR.duree(prestationId, gabaritId);
+  if (duree == null) return [];
+  const buf = OCR.CONFIG.battementMin;
+  const occ = resas
+    .filter(r => r.statut === 'confirmee' || r.statut === 'en_attente_paiement')
+    .map(r => { const a = OCR.hm2min(heureCourte(r.heure_prevue)); return [a, a + (r.duree_min || 60) + buf]; });
+  const mnt = new Date();
+  const minMin = d === auj() ? mnt.getHours() * 60 + mnt.getMinutes() + 15 : 0;
+  return OCR.creneaux(prestationId, gabaritId).filter(hm => {
+    const a = OCR.hm2min(hm), b = a + duree + buf;
+    if (a < minMin) return false;
+    for (let t = a; t < b; t += 5)
+      if (occ.filter(([x, y]) => t >= x && t < y).length >= OCR.CONFIG.baies) return false;
+    return true;
+  });
+}
+
+async function vueAgenda() {
+  const d = jourAgenda;
+  const resas = await API.rdvJour(d);
+  const actifs = resas.filter(r => r.statut === 'confirmee' || r.statut === 'en_attente_paiement');
+  const minutesJour = OCR.CONFIG.baies * (OCR.CONFIG.fermetureMin - OCR.CONFIG.ouvertureMin);
+  const minutesPrises = actifs.reduce((s, r) => s + (r.duree_min || 60) + OCR.CONFIG.battementMin, 0);
+  const tauxOcc = Math.min(100, Math.round(minutesPrises / minutesJour * 100));
+  const estAuj = d === auj();
+  const libres = rdvOuvert ? creneauxLibres(resas, rdvForm.prestation, rdvForm.gabarit, d) : [];
+
+  const prestasRdv = OCR.PRESTATIONS.filter(p => p.famille !== 'devis' && OCR.prix(p.id, rdvForm.gabarit) != null);
+
+  $('#vue').innerHTML = `
+    <div class="barre-jour">
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-anav="-1" aria-label="Jour précédent">‹</button>
+      <div class="bj-centre">
+        <div class="bj-date">${jourLong(d)}</div>
+        <div class="ocr-mini" style="margin-top:2px">${estAuj ? 'Aujourd’hui'
+          : '<button class="bj-lien" data-anav="0">revenir à aujourd’hui</button>'}</div>
+      </div>
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-anav="1" aria-label="Jour suivant">›</button>
+    </div>
+
+    <div class="tuiles" style="grid-template-columns:repeat(2,1fr)">
+      <div class="tuile"><div class="lab">Rendez-vous</div><div class="val">${actifs.length}</div>
+        <div class="sub">${resas.filter(r => r.statut === 'honoree').length} honoré(s)</div></div>
+      <div class="tuile"><div class="lab">Baies réservées</div><div class="val">${tauxOcc} %</div>
+        <div class="sub">${OCR.CONFIG.baies} baies · ${OCR.min2hm(OCR.CONFIG.ouvertureMin)} – ${OCR.min2hm(OCR.CONFIG.fermetureMin)}</div></div>
+    </div>
+
+    ${rdvOuvert ? `
+    <div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(214,32,30,.35)">
+      <div class="ocr-surtitre">Nouveau rendez-vous</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:var(--ocr-e4)">
+        <label class="ocr-champ"><span class="ocr-label">Téléphone *</span>
+          <input class="ocr-saisie" id="rTel" inputmode="tel" value="${esc(rdvForm.tel)}" placeholder="+229 01 XX XX XX"></label>
+        <label class="ocr-champ"><span class="ocr-label">Nom</span>
+          <input class="ocr-saisie" id="rNom" value="${esc(rdvForm.nom)}" placeholder="Koffi Adjovi"></label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+        ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-rgab="${g.id}" aria-pressed="${rdvForm.gabarit === g.id}">${esc(g.court)}</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+        ${prestasRdv.map(p => `<button class="ocr-chip" data-rpresta="${p.id}" aria-pressed="${rdvForm.prestation === p.id}">
+          ${esc(p.nom.replace('Lavage ', ''))} · ${OCR.fcfa(OCR.prix(p.id, rdvForm.gabarit))}</button>`).join('')}
+      </div>
+      <div class="ocr-mini" style="margin-bottom:8px;letter-spacing:.14em;text-transform:uppercase">Heures disponibles</div>
+      ${libres.length ? `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+        ${libres.map(h => `<button class="ocr-chip" data-rheure="${h}" aria-pressed="${rdvForm.heure === h}">${h}</button>`).join('')}
+      </div>` : `<p class="ocr-petit" style="margin:0 0 var(--ocr-e4);color:var(--ocr-ambre)">
+        Aucun créneau libre ce jour pour cette prestation — essaie un autre jour.</p>`}
+      <label class="ocr-champ"><span class="ocr-label">Note</span>
+        <input class="ocr-saisie" id="rNote" value="${esc(rdvForm.note)}" placeholder="Vient pour la première fois…"></label>
+      <div style="display:flex;gap:9px">
+        <button class="ocr-btn ocr-btn--fantome" id="rFermer">Fermer</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" id="rCreer" ${rdvForm.heure && libres.includes(rdvForm.heure) ? '' : 'disabled'}>
+          Réserver ${rdvForm.heure || ''}</button>
+      </div>
+    </div>` : `
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="rOuvrir" style="margin-bottom:var(--ocr-e4)">＋ Nouveau rendez-vous</button>`}
+
+    ${resas.length ? resas.map(r => {
+      const et = ETAT_RDV[r.statut] || ['—', 'neutre'];
+      const fin = OCR.min2hm(OCR.hm2min(heureCourte(r.heure_prevue)) + (r.duree_min || 60));
+      const p = OCR.prestation(r.prestation);
+      const passe = ['honoree', 'absente'].includes(r.statut);
+      return `<div class="fiche${passe ? '" style="opacity:.6' : ''}">
+        <div class="ligne1">
+          <span style="font:700 15px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${heureCourte(r.heure_prevue)}</span>
+          <span class="ocr-mini">→ ${fin}</span>
+          <span class="ocr-pastille ocr-pastille--${et[1]}">${et[0]}</span>
+          <span style="margin-left:auto;font:600 14px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${r.montant_total ? OCR.fcfa(r.montant_total) : ''}</span>
+        </div>
+        <div class="ocr-petit" style="margin-top:5px">${esc(p ? p.nom : r.prestation)} · ${esc((OCR.gabarit(r.gabarit) || {}).nom || r.gabarit)}
+          <span class="ocr-mini">· ${esc(r.reference)}${r.note ? ' · ' + esc(r.note) : ''}</span></div>
+        ${passe ? '' : `<div class="actions">
+          ${estAuj && r.statut !== 'en_attente_paiement' ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-arrive="${r.id}">Arrivé → saisie</button>` : ''}
+          ${r.statut === 'en_attente_paiement' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-confirmer="${r.id}">Confirmer</button>` : ''}
+          ${estAuj ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-absent="${r.id}">Absent</button>` : ''}
+          <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-annulrdv="${r.id}" style="margin-left:auto;color:var(--ocr-argent-2)">Annuler</button>
+        </div>`}
+      </div>`;
+    }).join('') : '<div class="ocr-carte vide">Aucun rendez-vous ce jour.</div>'}`;
+
+  // navigation
+  $('#vue').querySelectorAll('[data-anav]').forEach(b => b.addEventListener('click', () => {
+    const n = Number(b.dataset.anav);
+    jourAgenda = n === 0 ? auj() : decaleJour(jourAgenda, n);
+    rdvForm.heure = '';
+    rendre();
+  }));
+
+  // formulaire
+  const o = $('#rOuvrir'); if (o) o.addEventListener('click', () => { rdvOuvert = true; rendre(); });
+  const fEl = $('#rFermer'); if (fEl) fEl.addEventListener('click', () => { rdvOuvert = false; rendre(); });
+  ['rTel:tel', 'rNom:nom', 'rNote:note'].forEach(pair => {
+    const [id, k] = pair.split(':');
+    const el = $('#' + id); if (el) el.addEventListener('input', e => { rdvForm[k] = e.target.value; });
+  });
+  $('#vue').querySelectorAll('[data-rgab]').forEach(b => b.addEventListener('click', () => {
+    rdvForm.gabarit = b.dataset.rgab; rdvForm.heure = ''; rendre();
+  }));
+  $('#vue').querySelectorAll('[data-rpresta]').forEach(b => b.addEventListener('click', () => {
+    rdvForm.prestation = b.dataset.rpresta; rdvForm.heure = ''; rendre();
+  }));
+  $('#vue').querySelectorAll('[data-rheure]').forEach(b => b.addEventListener('click', () => {
+    rdvForm.heure = b.dataset.rheure; rendre();
+  }));
+  const cr = $('#rCreer');
+  if (cr) cr.addEventListener('click', async () => {
+    cr.disabled = true;
+    try {
+      const clientId = await API.clientParTelOuCreation(rdvForm.tel, rdvForm.nom);
+      const { error } = await API.creerRdv({
+        client_id: clientId,
+        prestation: rdvForm.prestation,
+        gabarit: rdvForm.gabarit,
+        date_prevue: d,
+        heure_prevue: rdvForm.heure,
+        duree_min: OCR.duree(rdvForm.prestation, rdvForm.gabarit),
+        montant_total: OCR.prix(rdvForm.prestation, rdvForm.gabarit),
+        statut: 'confirmee',
+        canal: 'comptoir',
+        note: rdvForm.note.trim() || null,
+      });
+      if (error) throw error;
+      toast('Rendez-vous réservé à ' + rdvForm.heure);
+      Object.assign(rdvForm, { tel: '', nom: '', heure: '', note: '' });
+      rdvOuvert = false;
+      rendre();
+    } catch (ex) { toast(ex.message, true); cr.disabled = false; }
+  });
+
+  // actions sur les rendez-vous
+  $('#vue').querySelectorAll('[data-arrive]').forEach(b => b.addEventListener('click', async () => {
+    const r = resas.find(x => x.id === b.dataset.arrive);
+    let nom = '', tel = '';
+    if (r.client_id) {
+      const { data } = await sb.from('clients').select('nom,telephone').eq('id', r.client_id).maybeSingle();
+      if (data) { nom = data.nom || ''; tel = data.telephone || ''; }
+    }
+    Object.assign(form, { tel, nom, clientTrouve: null, gabarit: r.gabarit, marque: '', modele: '', immat: '',
+      prestation: r.prestation, options: (r.options || []).slice(), remise: 0, manuel: 0,
+      note: r.note || '', reservation: r.reference });
+    onglet = 'saisie';
+    rendre();
+  }));
+  $('#vue').querySelectorAll('[data-confirmer]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { error } = await API.majRdv(b.dataset.confirmer, { statut: 'confirmee' });
+    if (error) toast(error.message, true); else toast('Rendez-vous confirmé');
+    rendre();
+  }));
+  $('#vue').querySelectorAll('[data-absent]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { error } = await API.majRdv(b.dataset.absent, { statut: 'absente' });
+    if (error) toast(error.message, true); else toast('Marqué absent');
+    rendre();
+  }));
+  $('#vue').querySelectorAll('[data-annulrdv]').forEach(b => b.addEventListener('click', () => {
+    const v = modale(`<h3 class="ocr-h2">Annuler ce rendez-vous ?</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Le créneau redevient disponible immédiatement.</p>
+      <div style="display:flex;gap:9px">
+        <button class="ocr-btn ocr-btn--fantome" data-fermer>Garder</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-ok>Annuler le rendez-vous</button></div>`);
+    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+    v.querySelector('[data-ok]').addEventListener('click', async () => {
+      const { error } = await API.majRdv(b.dataset.annulrdv, { statut: 'annulee' });
+      if (error) return toast(error.message, true);
+      fermerModale(); toast('Rendez-vous annulé'); rendre();
+    });
+  }));
+}
+
+/* ==========================================================================
+   CLIENTS
+   Le fichier client remplace le carnet : on retrouve quelqu'un par son nom,
+   son numéro ou sa plaque, on voit tout son historique, et on relance la
+   saisie pré-remplie sans rien retaper.
+   ========================================================================== */
+const rech = { q: '', liste: null, cherche: false, fiche: null, vue: 'part', rapide: null };
+
+const dateFr = d => { const [a, m, j] = String(d || '').split('-'); return j ? j + '/' + m : (d || '—'); };
+const numWhatsApp = t => String(t || '').replace(/\D/g, '').replace(/^0+/, '');
+const joursDepuis = d => d ? Math.round((new Date(auj() + 'T12:00') - new Date(d + 'T12:00')) / 86400000) : null;
+
+function ligneClientStats(c) {
+  const jd = joursDepuis(c.dernier_passage);
+  return `
+    <button class="fiche" data-cli="${c.client_id || c.id}" style="display:block;width:100%;text-align:left;cursor:pointer">
+      <div class="ligne1">
+        <strong style="font:600 15px/1.2 var(--ocr-texte)">${esc(c.nom || 'Sans nom')}</strong>
+        <span style="flex:1"></span>
+        <span class="ocr-mini">${esc(c.telephone || 'Pas de numéro')}</span>
+      </div>
+      ${c.depense != null ? `<div class="ocr-mini" style="margin-top:5px">
+        ${c.passages || 0} passage(s) · ${OCR.fcfa(c.depense)}${jd != null ? ' · il y a ' + jd + ' j' : ''}</div>` : ''}
+    </button>`;
+}
+
+async function vueClients() {
+  if (rech.fiche) return vueFicheClient();
+
+  $('#vue').innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:var(--ocr-e4)">
+      <button class="ocr-chip" data-cvue="part" aria-pressed="${rech.vue === 'part'}">Particuliers</button>
+      <button class="ocr-chip" data-cvue="pro" aria-pressed="${rech.vue === 'pro'}">Entreprises</button>
+    </div>
+    <div id="zoneCli"></div>`;
+
+  $('#vue').querySelectorAll('[data-cvue]').forEach(b => b.addEventListener('click', () => {
+    rech.vue = b.dataset.cvue; rendre();
+  }));
+
+  if (rech.vue === 'pro') return vueEntreprises($('#zoneCli'));
+
+  $('#zoneCli').innerHTML = `
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Rechercher un client</div>
+      <label class="ocr-champ" style="margin:var(--ocr-e4) 0 var(--ocr-e3)">
+        <span class="ocr-label">Nom, téléphone ou plaque</span>
+        <input class="ocr-saisie" id="qCli" value="${esc(rech.q)}" placeholder="Koffi, 97 45 12 30, 1234 AB…"
+               autocomplete="off" enterkeyhint="search">
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="ocr-chip" data-rapide="relance" aria-pressed="${rech.rapide === 'relance'}">📣 À relancer (30 j+)</button>
+        <button class="ocr-chip" data-rapide="meilleurs" aria-pressed="${rech.rapide === 'meilleurs'}">★ Meilleurs clients</button>
+      </div>
+    </div>
+    <div id="resCli" style="margin-top:var(--ocr-e4)"></div>`;
+
+  const zone = $('#resCli');
+  const brancherFiches = () => zone.querySelectorAll('[data-cli]').forEach(b => b.addEventListener('click', async () => {
+    zone.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+    try { rech.fiche = await API.ficheClient(b.dataset.cli); vueClients(); }
+    catch (ex) { toast(ex.message, true); peindre(); }
+  }));
+  const peindre = () => {
+    if (rech.cherche) { zone.innerHTML = '<div class="vide"><span class="tourne"></span></div>'; return; }
+    if (rech.liste === null) { zone.innerHTML = '<div class="vide">Tape un nom, un numéro, une plaque — ou choisis une liste.</div>'; return; }
+    if (!rech.liste.length) {
+      zone.innerHTML = '<div class="vide">' + (rech.rapide === 'relance'
+        ? 'Personne à relancer — tous tes clients sont venus dans les 30 derniers jours. 👍'
+        : 'Aucun client trouvé.<br>Il sera créé automatiquement à la première saisie.') + '</div>';
+      return;
+    }
+    zone.innerHTML = (rech.rapide === 'relance'
+      ? '<p class="ocr-mini" style="margin:0 0 10px">Classés du plus gros client au plus petit — commence par le haut.</p>' : '')
+      + rech.liste.map(ligneClientStats).join('');
+    brancherFiches();
+  };
+  peindre();
+
+  const chercherRapide = async mode => {
+    rech.rapide = rech.rapide === mode ? null : mode;
+    rech.q = '';
+    if (!rech.rapide) { rech.liste = null; vueClients(); return; }
+    rech.cherche = true; vueClients();
+    try { rech.liste = await API.listeClients(rech.rapide); }
+    catch (ex) { toast(ex.message, true); rech.liste = []; }
+    rech.cherche = false; vueClients();
+  };
+  $('#zoneCli').querySelectorAll('[data-rapide]').forEach(b =>
+    b.addEventListener('click', () => chercherRapide(b.dataset.rapide)));
+
+  let minuteur;
+  $('#qCli').addEventListener('input', e => {
+    rech.q = e.target.value;
+    rech.rapide = null;
+    clearTimeout(minuteur);
+    minuteur = setTimeout(async () => {
+      if (rech.q.trim().length < 2) { rech.liste = null; peindre(); return; }
+      rech.cherche = true; peindre();
+      try { rech.liste = await API.chercherClients(rech.q); }
+      catch (ex) { toast(ex.message, true); rech.liste = []; }
+      rech.cherche = false; peindre();
+    }, 320);
+  });
+}
+
+/* ---------- entreprises : le carnet de prospection ---------- */
+const STATUTS_PRO = [
+  ['prospect', 'À contacter', 'neutre'],
+  ['contacte', 'Contacté', 'marque'],
+  ['rdv', 'RDV pris', 'marque'],
+  ['devis', 'Devis envoyé', 'marque'],
+  ['client', 'Client ✓', 'succes'],
+  ['perdu', 'Sans suite', 'erreur'],
+];
+let proEdite = null;   // null, ou le brouillon en cours d'édition
+
+async function vueEntreprises(el) {
+  el.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+  let liste;
+  try { liste = await API.entreprises(); }
+  catch (ex) { el.innerHTML = '<div class="ocr-message ocr-message--erreur"><span>⛔</span><div>' + esc(ex.message) + '</div></div>'; return; }
+
+  const nb = s => liste.filter(e => e.statut === s).length;
+  const enCours = liste.filter(e => !['client', 'perdu'].includes(e.statut)).length;
+  const libelle = s => (STATUTS_PRO.find(x => x[0] === s) || ['', s, 'neutre']);
+  const enRetard = e => e.prochaine_le && e.prochaine_le < auj() && !['client', 'perdu'].includes(e.statut);
+  // les relances en retard d'abord, puis par prochaine échéance
+  const tri = [...liste].sort((a, b) => (enRetard(b) - enRetard(a)) ||
+    String(a.prochaine_le || '9999').localeCompare(String(b.prochaine_le || '9999')));
+
+  el.innerHTML = `
+    <div class="tuiles" style="grid-template-columns:repeat(3,1fr)">
+      <div class="tuile"><div class="lab">En prospection</div><div class="val">${enCours}</div>
+        <div class="sub">${nb('devis')} devis en attente</div></div>
+      <div class="tuile"><div class="lab">Clients pro</div><div class="val">${nb('client')}</div>
+        <div class="sub">objectif : flottes + cliniques</div></div>
+      <div class="tuile"><div class="lab">À relancer</div>
+        <div class="val" style="${tri.filter(enRetard).length ? 'color:var(--ocr-rouge-texte)' : ''}">${tri.filter(enRetard).length}</div>
+        <div class="sub">actions en retard</div></div>
+    </div>
+
+    ${proEdite ? formEntreprise() : `
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="proNouveau" style="margin-bottom:var(--ocr-e4)">＋ Nouvelle entreprise</button>`}
+
+    ${tri.length ? tri.map(e => {
+      const [, lab, ton] = libelle(e.statut);
+      const wa = numWhatsApp(e.telephone);
+      const retard = enRetard(e);
+      return `<div class="fiche" ${retard ? 'style="border-color:rgba(232,82,78,.45)"' : ''}>
+        <div class="ligne1">
+          <strong style="font:600 15px/1.2 var(--ocr-texte)">${esc(e.nom)}</strong>
+          <span class="ocr-pastille ocr-pastille--${ton}">${lab}</span>
+          ${e.flotte_estimee ? `<span class="ocr-mini">~${e.flotte_estimee} véhicules</span>` : ''}
+        </div>
+        ${e.contact_nom ? `<div class="ocr-mini" style="margin-top:4px">${esc(e.contact_nom)}${e.contact_role ? ' · ' + esc(e.contact_role) : ''}${e.telephone ? ' · ' + esc(e.telephone) : ''}</div>` : ''}
+        ${e.prochaine_action ? `<div class="ocr-petit" style="margin-top:5px;${retard ? 'color:var(--ocr-erreur)' : ''}">
+          ${retard ? '⚠ ' : '→ '}${esc(e.prochaine_action)}${e.prochaine_le ? ' · ' + dateFr(e.prochaine_le) : ''}</div>` : ''}
+        ${e.note ? `<div class="ocr-mini" style="margin-top:4px">${esc(e.note)}</div>` : ''}
+        <div class="actions">
+          ${e.telephone ? `<a class="ocr-btn ocr-btn--secondaire ocr-btn--petit" href="tel:${esc(e.telephone.replace(/\s/g, ''))}">Appeler</a>` : ''}
+          ${wa ? `<a class="ocr-btn ocr-btn--secondaire ocr-btn--petit" target="_blank" rel="noopener"
+            href="https://wa.me/${wa}?text=${encodeURIComponent('Bonjour' + (e.contact_nom ? ' ' + e.contact_nom : '') +
+            ', ici OCR Brillance (Station Oryx Saint Michel). Nous proposons un entretien professionnel des véhicules d’entreprise — lavage soigné, suivi et facturation mensuelle groupée. Quand pourrions-nous en parler ?')}">WhatsApp</a>` : ''}
+          <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-promod="${e.id}" style="margin-left:auto">Modifier</button>
+        </div>
+      </div>`;
+    }).join('') : '<div class="ocr-carte vide">Aucune entreprise pour l’instant.<br>Commence par celles qui ont une flotte : cliniques, hôtels, sociétés de location…</div>'}`;
+
+  const bn = $('#proNouveau');
+  if (bn) bn.addEventListener('click', () => {
+    proEdite = { statut: 'prospect' };
+    rendre();
+  });
+  el.querySelectorAll('[data-promod]').forEach(b => b.addEventListener('click', () => {
+    proEdite = { ...liste.find(x => x.id === b.dataset.promod) };
+    rendre();
+  }));
+  brancherFormEntreprise(el);
+}
+
+function formEntreprise() {
+  const e = proEdite;
+  return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(214,32,30,.35)">
+    <div class="ocr-surtitre">${e.id ? 'Modifier — ' + esc(e.nom || '') : 'Nouvelle entreprise'}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:var(--ocr-e4)">
+      <label class="ocr-champ"><span class="ocr-label">Entreprise *</span>
+        <input class="ocr-saisie" id="pNom" value="${esc(e.nom || '')}" placeholder="Clinique Étoile"></label>
+      <label class="ocr-champ"><span class="ocr-label">Flotte estimée</span>
+        <input class="ocr-saisie" id="pFlotte" type="number" min="0" value="${e.flotte_estimee || ''}" placeholder="6"></label>
+      <label class="ocr-champ"><span class="ocr-label">Contact</span>
+        <input class="ocr-saisie" id="pContact" value="${esc(e.contact_nom || '')}" placeholder="Mme Dossou"></label>
+      <label class="ocr-champ"><span class="ocr-label">Fonction</span>
+        <input class="ocr-saisie" id="pRole" value="${esc(e.contact_role || '')}" placeholder="Directrice"></label>
+      <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
+        <input class="ocr-saisie" id="pTel" inputmode="tel" value="${esc(e.telephone || '')}" placeholder="+229 01 XX XX XX"></label>
+      <label class="ocr-champ"><span class="ocr-label">E-mail</span>
+        <input class="ocr-saisie" id="pMail" type="email" value="${esc(e.email || '')}"></label>
+    </div>
+    <div class="ocr-mini" style="margin:2px 0 8px;letter-spacing:.14em;text-transform:uppercase">Où en est-on ?</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+      ${STATUTS_PRO.map(([s, lab]) => `<button class="ocr-chip" data-pstatut="${s}" aria-pressed="${e.statut === s}">${lab}</button>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Prochaine action</span>
+        <input class="ocr-saisie" id="pAction" value="${esc(e.prochaine_action || '')}" placeholder="Rappeler pour le devis"></label>
+      <label class="ocr-champ"><span class="ocr-label">Pour le</span>
+        <input class="ocr-saisie" id="pQuand" type="date" value="${e.prochaine_le || ''}"></label>
+    </div>
+    <label class="ocr-champ"><span class="ocr-label">Notes</span>
+      <textarea class="ocr-saisie" id="pNote" rows="2" placeholder="6 ambulances + 2 berlines de direction…">${esc(e.note || '')}</textarea></label>
+    <div style="display:flex;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" id="pFermer">Fermer</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" id="pSauver">${e.id ? 'Enregistrer' : 'Ajouter'}</button>
+    </div>
+  </div>`;
+}
+
+function brancherFormEntreprise(el) {
+  if (!proEdite) return;
+  const lire = () => ({
+    nom: $('#pNom').value.trim(),
+    contact_nom: $('#pContact').value.trim() || null,
+    contact_role: $('#pRole').value.trim() || null,
+    telephone: $('#pTel').value.trim() || null,
+    email: $('#pMail').value.trim() || null,
+    statut: proEdite.statut,
+    flotte_estimee: Number($('#pFlotte').value) || null,
+    prochaine_action: $('#pAction').value.trim() || null,
+    prochaine_le: $('#pQuand').value || null,
+    note: $('#pNote').value.trim() || null,
+  });
+  el.querySelectorAll('[data-pstatut]').forEach(b => b.addEventListener('click', () => {
+    Object.assign(proEdite, lire(), { statut: b.dataset.pstatut });
+    rendre();
+  }));
+  $('#pFermer').addEventListener('click', () => { proEdite = null; rendre(); });
+  $('#pSauver').addEventListener('click', async e => {
+    const r = lire();
+    if (!r.nom) return toast('Le nom de l’entreprise est obligatoire.', true);
+    e.target.disabled = true;
+    const { error } = proEdite.id
+      ? await API.majEntreprise(proEdite.id, r)
+      : await API.creerEntreprise({ ...r, cree_par: moi.id });
+    if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    toast(proEdite.id ? 'Fiche mise à jour' : r.nom + ' ajoutée');
+    proEdite = null;
+    rendre();
+  });
+}
+
+function vueFicheClient() {
+  const { client: c, vehicules: vs, passages: tous, fidelite: f } = rech.fiche;
+  const ps = tous.filter(p => !p.annule);    // les annulés restent visibles mais ne comptent pas
+  const depense = f && f.depense != null ? Number(f.depense) : ps.reduce((s, p) => s + (p.montant_total || 0), 0);
+  const seuil = OCR.CONFIG.fideliteSeuil;
+  const tampons = f ? Number(f.tampons) : 0;
+  const reste = Math.max(0, seuil - tampons);
+  const part = Math.min(100, Math.round(tampons / seuil * 100));
+  const wa = numWhatsApp(c.telephone);
+  const jd = joursDepuis(f ? f.dernier_passage : null);
+
+  // segments : lisibles d'un coup d'œil, calculés — jamais stockés
+  const badges = [];
+  if (depense >= 50000) badges.push(['★ VIP', 'marque']);
+  else if (ps.length >= 5) badges.push(['Fidèle', 'succes']);
+  if (jd != null && jd > 30) badges.push(['À relancer · ' + jd + ' j', 'erreur']);
+  if (reste === 0 && ps.length) badges.push(['🎁 Lavage offert dû', 'succes']);
+
+  // message de relance : personnalisé, avec la carotte de la fidélité
+  const resteTxt = reste > 0 && reste <= 3 ? ' Il ne vous manque que ' + String(reste).replace('.5', '½') +
+    ' passage(s) avant votre lavage offert !' : '';
+  const msgRelance = 'Bonjour ' + (c.nom || '') + ', ici OCR Brillance ✦ Cela fait un moment que votre ' +
+    ((vs[0] || {}).marque || 'véhicule') + ' ne nous a pas rendu visite.' + resteTxt +
+    ' Nous sommes à la Station Oryx Saint Michel, 9 h – 21 h, 7 j/7. À très bientôt !';
+
+  const nomPresta = p => (p.passage_lignes || []).filter(l => l.type === 'prestation').map(l => l.libelle).join(' + ') || '—';
+
+  // dépense et passages par véhicule
+  const parVeh = {};
+  ps.forEach(p => {
+    if (!p.vehicule_id) return;
+    const o = parVeh[p.vehicule_id] || (parVeh[p.vehicule_id] = { n: 0, total: 0 });
+    o.n++; o.total += p.montant_total || 0;
+  });
+
+  $('#vue').innerHTML = `
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnRetourCli" style="margin-bottom:var(--ocr-e4)">‹ Retour</button>
+
+    <div class="ocr-carte">
+      <div style="display:flex;align-items:flex-start;gap:var(--ocr-e3);flex-wrap:wrap">
+        <div style="min-width:0">
+          <div style="font:700 20px/1.15 var(--ocr-titre)">${esc(c.nom || 'Sans nom')}</div>
+          <div class="ocr-mini" style="margin-top:4px">${esc(c.telephone || 'Pas de numéro')}</div>
+          ${badges.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+            ${badges.map(([t, ton]) => `<span class="ocr-pastille ocr-pastille--${ton}">${t}</span>`).join('')}</div>` : ''}
+        </div>
+        <div style="flex:1;min-width:12px"></div>
+        <div style="display:flex;gap:8px;flex:0 1 auto;flex-wrap:wrap">
+          ${wa && jd != null && jd > 30 ? `<a class="ocr-btn ocr-btn--secondaire ocr-btn--petit" target="_blank" rel="noopener"
+              href="https://wa.me/${wa}?text=${encodeURIComponent(msgRelance)}">📣 Relancer</a>`
+            : wa ? `<a class="ocr-btn ocr-btn--fantome ocr-btn--petit" target="_blank" rel="noopener"
+              href="https://wa.me/${wa}">WhatsApp</a>` : ''}
+          <button class="ocr-btn ocr-btn--primaire ocr-btn--petit" id="btnNouveauPassage">Nouveau passage</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="tuiles" style="margin-top:var(--ocr-e4)">
+      <div class="tuile"><div class="lab">Passages</div><div class="val">${ps.length}</div>
+        <div class="sub">Dernier : ${f ? dateFr(f.dernier_passage) : '—'}</div></div>
+      <div class="tuile"><div class="lab">Total dépensé</div><div class="val">${OCR.fcfa(depense)}</div>
+        <div class="sub">Ticket moyen ${OCR.fcfa(ps.length ? Math.round(depense / ps.length) : 0)}</div></div>
+      <div class="tuile"><div class="lab">Fidélité</div><div class="val">${tampons.toFixed(1).replace('.0', '')} / ${seuil}</div>
+        <div class="sub">${reste === 0 ? '🎁 Lavage offert à donner' : reste.toFixed(1).replace('.0', '') + ' avant le cadeau'}</div></div>
+      <div class="tuile"><div class="lab">Véhicules</div><div class="val">${vs.length}</div>
+        <div class="sub">${esc(vs.map(v => v.immatriculation).filter(Boolean).join(' · ') || '—')}</div></div>
+    </div>
+
+    <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div class="ocr-surtitre">Progression fidélité</div>
+      <div style="margin-top:12px;height:10px;border-radius:999px;background:rgba(244,244,245,.08);overflow:hidden">
+        <div style="height:100%;width:${part}%;background:${reste === 0 ? 'var(--ocr-succes)' : 'var(--ocr-rouge)'};
+                    border-radius:999px;transition:width .4s"></div>
+      </div>
+      <p class="ocr-mini" style="margin:9px 0 0">Un Signature ou mieux = 1 tampon · un Express = ½ tampon.</p>
+    </div>
+
+    ${vs.length ? `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div class="ocr-surtitre">Véhicules</div>
+      ${vs.map(v => {
+        const st = parVeh[v.id] || { n: 0, total: 0 };
+        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(244,244,245,.06);flex-wrap:wrap">
+          <span style="min-width:0">
+            <span style="font-weight:600;display:block">${esc([v.marque, v.modele].filter(Boolean).join(' ') || 'Véhicule')}
+              <span class="ocr-mini" style="font-weight:400">· ${esc(v.immatriculation || 'sans plaque')}</span></span>
+            <span class="ocr-mini">${esc(OCR.gabarit(v.gabarit) ? OCR.gabarit(v.gabarit).nom : v.gabarit)}</span>
+          </span>
+          <span style="flex:1"></span>
+          <span style="text-align:right">
+            <span style="font-weight:600;font-variant-numeric:tabular-nums;display:block">${OCR.fcfa(st.total)}</span>
+            <span class="ocr-mini">${st.n} passage(s)</span>
+          </span>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Historique</div>
+      ${tous.length ? tous.map(p => `
+        <div style="display:flex;gap:10px;align-items:center;padding:10px 0;
+                    border-bottom:1px solid rgba(244,244,245,.06)${p.annule ? ';opacity:.5' : ''}">
+          <span class="ocr-mini" style="width:46px;flex:none">${dateFr(p.journee)}</span>
+          <span style="min-width:0;flex:1">
+            <span style="font:600 13.5px/1.3 var(--ocr-texte);display:block${p.annule ? ';text-decoration:line-through' : ''}">${esc(nomPresta(p))}</span>
+            <span class="ocr-mini">${esc(p.reference)}${p.annule ? ' · annulé' : ''}</span>
+          </span>
+          <span style="font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap${
+            p.annule ? ';text-decoration:line-through' : ''}">${OCR.fcfa(p.montant_total)}</span>
+        </div>`).join('')
+      : '<div class="vide">Aucun passage enregistré.</div>'}
+    </div>`;
+
+  $('#btnRetourCli').addEventListener('click', () => { rech.fiche = null; vueClients(); });
+  $('#btnNouveauPassage').addEventListener('click', () => {
+    const v = vs[0] || {};
+    Object.assign(form, {
+      tel: c.telephone || '', nom: c.nom || '', clientTrouve: c,
+      gabarit: v.gabarit || 'berline', marque: v.marque || '', modele: v.modele || '',
+      immat: v.immatriculation || '', prestation: null, options: [], remise: 0, manuel: 0, note: '',
+    });
+    rech.fiche = null;
+    onglet = 'saisie';
+    rendre();
+  });
+}
+
+/* ==========================================================================
+   BILAN
+   L'indicateur qui compte n'est pas le chiffre d'affaires : c'est le franc
+   gagné par heure de baie. Deux baies × 12 h = 24 heures-baie par jour,
+   c'est la seule ressource qu'on ne peut pas fabriquer.
+   ========================================================================== */
+let bilanJours = 7;
+
+// Charges fixes mensuelles (loyer 150 000 + salaires 202 000 + électricité
+// 60 000 + eau 25 000 + internet 15 000 + provision équipement 40 000).
+// Volontairement ICI et pas dans le socle : le socle alimente aussi le site
+// public, et ces chiffres n'ont rien à faire dans une page publique.
+const CHARGES_FIXES = 492000;
+
+function ilYA(n) {
+  const d = new Date(); d.setDate(d.getDate() - (n - 1));
+  return d.toLocaleDateString('en-CA');
+}
+
+async function vueBilan() {
+  const du = ilYA(bilanJours), au = auj();
+  const [{ jours, mix }, ptsRH] = await Promise.all([
+    API.periode(du, au), API.pointagesPeriode(du, au),
+  ]);
+
+  const S = (a, k) => a.reduce((s, x) => s + (Number(x[k]) || 0), 0);
+  const ca = S(jours, 'ca'), veh = S(jours, 'vehicules'), impaye = S(jours, 'impaye');
+  const remises = S(jours, 'remises');
+  const minutes = S(mix, 'minutes_baie');
+  const caLavages = S(mix, 'ca');
+  const rendement = minutes > 0 ? Math.round(caLavages / (minutes / 60)) : 0;
+  const capacite = OCR.CONFIG.baies * ((OCR.CONFIG.fermetureMin - OCR.CONFIG.ouvertureMin) / 60) * bilanJours;
+  const occupation = capacite > 0 ? Math.round(minutes / 60 / capacite * 100) : 0;
+
+  // regroupement par prestation sur toute la période
+  const parPresta = {};
+  mix.forEach(r => {
+    const o = parPresta[r.prestation] || (parPresta[r.prestation] = { nombre: 0, ca: 0, minutes: 0 });
+    o.nombre += Number(r.nombre) || 0; o.ca += Number(r.ca) || 0; o.minutes += Number(r.minutes_baie) || 0;
+  });
+  const lignes = Object.entries(parPresta).map(([code, o]) => {
+    const p = OCR.prestation(code);
+    return { code, nom: p ? p.nom : code, ...o,
+             fh: o.minutes > 0 ? Math.round(o.ca / (o.minutes / 60)) : 0 };
+  }).sort((a, b) => b.nombre - a.nombre);
+  const totalLavages = lignes.reduce((s, l) => s + l.nombre, 0);
+  const maxFh = Math.max(1, ...lignes.map(l => l.fh));
+
+  const ex = parPresta.express, si = parPresta.signature;
+  const fhEx = ex && ex.minutes ? Math.round(ex.ca / (ex.minutes / 60)) : 0;
+  const fhSi = si && si.minutes ? Math.round(si.ca / (si.minutes / 60)) : 0;
+  const partSi = totalLavages ? Math.round((si ? si.nombre : 0) / totalLavages * 100) : 0;
+
+  const maxCa = Math.max(1, ...jours.map(j => Number(j.ca) || 0));
+
+  $('#vue').innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+      ${[[7, '7 jours'], [30, '30 jours'], [90, '3 mois']].map(([n, l]) =>
+        `<button class="ocr-chip" data-per="${n}" aria-pressed="${bilanJours === n}">${l}</button>`).join('')}
+      <span style="flex:1"></span>
+      <span class="ocr-mini" style="align-self:center">${dateFr(du)} → ${dateFr(au)}</span>
+    </div>
+
+    <div class="tuiles">
+      <div class="tuile"><div class="lab">Franc / heure-baie</div>
+        <div class="val" style="color:var(--ocr-rouge-texte)">${OCR.fcfa(rendement)}</div>
+        <div class="sub">La vraie mesure de la rentabilité</div></div>
+      <div class="tuile"><div class="lab">Chiffre d’affaires</div><div class="val">${OCR.fcfa(ca)}</div>
+        <div class="sub">${(() => {
+          const objectif = Math.round(CHARGES_FIXES * bilanJours / 30);
+          return ca >= objectif
+            ? '<span style="color:var(--ocr-succes)">✓ charges couvertes</span> (seuil ' + OCR.fcfa(objectif) + ')'
+            : '<span style="color:var(--ocr-erreur)">' + OCR.fcfa(objectif - ca) + ' sous le seuil</span> de ' + OCR.fcfa(objectif);
+        })()}</div></div>
+      <div class="tuile"><div class="lab">Véhicules</div><div class="val">${veh}</div>
+        <div class="sub">${(veh / bilanJours).toFixed(1).replace('.', ',')} par jour</div></div>
+      <div class="tuile"><div class="lab">Baies occupées</div><div class="val">${occupation} %</div>
+        <div class="sub">${impaye ? OCR.fcfa(impaye) + ' encore impayés' : 'tout est encaissé'}</div></div>
+    </div>
+
+    <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div class="ocr-surtitre">Ce que rapporte chaque lavage, par heure de baie</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Barre pleine = le plus rentable pour le temps qu’il occupe.</p>
+      ${lignes.length ? lignes.map(l => `
+        <div style="margin-bottom:13px">
+          <div style="display:flex;gap:8px;align-items:baseline;margin-bottom:5px">
+            <span style="font:600 13.5px/1.2 var(--ocr-texte)">${esc(l.nom)}</span>
+            <span class="ocr-mini">${l.nombre} × · ${totalLavages ? Math.round(l.nombre / totalLavages * 100) : 0} %</span>
+            <span style="flex:1"></span>
+            <span style="font-weight:700;font-variant-numeric:tabular-nums">${OCR.fcfa(l.fh)}<span class="ocr-mini"> /h</span></span>
+          </div>
+          <div style="height:8px;border-radius:999px;background:rgba(244,244,245,.07);overflow:hidden">
+            <div style="height:100%;width:${Math.round(l.fh / maxFh * 100)}%;border-radius:999px;
+                        background:${l.code === 'signature' ? 'var(--ocr-rouge)' : 'rgba(244,244,245,.28)'}"></div>
+          </div>
+        </div>`).join('')
+      : '<div class="vide">Aucun lavage sur la période.</div>'}
+    </div>
+
+    ${(fhEx && fhSi) ? `<div class="ocr-message ${partSi >= 40 ? 'ocr-message--succes' : 'ocr-message--alerte'}"
+        style="margin-bottom:var(--ocr-e4)">
+      <span>${partSi >= 40 ? '✓' : '⚠'}</span>
+      <div><strong>Le Signature occupe ${partSi} % des lavages.</strong><br>
+        Il rapporte ${OCR.fcfa(fhSi)} par heure de baie contre ${OCR.fcfa(fhEx)} pour l’Express, soit
+        <strong>${fhEx ? '+' + Math.round((fhSi / fhEx - 1) * 100) + ' %' : '—'}</strong>.
+        ${partSi < 40 ? 'Chaque Express converti en Signature libère la même baie pour plus d’argent.'
+                      : 'La bascule vers le Signature est en train de prendre.'}</div>
+    </div>` : ''}
+
+    <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div class="ocr-surtitre">Équipe — présence</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Le rendement se mesure en équipe (voir les objectifs) — ici, seulement la présence de chacun.</p>
+      ${equipe.map(e => {
+        const pe = ptsRH.filter(x => x.employe_id === e.id);
+        const joursP = pe.filter(x => x.arrivee).length;
+        const minutes = pe.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
+        const oublis = pe.filter(x => x.arrivee && !x.depart && x.jour < auj()).length;
+        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(244,244,245,.06)">
+          <span style="min-width:0">
+            <span style="font-weight:600;display:block">${esc(e.nom)} <span class="ocr-mini" style="font-weight:400">· ${esc(e.role)}</span></span>
+            ${oublis ? '<span class="ocr-mini" style="color:var(--ocr-ambre)">⚠ ' + oublis + ' départ(s) non pointé(s)</span>' : ''}
+          </span>
+          <span style="flex:1"></span>
+          <span style="text-align:right">
+            <span style="font-weight:600;font-variant-numeric:tabular-nums;display:block">${fmtDuree(minutes)}</span>
+            <span class="ocr-mini">${joursP} jour(s) présent(s)</span>
+          </span>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Chiffre d’affaires par jour</div>
+      ${jours.length ? `<div style="display:flex;align-items:flex-end;gap:${jours.length > 30 ? 1 : 4}px;
+                                    height:132px;margin-top:var(--ocr-e4);max-width:660px">
+        ${jours.map((j, i) => {
+          const h = Math.max(3, Math.round((Number(j.ca) || 0) / maxCa * 100));
+          const pas = Math.ceil(jours.length / 8);
+          const etiquette = jours.length <= 10 || i % pas === 0 || i === jours.length - 1;
+          return `<div style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;
+                              align-items:center;gap:5px;min-width:0"
+                       title="${dateFr(j.date)} · ${OCR.fcfa(j.ca)}">
+            <div style="width:100%;max-width:34px;border-radius:4px 4px 0 0;background:var(--ocr-rouge);
+                        height:${h}px"></div>
+            <span class="ocr-mini" style="font-size:9px;white-space:nowrap;height:12px">${etiquette ? dateFr(j.date) : ''}</span>
+          </div>`;
+        }).join('')}
+      </div>
+      <p class="ocr-mini" style="margin:10px 0 0">Meilleure journée ${OCR.fcfa(maxCa)} ·
+        moyenne ${OCR.fcfa(Math.round(ca / jours.length))} sur ${jours.length} jour${jours.length > 1 ? 's' : ''} d’activité.</p>`
+      : '<div class="vide">Aucune journée sur la période.</div>'}
+    </div>`;
+
+  $('#vue').querySelectorAll('[data-per]').forEach(b => b.addEventListener('click', () => {
+    bilanJours = Number(b.dataset.per);
+    $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+    vueBilan();
+  }));
 }
 
 /* ---------- démarrage ---------- */
