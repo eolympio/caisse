@@ -1275,6 +1275,18 @@ function creerClientDemo() {
   }
 
   const RPC = {
+    ocr_changer_photo(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      const cible = a.p_employe ? D.employes.find(e => e.id === a.p_employe) : emp;
+      if (!cible) throw new Error('Employé inconnu');
+      if (cible.id !== emp.id && !['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seuls la direction et le comptable peuvent changer la photo d’un autre employé');
+      cible.photo = a.p_photo || null;
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Photo de profil mise à jour', entite: 'employe' });
+      return [];
+    },
     ocr_enregistrer_passage(a) {
       const j = D.journees.find(x => x.date === jourCourant);
       if (j && j.statut !== 'ouverte') throw new Error('Journée ' + jourCourant + ' clôturée : modification impossible');
@@ -1457,13 +1469,13 @@ const API = {
     const { data: s } = await sb.auth.getSession();
     if (!s || !s.session) return null;
     const { data, error } = await sb.from('employes')
-      .select('id,nom,role,email,remplacant').eq('user_id', s.session.user.id).maybeSingle();
+      .select('id,nom,role,email,remplacant,photo').eq('user_id', s.session.user.id).maybeSingle();
     if (error) throw error;
     return data;
   },
   async equipe() {
     const { data, error } = await sb.from('employes')
-      .select('id,nom,role,repos_jour,remplacant').eq('actif', true).order('nom');
+      .select('id,nom,role,repos_jour,remplacant,photo').eq('actif', true).order('nom');
     if (error) throw error;
     return data || [];
   },
@@ -1884,7 +1896,16 @@ async function boiteCompte() {
 
   const v = modale(`
     <h3 class="ocr-h2">Mon compte</h3>
-    <p class="ocr-mini" style="margin:6px 0 var(--ocr-e4)">${esc(moi.nom)} · ${esc(moi.role)}</p>
+    <div style="display:flex;align-items:center;gap:12px;margin:10px 0 var(--ocr-e4)">
+      <span id="zoneAvatar">${avatar(moi, 56)}</span>
+      <div style="min-width:0">
+        <div style="font-weight:600">${esc(moi.nom)}</div>
+        <div class="ocr-mini">${esc(moi.role)}</div>
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-photo style="margin-top:6px;padding-left:0">
+          ${moi.photo ? 'Changer ma photo' : 'Ajouter ma photo'}</button>
+        <input type="file" accept="image/*" id="fichierPhoto" style="display:none">
+      </div>
+    </div>
 
     <div class="ocr-surtitre">Mot de passe</div>
     <label class="ocr-champ" style="margin-top:var(--ocr-e3)"><span class="ocr-label">Nouveau mot de passe</span>
@@ -1907,6 +1928,22 @@ async function boiteCompte() {
     <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>`);
 
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+
+  const bPhoto = v.querySelector('[data-photo]'), fPhoto = v.querySelector('#fichierPhoto');
+  bPhoto.addEventListener('click', () => fPhoto.click());
+  fPhoto.addEventListener('change', async () => {
+    const f = fPhoto.files && fPhoto.files[0];
+    if (!f) return;
+    bPhoto.disabled = true; bPhoto.textContent = 'Envoi…';
+    try {
+      await envoyerPhoto(f);
+      v.querySelector('#zoneAvatar').innerHTML = avatar(moi, 56);
+      toast('Photo mise à jour ✓');
+      rendre();
+    } catch (ex) { toast(ex.message || 'Photo impossible à envoyer', true); }
+    bPhoto.disabled = false; bPhoto.textContent = 'Changer ma photo';
+    fPhoto.value = '';
+  });
 
   v.querySelector('[data-mdp]').addEventListener('click', async e => {
     const m1 = v.querySelector('#mdpNouveau').value, m2 = v.querySelector('#mdpConfirme').value;
@@ -2718,6 +2755,53 @@ function boiteObjectifs(obj) {
 // le manager et les techniciens. Direction et comptable n'y figurent pas.
 const equipePointage = () => equipe.filter(e => ['manager', 'technicien'].includes(e.role));
 
+/* ---------- photos de profil ---------- */
+const COULEURS_AVATAR = ['#7A1F1F', '#22406B', '#1F6B44', '#6B531F', '#4E2A6B'];
+function avatar(e, taille) {
+  const t = taille || 40;
+  if (e && e.photo) return `<img src="${esc(e.photo)}" alt="" style="width:${t}px;height:${t}px;border-radius:50%;object-fit:cover;flex:none;background:#1a1a1c">`;
+  const nom = (e && e.nom || '?').trim();
+  const ini = nom.split(/\s+/).map(m => m[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const c = COULEURS_AVATAR[nom.length % COULEURS_AVATAR.length];
+  return `<span style="width:${t}px;height:${t}px;border-radius:50%;flex:none;display:grid;place-items:center;background:${c};color:#f4f4f5;font:700 ${Math.max(11, Math.round(t * .36))}px/1 var(--ocr-titre);letter-spacing:.02em">${esc(ini)}</span>`;
+}
+
+/* La photo est recadrée en carré et réduite à 256 px avant l'envoi :
+   quelques dizaines de Ko, jamais la photo brute de 5 Mo du téléphone. */
+async function redimensionnerPhoto(fichier, cote) {
+  const img = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = () => rej(new Error('Image illisible'));
+    i.src = URL.createObjectURL(fichier);
+  });
+  const c = document.createElement('canvas');
+  c.width = c.height = cote;
+  const s = Math.min(img.width, img.height);
+  c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, cote, cote);
+  URL.revokeObjectURL(img.src);
+  return new Promise(res => c.toBlob(res, 'image/jpeg', .85));
+}
+
+async function envoyerPhoto(fichier) {
+  const blob = await redimensionnerPhoto(fichier, 256);
+  if (!blob) throw new Error('Image illisible');
+  let url;
+  if (MODE_DEMO) {
+    url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+  } else {
+    const chemin = moi.id + '.jpg';
+    const { error } = await sb.storage.from('avatars').upload(chemin, blob, { upsert: true, contentType: 'image/jpeg' });
+    if (error) throw error;
+    url = sb.storage.from('avatars').getPublicUrl(chemin).data.publicUrl + '?v=' + Date.now();
+  }
+  const r = await sb.rpc('ocr_changer_photo', { p_photo: url });
+  if (r.error) throw r.error;
+  moi.photo = url;
+  const em = equipe.find(x => x.id === moi.id); if (em) em.photo = url;
+  return url;
+}
+
 const JOURS_SEMAINE = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 const JOURS_COURTS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 const jourSemaineDe = d => new Date(d + 'T12:00').getDay();
@@ -2742,15 +2826,15 @@ function carteEquipe(pts, d) {
         : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(duree) : ' · présent');
       const moiMeme = e.id === moi.id;
       return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06);flex-wrap:wrap${enRepos || abs ? ';opacity:.65' : ''}">
-        <span style="min-width:0">
+        ${avatar(e, 40)}
+        <span style="min-width:0;flex:1 1 55%">
           <span style="font-weight:600;display:block">${esc(e.nom)}
             ${abs ? `<span class="ocr-pastille ocr-pastille--${MOTIFS_ABSENCE[abs.motif][1]}" style="margin-left:6px">${MOTIFS_ABSENCE[abs.motif][0]}</span>`
                   : enRepos ? '<span class="ocr-pastille ocr-pastille--neutre" style="margin-left:6px">Repos</span>' : ''}</span>
           <span class="ocr-mini">${esc(e.role)}${abs ? ' · ' + (abs.au ? 'jusqu’au ' + dateFr(abs.au) : 'jusqu’à son retour') :
             e.repos_jour != null ? ' · repos le ' + JOURS_SEMAINE[e.repos_jour] : ''}${statut ? ' · ' + statut : ''}</span>
         </span>
-        <span style="flex:1"></span>
-        <span style="display:flex;gap:6px">
+        <span style="display:flex;gap:6px;margin-left:auto">
           ${moiMeme && estAuj && (!p || !p.arrivee) ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pointer="arrivee">J’arrive</button>` : ''}
           ${moiMeme && estAuj && p && p.arrivee ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-pointer="depart">${p.depart ? 'Repartir' : 'Je pars'}</button>` : ''}
           ${peutCorriger() && !moiMeme ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-corriger="${e.id}">Corriger</button>` : ''}
@@ -2769,8 +2853,9 @@ function boitePlanning() {
       L’équipe du jour l’affiche automatiquement.</p>
     ${gens.map(e => `
       <div style="margin-bottom:var(--ocr-e4)">
-        <div style="font:600 14px/1.3 var(--ocr-texte);margin-bottom:7px">${esc(e.nom)}
-          <span class="ocr-mini" style="font-weight:400">· ${esc(e.role)}</span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">${avatar(e, 28)}
+          <span style="font:600 14px/1.3 var(--ocr-texte)">${esc(e.nom)}
+          <span class="ocr-mini" style="font-weight:400">· ${esc(e.role)}</span></span></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${JOURS_COURTS.map((c, j) => `<button class="ocr-chip" data-repos="${e.id}:${j}"
             aria-pressed="${e.repos_jour === j}" title="${JOURS_SEMAINE[j]}" style="min-width:40px">${c}</button>`).join('')}
@@ -3904,12 +3989,12 @@ async function vueBilan() {
         const minutes = pe.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
         const oublis = pe.filter(x => x.arrivee && !x.depart && x.jour < auj()).length;
         return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(244,244,245,.06)">
-          <span style="min-width:0">
+          ${avatar(e, 36)}
+          <span style="min-width:0;flex:1">
             <span style="font-weight:600;display:block">${esc(e.nom)} <span class="ocr-mini" style="font-weight:400">· ${esc(e.role)}</span></span>
             ${oublis ? '<span class="ocr-mini" style="color:var(--ocr-ambre)">⚠ ' + oublis + ' départ(s) non pointé(s)</span>' : ''}
           </span>
-          <span style="flex:1"></span>
-          <span style="text-align:right">
+          <span style="text-align:right;margin-left:auto">
             <span style="font-weight:600;font-variant-numeric:tabular-nums;display:block">${fmtDuree(minutes)}</span>
             <span class="ocr-mini">${joursP} jour(s) présent(s)</span>
           </span>
