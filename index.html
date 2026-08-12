@@ -408,8 +408,14 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 
 .appli{min-height:100dvh;display:flex;flex-direction:column}
 .barre{position:sticky;top:0;z-index:30;background:rgba(10,10,11,.92);backdrop-filter:blur(14px);
-  border-bottom:1px solid var(--ocr-filet);padding:var(--ocr-e3) var(--ocr-e4);
+  border-bottom:1px solid var(--ocr-filet);
+  padding:var(--ocr-e3) calc(var(--ocr-e4) + env(safe-area-inset-right)) var(--ocr-e3) calc(var(--ocr-e4) + env(safe-area-inset-left));
+  padding-top:calc(var(--ocr-e3) + env(safe-area-inset-top));
   display:flex;align-items:center;gap:var(--ocr-e3)}
+/* Épinglée sur l'écran d'accueil, l'app passe SOUS l'heure et la batterie de
+   l'iPhone (plein écran). La barre s'écarte de cette zone, sinon les boutons
+   du haut sont inatteignables. */
+#bandeau .bandeau:first-child{padding-top:calc(10px + env(safe-area-inset-top))}
 .barre{overflow:hidden}
 .barre>div:nth-child(2){min-width:0;overflow:hidden}
 .barre .qui{font-family:var(--ocr-titre);font-weight:500;font-size:14px;
@@ -422,10 +428,11 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 /* Le prénom de la personne connectée reste toujours visible : appareil partagé. */
 @media(max-width:479px){.barre>div:nth-child(2){min-width:58px}
   .barre .ic-barre{padding:8px 7px}}
-.corps{flex:1;padding:var(--ocr-e5) var(--ocr-e4) 110px;max-width:1100px;width:100%;margin:0 auto}
+.corps{flex:1;max-width:1100px;width:100%;margin:0 auto;
+  padding:var(--ocr-e5) calc(var(--ocr-e4) + env(safe-area-inset-right)) 110px calc(var(--ocr-e4) + env(safe-area-inset-left))}
 .onglets{position:fixed;bottom:0;left:0;right:0;z-index:40;display:flex;
   background:rgba(22,22,26,.96);backdrop-filter:blur(16px);border-top:1px solid var(--ocr-filet);
-  padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+  padding:6px calc(4px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left))}
 .onglet{flex:1;background:none;border:0;cursor:pointer;color:var(--ocr-argent-2);
   display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;
   font-family:var(--ocr-titre);font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
