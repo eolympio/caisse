@@ -1055,7 +1055,9 @@ function lireReference(ref) {
    ───────────────────────────────────────────────────────────── */
 const PLAQUE_VOITURE = /^[A-Z]{2}[0-9]{4}$/;
 const PLAQUE_MOTO    = /^[0-9][A-Z]{2}[0-9]{4}$/;
-const PLAQUE_EXEMPLES = { voiture: 'CB5916', moto: '2FB9408' };
+// Des MOTIFS, pas des plaques réelles : CB5916 (l'exemple d'origine) pouvait
+// être la plaque d'un vrai véhicule — l'afficher en exemple prêtait à confusion.
+const PLAQUE_EXEMPLES = { voiture: 'AB1234', moto: '1AB2345' };
 
 /** Forme canonique d'une plaque : majuscules, sans espace ni ponctuation. */
 function plaque(v) {
@@ -1550,6 +1552,13 @@ function creerClientDemo() {
       if (!ve) { ve = { id: uid(), client_id: cl.id, gabarit: a.p_gabarit, marque: a.p_marque, modele: a.p_modele, immatriculation: plaque || null }; D.vehicules.push(ve); }
       const brut = lignes.reduce((s, l) => s + l.prix, 0);
       const remise = Math.min(Math.max(0, a.p_remise || 0), brut);
+      // Comme en base : remise = motif obligatoire, sauf remise partenaire exacte.
+      if (remise > 0) {
+        const ent = cl.entreprise_id ? D.entreprises.find(e => e.id === cl.entreprise_id) : null;
+        const attendu = ent && ent.remise_pct > 0 ? Math.round(brut * ent.remise_pct / 100) : null;
+        if (remise !== attendu && !String(a.p_motif_remise || '').trim())
+          throw new Error('Une remise doit être justifiée — indique le motif');
+      }
       const id = uid(), r = ref();
       D.passages.push({ id, reference: r, journee: jourCourant, client_id: cl.id, vehicule_id: ve.id,
         gabarit: a.p_gabarit, heure_arrivee: new Date().toTimeString().slice(0, 8),
@@ -1727,7 +1736,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v29';
+const VERSION = 'v30';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -1865,6 +1874,30 @@ const fermerModale = () => {
   if (history.state && history.state.ocrModale) { retourInterne = true; history.back(); }
 };
 
+/* ---------- téléphone : le +229 est déjà tapé ----------
+   Tous les numéros du Bénin commencent pareil : le champ arrive pré-rempli
+   avec « +229 » et un numéro saisi sans indicatif le reçoit tout seul.
+   Un champ resté à « +229 » seul compte comme vide. */
+const INDICATIF = '+229 ';
+const telAffiche = v => (String(v || '').trim() ? String(v) : INDICATIF);
+function telPropre(v) {
+  let t = String(v || '').trim();
+  const chiffres = t.replace(/[^0-9]/g, '');
+  if (!chiffres || chiffres === '229') return '';
+  t = t.replace(/^(\+?229[\s.]*)+(?=\+?229)/, '');   // « +229 +229 01… » (collage) → un seul indicatif
+  if (/^229[\s.]/.test(t)) t = '+' + t;                 // « 229 01… » → « +229 01… »
+  if (!t.startsWith('+') && !t.startsWith('00')) t = INDICATIF + t;   // « 0197… » → « +229 0197… »
+  return t;
+}
+// Le curseur se place à la fin, prêt à taper le numéro.
+function brancherTel(el) {
+  if (!el) return;
+  el.addEventListener('focus', () => {
+    if (!el.value.trim()) el.value = INDICATIF;
+    requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+  });
+}
+
 /* Branche un champ d'immatriculation : mise en forme pendant la frappe
    (majuscules, sans espace ni tiret) en gardant le curseur là où il est.
    Une plaque doit toujours être stockée sous la MÊME forme — sinon « cb 5916 »
@@ -1911,9 +1944,14 @@ const API = {
     if (error) throw error;
     return data || [];
   },
+  // « entreprises!clients_entreprise_id_fkey » : il existe DEUX liens entre
+  // clients et entreprises (la prospection pointe vers une fiche client, le
+  // partenariat Ehu pointe vers une entreprise). Sans préciser lequel suivre,
+  // l'API refuse tout — c'était le « Client introuvable » du 12/08, et la
+  // reconnaissance par téléphone échouait en silence.
   async clientParTelephone(tel) {
     const { data } = await sb.from('clients')
-      .select('id,nom,telephone,entreprise_id,entreprises(nom,remise_pct)')
+      .select('id,nom,telephone,entreprise_id,entreprises!clients_entreprise_id_fkey(nom,remise_pct)')
       .eq('telephone', tel).maybeSingle();
     return data || null;
   },
@@ -1985,7 +2023,7 @@ const API = {
     const [cl, veh, pass, fid] = await Promise.all([
       // colonnes explicites : l'empreinte du code client n'a rien à faire ici
       sb.from('clients')
-        .select('id,nom,telephone,email,est_pro,societe,note,cree_le,entreprise_id,pin_pose_le, entreprises(nom,remise_pct)')
+        .select('id,nom,telephone,email,est_pro,societe,note,cree_le,entreprise_id,pin_pose_le,entreprises!clients_entreprise_id_fkey(nom,remise_pct)')
         .eq('id', id).maybeSingle(),
       sb.from('vehicules').select('*').eq('client_id', id),
       sb.from('passages').select('*, passage_lignes(*), vehicules(marque,modele,immatriculation)')
@@ -2772,7 +2810,8 @@ async function rendre(discret) {
    ========================================================================== */
 const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque: '', modele: '', immat: '',
                vehTrouve: null,   // véhicule retrouvé par sa plaque, pour rattacher le client
-               prestation: null, options: [], equipe: [], remise: 0, manuel: 0, note: '', reservation: null };
+               prestation: null, options: [], equipe: [], remise: 0, motifRemise: '', manuel: 0,
+               note: '', reservation: null };
 
 function totalForm() {
   let cat = 0, devis = 0;
@@ -2831,11 +2870,11 @@ async function vueSaisie(j) {
       <div class="ocr-carte">
         <div class="ocr-surtitre">1 · Client</div>
         <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Téléphone</span>
-          <input class="ocr-saisie" id="fTel" inputmode="tel" value="${esc(form.tel)}" placeholder="+229 01 XX XX XX">
+          <input class="ocr-saisie" id="fTel" inputmode="tel" value="${esc(telAffiche(form.tel))}">
           <span class="ocr-aide" id="aideTel">${form.clientTrouve ? '✓ Client connu : ' + esc(form.clientTrouve.nom) : 'Sert à la fidélité et au rappel de la veille.'}</span>
         </label>
         <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Nom</span>
-          <input class="ocr-saisie" id="fNom" value="${esc(form.nom)}" placeholder="Koffi Adjovi"></label>
+          <input class="ocr-saisie" id="fNom" value="${esc(form.nom)}"></label>
         ${form.clientTrouve && form.clientTrouve.entreprises && form.clientTrouve.entreprises.remise_pct > 0 ? `
         <div class="ocr-message ocr-message--succes" style="margin-top:var(--ocr-e4)"><span>🤝</span><div>
           <strong>Employé ${esc(form.clientTrouve.entreprises.nom)}</strong><br>
@@ -2857,9 +2896,9 @@ async function vueSaisie(j) {
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
           <label class="ocr-champ"><span class="ocr-label">Marque</span>
-            <input class="ocr-saisie" id="fMarque" value="${esc(form.marque)}" placeholder="Toyota"></label>
+            <input class="ocr-saisie" id="fMarque" value="${esc(form.marque)}"></label>
           <label class="ocr-champ"><span class="ocr-label">Modèle</span>
-            <input class="ocr-saisie" id="fModele" value="${esc(form.modele)}" placeholder="RAV4"></label>
+            <input class="ocr-saisie" id="fModele" value="${esc(form.modele)}"></label>
         </div>
         <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Immatriculation
             <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— conseillé</span></span>
@@ -2904,6 +2943,11 @@ async function vueSaisie(j) {
         <input class="ocr-saisie" id="fRemise" type="number" min="0" step="500" value="${form.remise || ''}"
                placeholder="${T.partenaire ? OCR.fcfa(T.remise) + ' auto (' + esc(T.partenaire.nom) + ')' : '0'}">
         ${T.partenaire ? `<span class="ocr-aide">Remise ${T.partenaire.remise_pct} % ${esc(T.partenaire.nom)} appliquée — remplis ce champ seulement pour la remplacer.</span>` : ''}</label>
+      ${Number(form.remise) > 0 ? `
+      <label class="ocr-champ"><span class="ocr-label" style="color:var(--ocr-rouge-texte)">Motif de la remise — obligatoire</span>
+        <input class="ocr-saisie" id="fMotifRemise" value="${esc(form.motifRemise || '')}"
+               placeholder="Geste commercial, reprise d’un défaut…">
+        <span class="ocr-aide">Toute remise manuelle est justifiée et inscrite au journal.</span></label>` : ''}
       <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Observation</span>
         <textarea class="ocr-saisie" id="fNote" rows="2" placeholder="Rayure signalée sur l’aile avant droite…">${esc(form.note)}</textarea></label>
 
@@ -2922,8 +2966,9 @@ async function vueSaisie(j) {
 
   // liaisons
   const maj = (k, v) => { form[k] = v; vueSaisie(j); };
+  brancherTel($('#fTel'));
   $('#fTel').addEventListener('change', async e => {
-    form.tel = e.target.value.trim();
+    form.tel = telPropre(e.target.value);
     form.clientTrouve = form.tel ? await API.clientParTelephone(form.tel) : null;
     if (form.clientTrouve && !form.nom) form.nom = form.clientTrouve.nom;
     form.vehsClient = form.clientTrouve ? await API.vehiculesDe(form.clientTrouve.id) : [];
@@ -2935,7 +2980,7 @@ async function vueSaisie(j) {
                           immat: OCR.plaque(v.immatriculation), vehTrouve: null });
     vueSaisie(j);
   }));
-  ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note'].forEach(p => {
+  ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note', 'fMotifRemise:motifRemise'].forEach(p => {
     const [id, k] = p.split(':');
     const el = $('#' + id); if (el) el.addEventListener('input', e => { form[k] = e.target.value; });
   });
@@ -3003,6 +3048,10 @@ async function enregistrer() {
   const T = totalForm();
   if (!form.prestation) return toast('Choisissez une prestation.', true);
   if (T.total <= 0) return toast('Le montant doit être supérieur à zéro.', true);
+  // Une remise manuelle sans motif, c'est la porte ouverte aux arrangements :
+  // le serveur la refuse aussi, ceci n'est que le message aimable.
+  if (Number(form.remise) > 0 && !String(form.motifRemise || '').trim())
+    return toast('Indique le motif de la remise — il est inscrit au journal.', true);
   if (!navigator.onLine) return toast('Hors ligne — impossible d’enregistrer.', true);
 
   const p = OCR.prestation(form.prestation);
@@ -3025,6 +3074,7 @@ async function enregistrer() {
       p_gabarit: form.gabarit,
       p_lignes: lignes,
       p_remise: T.remise,
+      p_motif_remise: Number(form.remise) > 0 ? String(form.motifRemise || '').trim() : null,
       p_marque: form.marque, p_modele: form.modele, p_immat: OCR.plaque(form.immat) || null,
       p_equipe: form.equipe, p_note: form.note,
       p_reservation: form.reservation,
@@ -3034,7 +3084,8 @@ async function enregistrer() {
     toast(r.reference + ' enregistré · ' + OCR.fcfa(r.montant_total));
     Object.assign(form, { tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
                           vehTrouve: null,
-                          prestation: null, options: [], remise: 0, manuel: 0, note: '', reservation: null });
+                          prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0,
+                          note: '', reservation: null });
     onglet = 'journee';
     await rendre();
   } catch (ex) {
@@ -3064,6 +3115,14 @@ const heureMaintenant = () => new Date().toTimeString().slice(0, 8);
 function ligneChrono(p) {
   const codeP = ((p.passage_lignes || []).find(l => l.type === 'prestation') || {}).code;
   const ref = codeP ? OCR.duree(codeP, p.gabarit) : null;
+  // Un véhicule qui traîne « à démarrer » = un chrono qui ne sera jamais bon :
+  // on le signale au bout de 15 min pour que le ▶ soit appuyé à temps.
+  if (p.statut_atelier === 'attente' && p.heure_arrivee) {
+    const attend = minutesEntre(p.heure_arrivee, heureMaintenant());
+    if (attend != null && attend > 15)
+      return `<span class="ocr-mini" style="color:var(--ocr-ambre)">⚠ à démarrer — arrivé il y a ${attend} min. Appuie sur ▶ dès que le lavage commence.</span>`;
+    return '';
+  }
   if (p.statut_atelier === 'en_cours' && p.heure_debut) {
     const depuis = minutesEntre(p.heure_debut, heureMaintenant());
     const retard = ref != null && depuis != null && depuis > ref * 1.25;
@@ -3333,6 +3392,25 @@ async function vueCloture(j) {
         <div class="val" style="${T.impaye ? 'color:var(--ocr-erreur)' : ''}">${OCR.fcfa(T.impaye || 0)}</div>
         <div class="sub">${T.impaye ? 'à régulariser' : 'RAS'}</div></div>
     </div>
+
+    ${(() => {
+      // Le chrono ne vaut que s'il est appuyé : au moment de la clôture, on
+      // liste ce qui a échappé aux trois boutons — pas bloquant, mais visible,
+      // pour que la discussion sur les temps parte de données complètes.
+      const vivants = ps.filter(p => !p.annule);
+      const pasLivres = vivants.filter(p => p.statut_atelier !== 'livre');
+      const sansChrono = vivants.filter(p => p.statut_atelier === 'livre' && (!p.heure_debut || !p.heure_fin));
+      if (!pasLivres.length && !sansChrono.length) return '';
+      const nomV = p => [(p.vehicules || {}).marque, (p.vehicules || {}).modele].filter(Boolean).join(' ')
+                     || (p.vehicules || {}).immatriculation || p.reference;
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(245,166,35,.42)">
+        <div class="ocr-surtitre">Chrono des lavages — à surveiller</div>
+        ${pasLivres.length ? `<p class="ocr-petit" style="margin:10px 0 0">🚗 <strong>${pasLivres.length} véhicule(s) pas encore livré(s)</strong> :
+          ${esc(pasLivres.map(nomV).join(', '))} — Commencer → Terminé → Livré avant de clôturer.</p>` : ''}
+        ${sansChrono.length ? `<p class="ocr-petit" style="margin:10px 0 0">⏱ <strong>${sansChrono.length} livré(s) sans chrono complet</strong> :
+          ${esc(sansChrono.map(nomV).join(', '))} — les boutons ▶ / ✓ n'ont pas été appuyés, ces lavages ne compteront pas dans les temps du Bilan.</p>` : ''}
+      </div>`;
+    })()}
 
     <div class="ocr-surtitre" style="margin-bottom:var(--ocr-e4)">Contrôles automatiques · ${anos.filter(a => !a.traitee).length} point(s) ouvert(s)</div>
     ${anos.length ? anos.map(a => `
@@ -4206,9 +4284,9 @@ async function vueAgenda() {
       <div class="ocr-surtitre">Nouveau rendez-vous</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:var(--ocr-e4)">
         <label class="ocr-champ"><span class="ocr-label">Téléphone *</span>
-          <input class="ocr-saisie" id="rTel" inputmode="tel" value="${esc(rdvForm.tel)}" placeholder="+229 01 XX XX XX"></label>
+          <input class="ocr-saisie" id="rTel" inputmode="tel" value="${esc(telAffiche(rdvForm.tel))}"></label>
         <label class="ocr-champ"><span class="ocr-label">Nom</span>
-          <input class="ocr-saisie" id="rNom" value="${esc(rdvForm.nom)}" placeholder="Koffi Adjovi"></label>
+          <input class="ocr-saisie" id="rNom" value="${esc(rdvForm.nom)}"></label>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
         ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-rgab="${g.id}" aria-pressed="${rdvForm.gabarit === g.id}">${esc(g.court)}</button>`).join('')}
@@ -4282,6 +4360,8 @@ async function vueAgenda() {
     const [id, k] = pair.split(':');
     const el = $('#' + id); if (el) el.addEventListener('input', e => { rdvForm[k] = e.target.value; });
   });
+  brancherTel($('#rTel'));
+  const rt = $('#rTel'); if (rt) rt.addEventListener('change', e => { rdvForm.tel = telPropre(e.target.value); });
   $('#vue').querySelectorAll('[data-rgab]').forEach(b => b.addEventListener('click', () => {
     rdvForm.gabarit = b.dataset.rgab; rdvForm.heure = ''; rendre();
   }));
@@ -4378,15 +4458,24 @@ const joursDepuis = d => d ? Math.round((new Date(auj() + 'T12:00') - new Date(d
 
 function ligneClientStats(c) {
   const jd = joursDepuis(c.dernier_passage);
+  const nom = c.nom || 'Sans nom';
+  const ini = nom.trim().split(/\s+/).map(m => m[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const coul = COULEURS_AVATAR[nom.length % COULEURS_AVATAR.length];
   return `
-    <button class="fiche" data-cli="${c.client_id || c.id}" style="display:block;width:100%;text-align:left;cursor:pointer">
-      <div class="ligne1">
-        <strong style="font:600 15px/1.2 var(--ocr-texte)">${esc(c.nom || 'Sans nom')}</strong>
-        <span style="flex:1"></span>
-        <span class="ocr-mini">${esc(c.telephone || 'Pas de numéro')}</span>
-      </div>
-      ${c.depense != null ? `<div class="ocr-mini" style="margin-top:5px">
-        ${c.passages || 0} passage(s) · ${OCR.fcfa(c.depense)}${jd != null ? ' · il y a ' + jd + ' j' : ''}</div>` : ''}
+    <button class="fiche" data-cli="${c.client_id || c.id}"
+      style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer">
+      <span style="width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;
+        background:${coul};color:#f4f4f5;font:700 15px/1 var(--ocr-titre)">${esc(ini)}</span>
+      <span style="min-width:0;flex:1">
+        <span style="font:600 15px/1.25 var(--ocr-texte);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nom)}</span>
+        <span class="ocr-mini" style="display:block;margin-top:2px">${esc(c.telephone || 'Pas de numéro')}${
+          jd != null ? ' · venu il y a ' + (jd === 0 ? 'moins d’un jour' : jd + ' j') : ''}</span>
+      </span>
+      ${c.depense != null ? `<span style="text-align:right;flex:none">
+        <span style="font:700 14px/1.2 var(--ocr-texte);font-variant-numeric:tabular-nums;display:block">${OCR.fcfa(c.depense)}</span>
+        <span class="ocr-mini">${c.passages || 0} passage${(c.passages || 0) > 1 ? 's' : ''}</span>
+      </span>` : ''}
+      <span style="color:var(--ocr-argent-2);flex:none">›</span>
     </button>`;
 }
 
@@ -4408,19 +4497,18 @@ async function vueClients() {
 
   $('#zoneCli').innerHTML = `
     <div class="ocr-carte">
-      <div class="ocr-surtitre">Rechercher un client</div>
-      <label class="ocr-champ" style="margin:var(--ocr-e4) 0 var(--ocr-e3)">
-        <span class="ocr-label">Nom, téléphone ou plaque</span>
-        <input class="ocr-saisie" id="qCli" value="${esc(rech.q)}" placeholder="Koffi, 97 45 12 30, 1234 AB…"
-               autocomplete="off" enterkeyhint="search">
-      </label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="position:relative">
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--ocr-argent-2);pointer-events:none">🔍</span>
+        <input class="ocr-saisie" id="qCli" value="${esc(rech.q)}" placeholder="Nom, numéro ou plaque…"
+               autocomplete="off" enterkeyhint="search" style="padding-left:42px">
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:var(--ocr-e3)">
         <button class="ocr-chip" data-rapide="relance" aria-pressed="${rech.rapide === 'relance'}">📣 À relancer (30 j+)</button>
         <button class="ocr-chip" data-rapide="meilleurs" aria-pressed="${rech.rapide === 'meilleurs'}">★ Meilleurs clients</button>
       </div>
     </div>
     ${cliNouveau ? formNouveauClient() : `
-    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="cliOuvrir" style="margin-top:var(--ocr-e4)">＋ Nouveau client</button>`}
+    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="cliOuvrir" style="margin-top:var(--ocr-e4)">＋ Nouveau client</button>`}
     <div id="resCli" style="margin-top:var(--ocr-e4)"></div>`;
 
   const bo = $('#cliOuvrir');
@@ -4485,9 +4573,9 @@ function formNouveauClient() {
     <div class="ocr-surtitre">Nouveau client</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:var(--ocr-e4)">
       <label class="ocr-champ"><span class="ocr-label">Nom *</span>
-        <input class="ocr-saisie" id="ncNom" value="${esc(d.nom || '')}" placeholder="Koffi Adjovi"></label>
+        <input class="ocr-saisie" id="ncNom" value="${esc(d.nom || '')}"></label>
       <label class="ocr-champ"><span class="ocr-label">Téléphone *</span>
-        <input class="ocr-saisie" id="ncTel" inputmode="tel" value="${esc(d.tel || '')}" placeholder="+229 01 XX XX XX"></label>
+        <input class="ocr-saisie" id="ncTel" inputmode="tel" value="${esc(telAffiche(d.tel))}"></label>
     </div>
     <div class="ocr-mini" style="margin:2px 0 8px;letter-spacing:.14em;text-transform:uppercase">Son véhicule</div>
     <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
@@ -4495,9 +4583,9 @@ function formNouveauClient() {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Marque</span>
-        <input class="ocr-saisie" id="ncMarque" value="${esc(d.marque || '')}" placeholder="Toyota"></label>
+        <input class="ocr-saisie" id="ncMarque" value="${esc(d.marque || '')}"></label>
       <label class="ocr-champ"><span class="ocr-label">Modèle</span>
-        <input class="ocr-saisie" id="ncModele" value="${esc(d.modele || '')}" placeholder="RAV4"></label>
+        <input class="ocr-saisie" id="ncModele" value="${esc(d.modele || '')}"></label>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Immatriculation</span>
@@ -4505,9 +4593,8 @@ function formNouveauClient() {
       <label class="ocr-champ"><span class="ocr-label">Note</span>
         <input class="ocr-saisie" id="ncNote" value="${esc(d.note || '')}" placeholder="De passage, en vacances…"></label>
     </div>
-    <div style="display:flex;gap:9px">
-      <button class="ocr-btn ocr-btn--fantome" id="ncFermer">Fermer</button>
-      <div style="flex:1"></div>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" id="ncFermer">Annuler</button>
       <button class="ocr-btn ocr-btn--primaire" id="ncCreer">Créer la fiche</button>
     </div>
   </div>`;
@@ -4516,12 +4603,13 @@ function formNouveauClient() {
 function brancherNouveauClient() {
   if (!cliNouveau) return;
   const lire = () => Object.assign(cliNouveau, {
-    nom: $('#ncNom').value, tel: $('#ncTel').value, marque: $('#ncMarque').value,
+    nom: $('#ncNom').value, tel: telPropre($('#ncTel').value), marque: $('#ncMarque').value,
     modele: $('#ncModele').value, immat: $('#ncImmat').value, note: $('#ncNote').value,
   });
   $('#zoneCli').querySelectorAll('[data-ncgab]').forEach(b => b.addEventListener('click', () => {
     lire(); cliNouveau.gabarit = b.dataset.ncgab; rendre();
   }));
+  brancherTel($('#ncTel'));
   brancherPlaque($('#ncImmat'), propre => { cliNouveau.immat = propre; });
   $('#ncFermer').addEventListener('click', () => { cliNouveau = null; rendre(); });
   $('#ncCreer').addEventListener('click', async e => {
@@ -4620,9 +4708,9 @@ function boiteAjoutVehicule(client) {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Marque</span>
-        <input class="ocr-saisie" id="avMarque" placeholder="Toyota"></label>
+        <input class="ocr-saisie" id="avMarque"></label>
       <label class="ocr-champ"><span class="ocr-label">Modèle</span>
-        <input class="ocr-saisie" id="avModele" placeholder="Hilux"></label>
+        <input class="ocr-saisie" id="avModele"></label>
     </div>
     <label class="ocr-champ"><span class="ocr-label">Immatriculation
         <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— conseillé</span></span>
@@ -4780,7 +4868,7 @@ function formEntreprise() {
       <label class="ocr-champ"><span class="ocr-label">Fonction</span>
         <input class="ocr-saisie" id="pRole" value="${esc(e.contact_role || '')}" placeholder="Directrice"></label>
       <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
-        <input class="ocr-saisie" id="pTel" inputmode="tel" value="${esc(e.telephone || '')}" placeholder="+229 01 XX XX XX"></label>
+        <input class="ocr-saisie" id="pTel" inputmode="tel" value="${esc(telAffiche(e.telephone))}"></label>
       <label class="ocr-champ"><span class="ocr-label">E-mail</span>
         <input class="ocr-saisie" id="pMail" type="email" value="${esc(e.email || '')}"></label>
     </div>
@@ -4810,7 +4898,7 @@ function brancherFormEntreprise(el) {
     nom: $('#pNom').value.trim(),
     contact_nom: $('#pContact').value.trim() || null,
     contact_role: $('#pRole').value.trim() || null,
-    telephone: $('#pTel').value.trim() || null,
+    telephone: telPropre($('#pTel').value) || null,
     email: $('#pMail').value.trim() || null,
     statut: proEdite.statut,
     flotte_estimee: Number($('#pFlotte').value) || null,
