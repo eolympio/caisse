@@ -1907,7 +1907,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v31';
+const VERSION = 'v32';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -2470,7 +2470,9 @@ function brancherRecuperation() {
         <input class="ocr-saisie" type="password" id="recNouveau" autocomplete="new-password"></label>
       <label class="ocr-champ"><span class="ocr-label">Confirme-le</span>
         <input class="ocr-saisie" type="password" id="recConfirme" autocomplete="new-password"></label>
-      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-ok>Enregistrer et entrer</button>`);
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-ok>Enregistrer et entrer</button>
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:8px">Plus tard</button>`);
+    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
     v.querySelector('[data-ok]').addEventListener('click', async e => {
       const m1 = v.querySelector('#recNouveau').value, m2 = v.querySelector('#recConfirme').value;
       if (m1.length < 8) return toast('8 caractères minimum.', true);
@@ -2517,7 +2519,11 @@ async function demarrer() {
 }
 
 const peutCloturer = () => moi && (moi.role === 'comptable' || moi.role === 'direction');
-const ongletParDefaut = () => peutCloturer() ? 'direction' : 'saisie';
+/* L'onglet « maison » de chacun : celui où le geste retour ramène, et celui
+   d'où l'on part. Un technicien n'a que Pointage — c'est donc SA maison, sinon
+   le geste retour l'envoyait sur un onglet qu'il n'a même pas. */
+const ongletParDefaut = () => peutCloturer() ? 'direction'
+  : roleEffectif() === 'technicien' ? 'pointage' : 'saisie';
 
 /* Rôle effectif : Abel (remplaçant) agit comme manager le jour de repos de
    Samuel — même règle que côté base (ocr_role_effectif). */
@@ -2912,14 +2918,50 @@ window.__ocrRafraichir = rafraichirSansDeranger;   // testable
 setInterval(rafraichirSansDeranger, 300000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) rafraichirSansDeranger(); });
 
+/* ---------- écrans secondaires : fiche client, formulaires ----------
+   Ils vivent DANS un onglet (ils remplacent son contenu) mais se comportent
+   comme une fenêtre pour le geste retour : on empile un cran d'historique
+   quand l'un s'ouvre, on le dépile quand il se referme. Un seul point de
+   synchronisation (appelé à la fin de chaque rendu) : impossible d'oublier
+   un cas parmi les quinze endroits qui ouvrent ou ferment ces écrans. */
+const sousEcranOuvert = () => !!(rech.fiche || cliNouveau || proEdite || rdvOuvert);
+let sousEcranEmpile = false;
+function majHistoriqueSousEcran() {
+  const ouvert = sousEcranOuvert();
+  if (ouvert && !sousEcranEmpile) { sousEcranEmpile = true; history.pushState({ ocrSous: true }, ''); }
+  else if (!ouvert && sousEcranEmpile) {
+    sousEcranEmpile = false;
+    if (history.state && history.state.ocrSous) { retourInterne = true; history.back(); }
+  }
+}
+function fermerSousEcrans() {   // le cran d'historique est dépilé au rendu suivant
+  rech.fiche = null; cliNouveau = null; proEdite = null; rdvOuvert = false;
+}
+
+/* Changer d'onglet en laissant UNE miette d'historique : le geste retour
+   ramène à l'onglet maison plutôt que de fermer l'app. Utilisé par la barre
+   du bas ET par les tuiles du panneau Direction (avant, partir de Direction
+   vers Bilan ou Pointage ne laissait aucune miette : le geste retour fermait
+   l'app — retour du 12/08 « on ne peut pas être bloqué à des endroits »). */
+function allerOnglet(id) {
+  if (id === onglet) return;
+  const maison = ongletParDefaut();
+  if (id === maison && history.state && history.state.ocrOnglet) { retourInterne = true; history.back(); }
+  else if (onglet === maison) history.pushState({ ocrOnglet: true }, '');
+  onglet = id; rendre(); window.scrollTo(0, 0);
+}
+
 /* ---------- geste retour (Android) : ne ferme jamais l'app par surprise ----------
    Priorité 1 : une fenêtre ouverte (modale) — le retour la referme.
-   Priorité 2 : un onglet secondaire — le retour ramène à l'onglet de départ.
+   Priorité 2 : un écran secondaire (fiche client, formulaire) — le retour le referme.
+   Priorité 3 : un onglet secondaire — le retour ramène à l'onglet maison.
    Sinon, le geste agit normalement (l'app passe en arrière-plan). */
 window.addEventListener('popstate', () => {
   if (retourInterne) { retourInterne = false; return; }   // c'était nous, pas un vrai geste retour
   const m = $('#modales .voile:last-child');
   if (m) { m.remove(); return; }
+  // le cran vient d'être dépilé par le navigateur : on ne le redépile pas
+  if (moi && sousEcranOuvert()) { sousEcranEmpile = false; fermerSousEcrans(); rendre(); return; }
   if (moi && onglet !== ongletParDefaut()) { onglet = ongletParDefaut(); rendre(); }
 });
 
@@ -2966,7 +3008,11 @@ async function rendre(discret) {
   }
 
   $('#onglets').innerHTML = items.map(i => {
-    const actif = i.id === onglet || (i.id === 'direction' && sousDirection.includes(onglet) && onglet !== 'pointage');
+    // Un écran ouvert depuis le panneau Direction (Bilan, Clôture, Journal,
+    // Pointage…) garde l'onglet Direction allumé : on sait toujours où on est.
+    // (Avant, Pointage était exclu : plus aucun onglet n'était allumé.)
+    const actif = i.id === onglet ||
+      (i.id === 'direction' && sousDirection.includes(onglet) && !items.some(x => x.id === onglet));
     // Les pointages qui attendent le réseau : un chiffre sur l'onglet, pour
     // qu'on n'ait jamais à se demander si c'est bien parti.
     const enAttente = i.id === 'pointage' ? filePointage.length : 0;
@@ -2978,10 +3024,14 @@ async function rendre(discret) {
   }).join('');
   $('#onglets').querySelectorAll('[data-onglet]').forEach(b =>
     b.addEventListener('click', () => {
-      // Un seul cran d'historique quand on quitte l'onglet de départ : le
-      // geste retour d'Android y ramène plutôt que de fermer l'app.
-      if (b.dataset.onglet !== onglet && onglet === ongletParDefaut()) history.pushState({ ocrOnglet: true }, '');
-      onglet = b.dataset.onglet; rendre();
+      // Toucher un onglet referme d'abord l'écran secondaire éventuel : son
+      // cran d'historique est dépilé par le rendu, on n'en empile pas d'autre.
+      if (sousEcranOuvert()) {
+        fermerSousEcrans();
+        onglet = b.dataset.onglet; rendre(); window.scrollTo(0, 0); return;
+      }
+      if (b.dataset.onglet === onglet) { rendre(); return; }
+      allerOnglet(b.dataset.onglet);
     }));
 
   if (!discret) $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
@@ -2996,9 +3046,16 @@ async function rendre(discret) {
     if (onglet === 'journal')   await vueJournal();
     if (onglet === 'pointage')  await vuePointage();
   } catch (ex) {
+    // Jamais d'écran mort : même quand le chargement échoue, il y a un bouton
+    // pour réessayer (et les onglets du bas restent utilisables).
     $('#vue').innerHTML = '<div class="ocr-message ocr-message--erreur"><span>⛔</span><div>' +
-      '<strong>Impossible de charger</strong><br>' + esc(ex.message) + '</div></div>';
+      '<strong>Impossible de charger</strong><br>' + esc(ex.message) +
+      '<br><button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" id="btnReessayer" style="margin-top:9px">↻ Réessayer</button>' +
+      '</div></div>';
+    const br = $('#btnReessayer');
+    if (br) br.addEventListener('click', () => rendre());
   }
+  majHistoriqueSousEcran();
   if (discret) window.scrollTo(0, yAvant);
 }
 
@@ -3051,8 +3108,14 @@ function aideImmat() {
 
 async function vueSaisie(j) {
   if (j.statut !== 'ouverte') {
+    // Écran d'impasse à l'origine (rien à faire, aucun bouton) : on propose
+    // maintenant la sortie évidente — aller voir la journée qui vient d'être clôturée.
     $('#vue').innerHTML = '<div class="ocr-message ocr-message--succes"><span>🔒</span><div>' +
-      '<strong>Journée clôturée</strong><br>Plus aucune saisie n’est possible aujourd’hui.</div></div>';
+      '<strong>Journée clôturée</strong><br>Plus aucune saisie n’est possible aujourd’hui.' +
+      '<br><button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" id="btnVersJournee" style="margin-top:9px">Voir la journée ›</button>' +
+      '</div></div>';
+    const bj = $('#btnVersJournee');
+    if (bj) bj.addEventListener('click', () => allerOnglet('journee'));
     return;
   }
   const T = totalForm();
@@ -4203,7 +4266,13 @@ async function vuePointage() {
   const oublis = mes.filter(x => x.arrivee && !x.depart && x.jour < auj()).length;
   const mesEnFile = fileDe(moi.id, auj());
 
+  // Direction et comptabilité arrivent ici par une tuile du panneau Direction :
+  // Pointage n'est PAS un de leurs onglets du bas, il leur faut donc un retour
+  // explicite (sinon plus rien n'indique où l'on est — retour du 12/08).
+  const retour = peutCloturer() && roleEffectif() !== 'manager';
+
   $('#vue').innerHTML = `
+    ${retour ? retourDirection() : ''}
     ${filePointage.length ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>📶</span><div>
       <strong>${filePointage.length} pointage${filePointage.length > 1 ? 's' : ''} en attente de réseau</strong><br>
       Ils sont enregistrés dans ce téléphone avec leur heure exacte et partiront tout seuls
@@ -4277,6 +4346,7 @@ async function vuePointage() {
     </div>` : ''}`;
 
   brancherGestesPointage();
+  if (retour) brancherRetourDirection();
 }
 
 /* La carte du manager : toute l'équipe, chacun avec ses boutons. Pointer pour
@@ -4889,6 +4959,9 @@ function ligneClientStats(c) {
 }
 
 async function vueClients() {
+  // vueClients() est parfois appelée seule (sans passer par rendre()) : on
+  // resynchronise l'historique ici aussi, pour que le geste retour reste juste.
+  setTimeout(majHistoriqueSousEcran, 0);
   if (rech.fiche) return vueFicheClient();
 
   $('#vue').innerHTML = `
@@ -5780,7 +5853,7 @@ const retourDirection = () => `<button class="ocr-btn ocr-btn--fantome ocr-btn--
   style="margin-bottom:var(--ocr-e4)">‹ Direction</button>`;
 function brancherRetourDirection() {
   const b = $('#btnRetourDir');
-  if (b) b.addEventListener('click', () => { onglet = 'direction'; rendre(); });
+  if (b) b.addEventListener('click', () => allerOnglet('direction'));
 }
 
 async function vueDirection() {
@@ -5938,10 +6011,9 @@ async function vueDirection() {
   if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
   $('#vue').querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.dir;
-    if (id === 'bilan' || id === 'cloture' || id === 'journal' || id === 'pointage') {
-      onglet = id; rendre(); window.scrollTo(0, 0); return; }
+    if (id === 'bilan' || id === 'cloture' || id === 'journal' || id === 'pointage') return allerOnglet(id);
     if (id === 'objectifs') { const obj = await API.objectifs().catch(() => null); if (obj) boiteObjectifs(obj); return; }
-    if (id === 'baies') { onglet = 'agenda'; rendre(); window.scrollTo(0, 0); return; }
+    if (id === 'baies') return allerOnglet('agenda');
     if (id === 'absences') return boiteAbsences();
     if (id === 'repos') return boitePlanning();
     if (id === 'compte') return boiteCompte();
