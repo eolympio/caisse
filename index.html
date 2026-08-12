@@ -1739,7 +1739,12 @@ let promptInstall = null;
 const estInstallee = () => navigator.standalone === true ||
   (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 const surIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-const installDispo = () => !estInstallee() && (promptInstall !== null || surIOS);
+const surAndroid = /Android/.test(navigator.userAgent);
+const surChrome = /Chrome|Chromium|CriOS|Edg/.test(navigator.userAgent);
+/* Le bouton reste visible tant que l'app n'est pas installée, même si le
+   navigateur ne nous a pas (encore) envoyé son invite : sinon un détail côté
+   serveur suffit à le faire disparaître sans un mot. */
+const installDispo = () => !estInstallee();
 function majBoutonsInstall() {
   document.querySelectorAll('[data-installer]').forEach(b =>
     b.classList.toggle('masque', !installDispo()));
@@ -1758,7 +1763,32 @@ async function installerApp() {
     return;
   }
   if (surIOS) return boiteInstallIOS();
-  toast('Menu du navigateur → « Installer l’application »');
+  return boiteInstallManuel();
+}
+
+/* Le chemin d'installation, adapté au navigateur, quand on ne peut pas
+   déclencher l'invite nous-mêmes. */
+function boiteInstallManuel() {
+  const etape = n => `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:grid;
+    place-items:center;background:var(--ocr-rouge);color:#fff;font:700 13px/1 var(--ocr-texte)">${n}</span>`;
+  const etapes = surAndroid
+    ? ['Touche le menu <strong>⋮</strong> en haut à droite',
+       'Choisis <strong>« Installer l’application »</strong> (ou <strong>« Ajouter à l’écran d’accueil »</strong>)']
+    : surChrome
+    ? ['Dans la barre d’adresse, clique sur l’icône <strong>⊕</strong> — « Installer »',
+       'Sinon : menu <strong>⋮</strong> → <strong>Installer OCR Brillance — Atelier</strong>']
+    : ['Ouvre cette page dans <strong>Chrome</strong> (ou <strong>Safari</strong> sur iPhone)',
+       'Puis menu du navigateur → <strong>Installer l’application</strong>'];
+  const v = modale(`
+    <h3 class="ocr-h2">Installer l’application</h3>
+    <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">En deux gestes :</p>
+    ${etapes.map((t, i) => `
+      <div style="display:flex;gap:12px;align-items:center;padding:10px 0${i === 0 ? ';border-bottom:1px solid var(--ocr-sep)' : ''}">
+        ${etape(i + 1)}<span class="ocr-petit">${t}</span></div>`).join('')}
+    <p class="ocr-mini" style="margin:var(--ocr-e4) 0 0">Tu ne vois pas cette option ? Elle est peut-être déjà
+      installée sur cet appareil — vérifie ton écran d’accueil.</p>
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" style="margin-top:var(--ocr-e4)" data-fermer>Compris</button>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
 }
 function boiteInstallIOS() {
   const etape = n => `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:grid;
