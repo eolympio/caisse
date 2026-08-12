@@ -428,9 +428,12 @@ body{padding-bottom:env(safe-area-inset-bottom)}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .barre .role{font:var(--ocr-t-mini);color:var(--ocr-argent-2);text-transform:uppercase;letter-spacing:.12em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#etatJour{flex:none;font-size:10px;padding:3px 9px}
-@media(max-width:430px){#etatJour{font-size:9px;padding:3px 7px;letter-spacing:.04em}
-  .barre #btnSortie{padding:8px 10px;font-size:11px}}
+#etatJour{flex:none;font-size:10px;padding:3px 9px;white-space:nowrap}
+/* Les boutons de droite ne rétrécissent jamais : mieux vaut effacer la
+   pastille de statut que de couper un bouton en deux (bug du 12/08). */
+.barre #btnRafraichir,.barre #btnSecu,.barre #btnReglages{flex:none}
+@media(max-width:430px){#etatJour{font-size:9px;padding:3px 7px;letter-spacing:.04em}}
+@media(max-width:374px){#etatJour{display:none}}
 /* Le prénom de la personne connectée reste toujours visible : appareil partagé. */
 @media(max-width:479px){.barre>div:nth-child(2){min-width:58px}
   .barre .ic-barre{padding:8px 7px}}
@@ -580,7 +583,6 @@ body.texte-tresgrand{zoom:1.2}
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit ic-barre" id="btnRafraichir" title="Rafraîchir" aria-label="Rafraîchir"><span id="icRafraichir">↻</span></button>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit masque" id="btnSecu" title="Double sécurité" aria-label="Double sécurité">🛡</button>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit ic-barre" id="btnReglages" title="Réglages" aria-label="Réglages">⚙</button>
-    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnSortie">Quitter</button>
   </header>
   <main class="corps" id="vue"></main>
   <nav class="onglets" id="onglets"></nav>
@@ -1616,7 +1618,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v25';
+const VERSION = 'v26';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -1704,11 +1706,25 @@ function modale(html) {
   const v = document.createElement('div');
   v.className = 'voile';
   v.innerHTML = '<div class="boite">' + html + '</div>';
-  v.addEventListener('click', e => { if (e.target === v) v.remove(); });
+  v.addEventListener('click', e => { if (e.target === v) fermerModale(); });
   $('#modales').appendChild(v);
+  // Empile un cran d'historique : le geste/bouton retour d'Android referme
+  // cette fenêtre au lieu de fermer l'app (bug remonté le 12/08).
+  history.pushState({ ocrModale: true }, '');
   return v;
 }
-const fermerModale = () => { const m = $('#modales .voile:last-child'); if (m) m.remove(); };
+// true pendant qu'on dépile NOUS-MÊMES l'entrée d'une fenêtre qu'on vient de
+// fermer par un bouton (Fermer, Enregistrer…) : le popstate qui en résulte ne
+// doit rien faire d'autre, sinon il rejoue aussi la logique du vrai geste
+// retour (et peut renvoyer sur l'onglet par défaut en pleine action — bug vu
+// en testant la liaison Ehu Motors le 12/08).
+let retourInterne = false;
+const fermerModale = () => {
+  const m = $('#modales .voile:last-child');
+  if (!m) return;
+  m.remove();
+  if (history.state && history.state.ocrModale) { retourInterne = true; history.back(); }
+};
 
 function bandeau() {
   let h = '';
@@ -2061,12 +2077,15 @@ function brancherRecuperation() {
   });
 }
 
-$('#btnSortie').addEventListener('click', async () => {
+/* Déconnexion — vit désormais dans Réglages (⚙), plus comme bouton de l'en-tête :
+   ça libère la barre du haut et « se déconnecter » se comprend mieux qu'un
+   « Quitter » qui donnait l'impression de fermer l'app elle-même. */
+async function seDeconnecter() {
   await sb.auth.signOut();
   moi = null;
   $('#appli').classList.add('masque');
   $('#connexion').classList.remove('masque');
-});
+}
 
 async function demarrer() {
   moi = await API.monEmploye();
@@ -2088,6 +2107,7 @@ async function demarrer() {
 }
 
 const peutCloturer = () => moi && (moi.role === 'comptable' || moi.role === 'direction');
+const ongletParDefaut = () => peutCloturer() ? 'direction' : 'saisie';
 
 /* Rôle effectif : Abel (remplaçant) agit comme manager le jour de repos de
    Samuel — même règle que côté base (ocr_role_effectif). */
@@ -2221,8 +2241,8 @@ function boiteReglages() {
 
     <div class="ocr-surtitre">Données</div>
     <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-sync style="margin-top:var(--ocr-e3)">↻ Rafraîchir maintenant</button>
-    <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">L’écran se met déjà à jour tout seul toutes les minutes —
-      ce bouton force une synchronisation immédiate.</p>
+    <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">L’écran se met déjà à jour tout seul de temps en temps, sans
+      te déranger — ce bouton force une synchronisation immédiate.</p>
 
     <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-compte>👤 Mon compte (mot de passe, photo${ROLES_2FA.includes(moi && moi.role) ? ', double sécurité' : ''})</button>
 
@@ -2234,7 +2254,8 @@ function boiteReglages() {
         <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc${installDispo() ? '' : ' masque'}" data-installer>
           📲 Installer sur cet appareil</button>`}
 
-    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-deconnexion style="margin-top:var(--ocr-e5);color:var(--ocr-argent-2)">↪ Se déconnecter</button>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:8px">Fermer</button>
     <p class="ocr-mini" style="text-align:center;margin:10px 0 0">OCR Brillance — Atelier ${VERSION}${
       estInstallee() ? ' · installée' : ''} · ${esc((moi && moi.nom) || '')}</p>`);
 
@@ -2251,6 +2272,7 @@ function boiteReglages() {
     catch (ex) { toast('Impossible de rafraîchir — vérifie la connexion.', true); e.target.disabled = false; }
   });
   v.querySelector('[data-compte]').addEventListener('click', () => { fermerModale(); boiteCompte(); });
+  v.querySelector('[data-deconnexion]').addEventListener('click', () => { fermerModale(); seDeconnecter(); });
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
 }
 
@@ -2452,23 +2474,46 @@ $('#btnRafraichir').addEventListener('click', async () => {
 chargerPrefs();   // le thème s'applique dès l'écran de connexion
 
 /* ---------- fraîcheur : l'écran se met à jour tout seul ----------
-   Toutes les 60 s (et au retour sur l'app), la vue se recharge depuis la
-   base — sauf si quelqu'un est en train de taper ou qu'une fenêtre est
-   ouverte : on ne coupe jamais une saisie en cours. */
+   Toutes les 5 min (et au retour sur l'app, avec un léger garde-fou pour ne
+   pas doubler un rafraîchissement tout juste fait), la vue se recharge
+   depuis la base — sauf si quelqu'un est en train de taper ou qu'une fenêtre
+   est ouverte : on ne coupe jamais une saisie en cours. Avant c'était toutes
+   les 60 s avec un plein remplacement de l'écran (spinner + saut de défilement) —
+   trop fréquent et « désagréable » (retour du 12/08). Le rafraîchissement
+   automatique est maintenant discret (pas de spinner, position de défilement
+   conservée) ; le bouton ↻ reste là pour un besoin immédiat. */
+let dernierRafraichissement = 0;
 function rafraichirSansDeranger() {
   if (!moi || document.hidden || enCours) return;
   const a = document.activeElement;
   if (a && ['INPUT', 'TEXTAREA', 'SELECT'].includes(a.tagName)) return;
   if ($('#modales').children.length) return;
   if (rdvOuvert || proEdite || cliNouveau) return;
-  rendre();
+  if (Date.now() - dernierRafraichissement < 20000) return;   // pas deux fois de suite
+  dernierRafraichissement = Date.now();
+  rendre(true);
 }
 window.__ocrRafraichir = rafraichirSansDeranger;   // testable
-setInterval(rafraichirSansDeranger, 60000);
+setInterval(rafraichirSansDeranger, 300000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) rafraichirSansDeranger(); });
 
+/* ---------- geste retour (Android) : ne ferme jamais l'app par surprise ----------
+   Priorité 1 : une fenêtre ouverte (modale) — le retour la referme.
+   Priorité 2 : un onglet secondaire — le retour ramène à l'onglet de départ.
+   Sinon, le geste agit normalement (l'app passe en arrière-plan). */
+window.addEventListener('popstate', () => {
+  if (retourInterne) { retourInterne = false; return; }   // c'était nous, pas un vrai geste retour
+  const m = $('#modales .voile:last-child');
+  if (m) { m.remove(); return; }
+  if (moi && onglet !== ongletParDefaut()) { onglet = ongletParDefaut(); rendre(); }
+});
+
 /* ---------- navigation ---------- */
-async function rendre() {
+async function rendre(discret) {
+  // discret = rafraîchissement automatique en arrière-plan : pas de spinner
+  // plein-écran, position de défilement conservée — pour ne plus « sauter »
+  // sous les yeux de quelqu'un en train de lire l'écran (retour du 12/08).
+  const yAvant = discret ? window.scrollY : 0;
   try { ABSENCES = await API.absencesJour(auj()); } catch (e) { ABSENCES = []; }
   const jAuj = await API.journee(auj());
   const jVu = jourVu === auj() ? jAuj : await API.journee(jourVu);
@@ -2510,9 +2555,14 @@ async function rendre() {
     '</span>' + i.l + '</button>';
   }).join('');
   $('#onglets').querySelectorAll('[data-onglet]').forEach(b =>
-    b.addEventListener('click', () => { onglet = b.dataset.onglet; rendre(); }));
+    b.addEventListener('click', () => {
+      // Un seul cran d'historique quand on quitte l'onglet de départ : le
+      // geste retour d'Android y ramène plutôt que de fermer l'app.
+      if (b.dataset.onglet !== onglet && onglet === ongletParDefaut()) history.pushState({ ocrOnglet: true }, '');
+      onglet = b.dataset.onglet; rendre();
+    }));
 
-  $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+  if (!discret) $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
   try {
     if (onglet === 'saisie')    await vueSaisie(jAuj);
     if (onglet === 'journee')   await vueJournee(jVu);
@@ -2527,6 +2577,7 @@ async function rendre() {
     $('#vue').innerHTML = '<div class="ocr-message ocr-message--erreur"><span>⛔</span><div>' +
       '<strong>Impossible de charger</strong><br>' + esc(ex.message) + '</div></div>';
   }
+  if (discret) window.scrollTo(0, yAvant);
 }
 
 /* ==========================================================================
