@@ -428,6 +428,102 @@ body{padding-bottom:env(safe-area-inset-bottom)}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .barre .role{font:var(--ocr-t-mini);color:var(--ocr-argent-2);text-transform:uppercase;letter-spacing:.12em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Les filtres tiennent sur une ligne qui défile latéralement plutôt que de
+   se replier sur trois rangs et repousser la liste hors de l'écran. */
+.rangee-filtres{display:flex;gap:8px;margin-top:var(--ocr-e3);overflow-x:auto;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px;
+  /* le dernier chip s'estompe au bord : on voit qu'il y en a d'autres à droite */
+  mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);
+  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+.rangee-filtres::-webkit-scrollbar{display:none}
+.rangee-filtres .ocr-chip{flex:none;white-space:nowrap}
+
+/* ---- Ligne de la liste clients ---- */
+.ligne-cli{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer}
+.ligne-cli .av{width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;
+  color:#f4f4f5;font:700 15px/1 var(--ocr-titre)}
+.ligne-cli .mid{min-width:0;flex:1}
+.ligne-cli .nom{font:600 15px/1.25 var(--ocr-texte);color:var(--ocr-blanc);display:block;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ligne-cli .det{display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ligne-cli .dr{text-align:right;flex:none}
+.ligne-cli .mt{font:700 14px/1.2 var(--ocr-texte);font-variant-numeric:tabular-nums;display:block;color:var(--ocr-blanc)}
+.ligne-cli .ch{color:var(--ocr-argent-2);flex:none}
+@media(max-width:379px){.ligne-cli .dr{display:none}}
+
+/* ---- La bande de la semaine ---- */
+.bande-sem{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:var(--ocr-e4)}
+.bande-sem .js{background:var(--ocr-surface);border:1px solid var(--ocr-filet);border-radius:10px;
+  padding:7px 2px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:1px;
+  color:var(--ocr-argent);min-height:56px}
+.bande-sem .js-l{font:var(--ocr-t-mini);text-transform:uppercase;letter-spacing:.06em}
+.bande-sem .js-n{font:700 16px/1 var(--ocr-titre);color:var(--ocr-blanc);font-variant-numeric:tabular-nums}
+.bande-sem .js-p{font:var(--ocr-t-mini);color:var(--ocr-argent-2);min-height:12px}
+.bande-sem .js.auj .js-n{color:var(--ocr-rouge-texte)}
+.bande-sem .js.sel{background:var(--ocr-rouge);border-color:var(--ocr-rouge)}
+.bande-sem .js.sel .js-l,.bande-sem .js.sel .js-n,.bande-sem .js.sel .js-p{color:#fff}
+
+/* ---- La frise de l'agenda ---- */
+.legende-lav{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 var(--ocr-e4) var(--ocr-e5);
+  font:var(--ocr-t-mini);color:var(--ocr-argent-2)}
+.legende-lav span{display:flex;align-items:center;gap:6px}
+.legende-lav i{width:10px;height:10px;border-radius:3px;flex:none}
+/* La journée fait 12 heures : à l'échelle, c'est plus d'un écran, et l'essentiel
+   serait noyé dans le vide. La frise défile donc DANS sa carte, et on l'amène
+   d'emblée sur le premier rendez-vous (ou sur l'heure courante). */
+.frise-boite{max-height:min(62vh, 560px);overflow-y:auto;overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch}
+.frise{position:relative;margin-left:46px}
+.fh{position:absolute;left:0;right:0;height:0}
+.fh-lab{position:absolute;right:calc(100% + 8px);top:-7px;font:var(--ocr-t-mini);
+  color:var(--ocr-argent-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.fh-trait{position:absolute;left:0;right:0;top:0;border-top:1px solid var(--ocr-sep)}
+/* L'heure courante : un repère discret, pas un élément de plus à déchiffrer. */
+.fh-now{position:absolute;left:0;right:0;height:0;z-index:3}
+.fh-now span{position:absolute;left:-4px;right:0;top:-1px;border-top:2px solid var(--ocr-rouge);
+  opacity:.75}
+.fh-now span::before{content:'';position:absolute;left:-4px;top:-4px;width:7px;height:7px;
+  border-radius:50%;background:var(--ocr-rouge)}
+.fz{position:absolute;inset:0}
+.frise-vide{position:absolute;left:0;right:0;top:38%;text-align:center;
+  font:var(--ocr-t-petit);color:var(--ocr-argent-2);padding:0 var(--ocr-e4)}
+.bloc{position:absolute;overflow:hidden;text-align:left;cursor:pointer;z-index:2;
+  border:0;border-left:4px solid var(--lav);border-radius:8px;
+  background:color-mix(in srgb, var(--lav) 20%, var(--ocr-surface));
+  padding:6px 8px;display:flex;flex-direction:column;gap:1px;
+  transition:filter .15s ease}
+.bloc:hover{filter:brightness(1.18)}
+.bloc.grp-rapide{--lav:var(--lav-rapide)}
+.bloc.grp-signature{--lav:var(--lav-signature)}
+.bloc.grp-longue{--lav:var(--lav-longue)}
+/* Avance non reçue : trait de gauche interrompu, et la mention est écrite dans
+   le bloc. (Des rayures diagonales avaient été essayées : elles passaient
+   derrière le texte et le rendaient illisible.) */
+.bloc.attente{border-left-style:dashed;
+  background:color-mix(in srgb, var(--lav) 11%, var(--ocr-surface))}
+.bloc.passe{opacity:.5}
+.bl-h{font:700 12px/1.1 var(--ocr-texte);color:var(--ocr-blanc);font-variant-numeric:tabular-nums;
+  display:flex;gap:6px;align-items:baseline}
+.bloc.plate{justify-content:center;padding:4px 8px}
+.bloc.plate .bl-h{min-width:0}
+.bloc.plate .bl-n{flex:1;min-width:0}
+.bloc.plate .bl-d{margin-left:auto;flex:none}
+.bl-d{font:var(--ocr-t-mini);color:var(--ocr-argent-2);font-weight:400}
+.bl-n{font:600 12.5px/1.2 var(--ocr-texte);color:var(--ocr-blanc);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bl-s,.bl-p{font:var(--ocr-t-mini);color:var(--ocr-argent-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(min-width:700px){
+  .bl-h{font-size:13px}.bl-n{font-size:14px}
+}
+
+/* ---- Couleurs des types de lavage (agenda) ----
+   Trois teintes, validées ensemble : écart suffisant pour tous les yeux, y
+   compris daltoniens, et contraste ≥ 3:1 sur la carte, dans les deux thèmes.
+   Les pas sombres et clairs sont CHOISIS, pas calculés depuis l'autre. */
+.ocr{--lav-rapide:#3987e5;--lav-signature:#d95926;--lav-longue:#199e70}
+.ocr.theme-clair{--lav-rapide:#2a78d6;--lav-signature:#eb6834;--lav-longue:#1baf7a}
+
 /* Une plaque se lit caractère par caractère : chiffres à largeur fixe,
    majuscules, un peu d'air entre les signes. */
 .ocr-saisie.plaque{text-transform:uppercase;letter-spacing:.1em;
@@ -1037,6 +1133,28 @@ function lireReference(ref) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   GROUPES DE LAVAGE — pour la couleur dans l'agenda
+
+   L'agenda doit se lire d'un coup d'œil : on regroupe donc les
+   prestations par ENGAGEMENT (le temps et le matériel que ça demande),
+   pas une couleur par prestation. Trois groupes, parce que trois teintes
+   sont le maximum qui reste distinguable pour tout le monde — y compris
+   en cas de daltonisme — quand n'importe quels deux blocs peuvent se
+   retrouver côte à côte. Le nom exact du lavage est écrit dans le bloc :
+   la couleur situe, le texte identifie.
+   ───────────────────────────────────────────────────────────── */
+const GROUPES_LAVAGE = {
+  rapide:    { nom: 'Rapide',    ex: 'Express' },
+  signature: { nom: 'Signature', ex: 'Signature' },
+  longue:    { nom: 'Longue',    ex: 'Deep Cleaning, packs, sur devis' },
+};
+function groupeLavage(prestationId) {
+  if (/express/.test(prestationId || '')) return 'rapide';
+  if (/signature/.test(prestationId || '')) return 'signature';
+  return 'longue';   // deep, packs, moteur, polissage, céramique
+}
+
+/* ─────────────────────────────────────────────────────────────
    IMMATRICULATION (Bénin)
    Voiture : 2 lettres + 4 chiffres              — CB5916
    Moto    : 1 chiffre + 2 lettres + 4 chiffres  — 2FB9408
@@ -1103,6 +1221,7 @@ const API = {
   recetteMensuelleCarnet, heuresCarnet, porteursPourCouvrir,
   reference, lireReference, lienWhatsApp,
   plaque, plaqueEtat, PLAQUE_EXEMPLES,
+  GROUPES_LAVAGE, groupeLavage,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
@@ -1350,15 +1469,26 @@ function creerClientDemo() {
     return Object.values(g);
   };
 
+  // Mêmes colonnes que la vue v_clients_stats enrichie, badges compris.
   const clientsStats = () => {
     const fid = fidelite();
     return D.clients.map(c => {
       const ps = D.passages.filter(p => p.client_id === c.id && !p.annule);
       const x = fid.find(y => y.client_id === c.id);
+      const vs = D.vehicules.filter(v => v.client_id === c.id);
+      const dernier = vs[vs.length - 1] || {};
+      const ent = c.entreprise_id ? D.entreprises.find(e => e.id === c.entreprise_id) : null;
       return { client_id: c.id, nom: c.nom, telephone: c.telephone, est_pro: false, societe: null,
                passages: ps.length, depense: ps.reduce((s, p) => s + p.montant_total, 0),
                dernier_passage: ps.length ? ps.map(p => p.journee).sort().pop() : null,
-               tampons: x ? x.tampons : 0 };
+               tampons: x ? x.tampons : 0,
+               entreprise_id: c.entreprise_id || null,
+               entreprise_nom: ent ? ent.nom : null,
+               entreprise_remise_pct: ent ? ent.remise_pct : null,
+               espace_actif: !!c.pin_pose_le,
+               nb_vehicules: vs.length,
+               vehicule_nom: [dernier.marque, dernier.modele].filter(Boolean).join(' ') || null,
+               vehicule_plaque: dernier.immatriculation || null };
     });
   };
 
@@ -1395,12 +1525,24 @@ function creerClientDemo() {
     };
     const filtrer = () => {
       let r = src().filter(x => f.every(p => p(x)));
-      if (tri) r = [...r].sort((a, b) => (tri[1] ? 1 : -1) * cmp(a[tri[0]], b[tri[0]]));
+      if (tri) {
+        const [k, asc, nullsFin] = tri;
+        r = [...r].sort((a, b) => {
+          const va = a[k], vb = b[k];
+          if (nullsFin) {   // absents toujours en dernier, quel que soit le sens
+            const na = va == null || va === '', nb = vb == null || vb === '';
+            if (na !== nb) return na ? 1 : -1;
+          }
+          return (asc ? 1 : -1) * cmp(va, vb);
+        });
+      }
       return borne == null ? r : r.slice(0, borne);
     };
     const api = {
       select() { return api; },
-      order(k, o) { tri = [k, !o || o.ascending !== false]; return api; },
+      // nullsFirst:false → les valeurs absentes vont à la FIN, comme en base
+      // (« vus récemment » ne doit pas commencer par les fiches sans passage).
+      order(k, o) { tri = [k, !o || o.ascending !== false, o && o.nullsFirst === false]; return api; },
       limit(n) { borne = n; return api; },
       eq(k, v) { f.push(r => String(r[k]) === String(v)); return api; },
       not(k, op, v) { if (op === 'is' && v === null) f.push(r => r[k] != null); return api; },
@@ -1479,6 +1621,35 @@ function creerClientDemo() {
       D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
         quoi: 'Code de l’espace client réinitialisé — ' + c.nom, entite: 'client' });
       return [];
+    },
+    ocr_creer_client_entreprise(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seuls la direction et le comptable rattachent un employé à une entreprise partenaire');
+      const ent = D.entreprises.find(x => x.id === a.p_entreprise);
+      if (!ent) throw new Error('Entreprise introuvable');
+      if (!String(a.p_nom || '').trim()) throw new Error('Le nom est obligatoire');
+      const tel = String(a.p_telephone || '').trim();
+      let cl = tel ? D.clients.find(c => c.telephone === tel) : null;
+      const existant = !!cl;
+      if (cl) cl.entreprise_id = ent.id;
+      else {
+        cl = { id: uid(), nom: String(a.p_nom).trim(), telephone: tel || null,
+               entreprise_id: ent.id, note: String(a.p_note || '').trim() || null };
+        D.clients.push(cl);
+      }
+      const plaque = OCR.plaque(a.p_immat);
+      if (a.p_gabarit || plaque || String(a.p_marque || '').trim()) {
+        const doublon = plaque && D.vehicules.some(v => v.client_id === cl.id && OCR.plaque(v.immatriculation) === plaque);
+        if (!doublon) D.vehicules.push({ id: uid(), client_id: cl.id, gabarit: a.p_gabarit || 'berline',
+          marque: String(a.p_marque || '').trim() || null, modele: String(a.p_modele || '').trim() || null,
+          immatriculation: plaque || null });
+      }
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: String(a.p_nom).trim() + (existant ? ' (fiche existante) rattaché à ' : ' créé et rattaché à ') +
+              ent.nom + ' — remise ' + (ent.remise_pct || 0) + ' %', entite: 'client' });
+      return [{ client_id: cl.id, deja_existant: existant }];
     },
     ocr_lier_employe(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -1736,7 +1907,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v30';
+const VERSION = 'v31';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -2033,19 +2204,31 @@ const API = {
     if (!cl.data) throw new Error('Client introuvable');
     return { client: cl.data, vehicules: veh.data || [], passages: pass.data || [], fidelite: fid.data || null };
   },
-  // Listes rapides : clients à relancer (30 j sans visite) et meilleurs clients.
+  // Les listes de l'écran Clients. « recents » est celle qu'on voit en
+  // arrivant : personne ne devrait avoir à taper un nom pour voir ses clients.
   async listeClients(mode) {
     let q = sb.from('v_clients_stats').select('*');
+    const d30 = decaleJour(auj(), -30);
     if (mode === 'relance') {
-      const d30 = decaleJour(auj(), -30);
-      q = q.lt('dernier_passage', d30).order('depense', { ascending: false }).limit(25);
+      q = q.gt('passages', 0).lt('dernier_passage', d30).order('depense', { ascending: false }).limit(40);
+    } else if (mode === 'meilleurs') {
+      q = q.gt('passages', 0).order('depense', { ascending: false }).limit(40);
+    } else if (mode === 'espace') {
+      q = q.eq('espace_actif', true).order('dernier_passage', { ascending: false, nullsFirst: false }).limit(60);
+    } else if (mode === 'partenaires') {
+      q = q.not('entreprise_id', 'is', null).order('nom').limit(60);
+    } else if (mode === 'sansvisite') {
+      q = q.eq('passages', 0).order('nom').limit(60);
     } else {
-      q = q.gt('passages', 0).order('depense', { ascending: false }).limit(15);
+      // « Vus récemment » — les derniers passages d'abord, les fiches sans
+      // passage à la fin plutôt que perdues au milieu.
+      q = q.order('dernier_passage', { ascending: false, nullsFirst: false }).limit(60);
     }
     const { data, error } = await q;
     if (error) throw error;
     return data || [];
   },
+  creerClientEntreprise: a => sb.rpc('ocr_creer_client_entreprise', a),
 
   // Crée une fiche client (+ son véhicule) depuis la caisse. Si le numéro
   // existe déjà, on renvoie la fiche existante : jamais de doublon.
@@ -2084,6 +2267,15 @@ const API = {
     const { data, error } = await sb.from('reservations').select('*, vehicules(marque,modele,immatriculation)')
       .eq('date_prevue', d).in('statut', ['en_attente_paiement', 'confirmee', 'honoree', 'absente'])
       .order('heure_prevue');
+    if (error) throw error;
+    return data || [];
+  },
+  // Juste de quoi compter les rendez-vous par jour dans la bande semaine :
+  // deux colonnes, pas la fiche entière.
+  async rdvPeriode(du, au) {
+    const { data, error } = await sb.from('reservations').select('date_prevue,statut')
+      .gte('date_prevue', du).lte('date_prevue', au)
+      .in('statut', ['en_attente_paiement', 'confirmee', 'honoree']);
     if (error) throw error;
     return data || [];
   },
@@ -2417,7 +2609,11 @@ function qrEnHtml(qr) {
 
 /* ---------- réglages d'affichage : propres à CET appareil ---------- */
 const PREFS_CLE = MODE_DEMO ? 'ocr-prefs-demo' : 'ocr-prefs';
-const prefs = { theme: 'sombre', taille: 'normal' };   // 'sombre'|'clair'|'auto' · 'normal'|'grand'|'tresgrand'
+/* Vue de l'agenda, retenue par appareil : l'iPad de l'atelier reste sur la
+   frise, un téléphone peut préférer la liste. Déclarée AVANT chargerPrefs(),
+   qui la lit dès le démarrage. */
+let agendaVue = 'frise';
+const prefs = { theme: 'sombre', taille: 'normal', agenda: 'frise' };   // 'sombre'|'clair'|'auto' · 'normal'|'grand'|'tresgrand' · 'frise'|'liste'
 function appliquerPrefs() {
   const clair = prefs.theme === 'clair' ||
     (prefs.theme === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches);
@@ -2429,6 +2625,7 @@ function appliquerPrefs() {
 }
 function chargerPrefs() {
   try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_CLE) || '{}')); } catch (e) {}
+  if (prefs.agenda === 'frise' || prefs.agenda === 'liste') agendaVue = prefs.agenda;
   appliquerPrefs();
 }
 function sauverPrefs() {
@@ -4201,6 +4398,94 @@ function creneauxLibres(resas, prestationId, gabaritId, d, nbBaies) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   LA FRISE DE LA JOURNÉE
+   Une liste ne montre pas les trous. Ici la journée est à l'échelle : la
+   hauteur d'un bloc EST sa durée, les creux se voient, et l'équipe lit sa
+   journée d'un coup d'œil depuis l'iPad de l'atelier.
+   La couleur situe le type de lavage, le texte l'identifie — on ne demande
+   jamais à la couleur de porter seule une information.
+   ══════════════════════════════════════════════════════════════════════════ */
+const PX_MIN = 0.95;   // pixels par minute — 12 h tiennent en ~684 px
+
+/* Place les rendez-vous en colonnes quand ils se chevauchent, comme un agenda :
+   chacun prend la première colonne libre à son heure de début. */
+function colonnesRdv(list) {
+  const tri = [...list].sort((a, b) => OCR.hm2min(heureCourte(a.heure_prevue)) - OCR.hm2min(heureCourte(b.heure_prevue)));
+  const finDe = [];   // heure de fin de la dernière réservation de chaque colonne
+  const pose = tri.map(r => {
+    const deb = OCR.hm2min(heureCourte(r.heure_prevue));
+    const fin = deb + (r.duree_min || 60);
+    let col = finDe.findIndex(f => f <= deb);
+    if (col === -1) { col = finDe.length; finDe.push(fin); } else finDe[col] = fin;
+    return { r, deb, fin, col };
+  });
+  return { pose, nb: Math.max(1, finDe.length) };
+}
+
+function friseAgenda(resas, d, estAuj, nbBaies) {
+  const h0 = OCR.CONFIG.ouvertureMin, h1 = OCR.CONFIG.fermetureMin;
+  const hauteur = (h1 - h0) * PX_MIN;
+  const vivants = resas.filter(r => r.statut !== 'annulee');
+  const { pose, nb } = colonnesRdv(vivants);
+  // Autant de colonnes que de baies actives, même s'il n'y a qu'un rendez-vous :
+  // un bloc pleine largeur donnerait l'impression d'un atelier saturé alors
+  // qu'une baie est libre. La place vide à droite, c'est la capacité restante.
+  const cols = Math.max(nb, Math.max(1, nbBaies || 1));
+  const heures = [];
+  for (let m = h0; m <= h1; m += 60) heures.push(m);
+
+  const maintenant = new Date();
+  const minNow = maintenant.getHours() * 60 + maintenant.getMinutes();
+  const traitMaintenant = estAuj && minNow >= h0 && minNow <= h1;
+
+  return `
+    <div class="ocr-carte" style="padding:var(--ocr-e4) var(--ocr-e3) var(--ocr-e4) 0">
+      <div class="legende-lav">
+        ${Object.entries(OCR.GROUPES_LAVAGE).map(([k, g]) =>
+          `<span><i style="background:var(--lav-${k})"></i>${g.nom}</span>`).join('')}
+      </div>
+      <div class="frise-boite" id="friseBoite" data-depart="${
+        // on cadre sur le premier rendez-vous, sinon sur l'heure courante
+        Math.max(0, ((pose.length ? pose[0].deb : (traitMaintenant ? minNow : h0)) - h0) * PX_MIN - 60)}">
+      <div class="frise" style="height:${hauteur}px">
+        ${heures.map(m => `<div class="fh" style="top:${(m - h0) * PX_MIN}px">
+            <span class="fh-lab">${OCR.min2hm(m)}</span><span class="fh-trait"></span></div>`).join('')}
+        ${traitMaintenant ? `<div class="fh-now" style="top:${(minNow - h0) * PX_MIN}px"><span></span></div>` : ''}
+        <div class="fz">
+          ${pose.length ? pose.map(({ r, deb, fin, col }) => {
+            const g = OCR.groupeLavage(r.prestation);
+            const p = OCR.prestation(r.prestation);
+            const et = ETAT_RDV[r.statut] || ['—', 'neutre'];
+            const passe = ['honoree', 'absente'].includes(r.statut);
+            const attente = r.statut === 'en_attente_paiement';
+            const min = fin - deb;
+            const veh = r.vehicules || {};
+            const nomVeh = [veh.marque, veh.modele].filter(Boolean).join(' ') || veh.immatriculation || '';
+            const nomLav = esc((p ? p.nom : r.prestation).replace('Lavage ', ''));
+            // Un lavage court n'a pas la hauteur pour empiler l'heure et le nom :
+            // on met tout sur une ligne plutôt que de masquer lequel c'est.
+            const courte = min < 40;
+            return `<button class="bloc grp-${g}${passe ? ' passe' : ''}${attente ? ' attente' : ''}${courte ? ' plate' : ''}"
+              data-bloc="${r.id}"
+              style="top:${(deb - h0) * PX_MIN}px;height:${Math.max(26, min * PX_MIN - 2)}px;
+                     left:calc(${col * (100 / cols)}% + 1px);width:calc(${100 / cols}% - 3px)">
+              <span class="bl-h">${heureCourte(r.heure_prevue)}${courte
+                ? `<span class="bl-n">${nomLav}</span>` : ''}<span class="bl-d">${min} min</span></span>
+              ${courte ? '' : `<span class="bl-n">${nomLav}</span>`}
+              ${min >= 45 ? `<span class="bl-s">${esc((OCR.gabarit(r.gabarit) || {}).court || '')}${
+                nomVeh ? ' · ' + esc(nomVeh) : ''}</span>` : ''}
+              ${attente ? '<span class="bl-p">⏳ avance à recevoir</span>'
+                : passe ? '<span class="bl-p">' + et[0] + '</span>' : ''}
+            </button>`;
+          }).join('') : `<div class="frise-vide">Aucun rendez-vous ce jour —
+            la journée est entièrement libre.</div>`}
+        </div>
+      </div>
+      </div>
+    </div>`;
+}
+
 /* Carte d'état des baies : pause et réactivation, motif obligatoire, audité. */
 function carteBaies(baies) {
   return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
@@ -4243,9 +4528,32 @@ function boiteBaie(b, activer) {
   });
 }
 
+/* La semaine en une bande : on voit quel jour est chargé et on y va d'un doigt,
+   sans faire « suivant, suivant, suivant ». */
+function bandeSemaine(d, parJour) {
+  const lundi = decaleJour(d, -((new Date(d + 'T12:00').getDay() + 6) % 7));
+  const jours = Array.from({ length: 7 }, (_, i) => decaleJour(lundi, i));
+  return `<div class="bande-sem">
+    ${jours.map(j => {
+      const n = parJour[j] || 0;
+      const estAuj = j === auj();
+      return `<button class="js${j === d ? ' sel' : ''}${estAuj ? ' auj' : ''}" data-ajour="${j}">
+        <span class="js-l">${JOURS_COURTS[new Date(j + 'T12:00').getDay()]}</span>
+        <span class="js-n">${Number(j.slice(-2))}</span>
+        <span class="js-p">${n ? n : ''}</span>
+      </button>`;
+    }).join('')}
+  </div>`;
+}
+
 async function vueAgenda() {
   const d = jourAgenda;
-  const [resas, baies] = await Promise.all([API.rdvJour(d), API.baies()]);
+  const lundi = decaleJour(d, -((new Date(d + 'T12:00').getDay() + 6) % 7));
+  const [resas, baies, semaine] = await Promise.all([
+    API.rdvJour(d), API.baies(), API.rdvPeriode(lundi, decaleJour(lundi, 6)).catch(() => []),
+  ]);
+  const parJour = {};
+  semaine.forEach(r => { parJour[r.date_prevue] = (parJour[r.date_prevue] || 0) + 1; });
   const nbActives = baies.filter(b => b.active).length;
   const actifs = resas.filter(r => r.statut === 'confirmee' || r.statut === 'en_attente_paiement');
   const minutesJour = Math.max(1, nbActives) * (OCR.CONFIG.fermetureMin - OCR.CONFIG.ouvertureMin);
@@ -4267,12 +4575,21 @@ async function vueAgenda() {
       <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-anav="1" aria-label="Jour suivant">›</button>
     </div>
 
+    ${bandeSemaine(d, parJour)}
+
     <div class="tuiles" style="grid-template-columns:repeat(2,1fr)">
       <div class="tuile"><div class="lab">Rendez-vous</div><div class="val">${actifs.length}</div>
         <div class="sub">${resas.filter(r => r.statut === 'honoree').length} honoré(s)</div></div>
       <div class="tuile"><div class="lab">Réservation</div><div class="val">${tauxOcc} %</div>
         <div class="sub">${nbActives} baie(s) active(s) · ${OCR.min2hm(OCR.CONFIG.ouvertureMin)} – ${OCR.min2hm(OCR.CONFIG.fermetureMin)}</div></div>
     </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:var(--ocr-e4)">
+      <button class="ocr-chip" data-avue="frise" aria-pressed="${agendaVue === 'frise'}">▤ Frise horaire</button>
+      <button class="ocr-chip" data-avue="liste" aria-pressed="${agendaVue === 'liste'}">☰ Liste détaillée</button>
+    </div>
+
+    ${agendaVue === 'frise' ? friseAgenda(resas, d, estAuj, nbActives) : ''}
 
     ${carteBaies(baies)}
 
@@ -4312,7 +4629,7 @@ async function vueAgenda() {
     <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="rOuvrir" style="margin-bottom:var(--ocr-e4)"
       ${nbActives === 0 ? 'disabled' : ''}>＋ Nouveau rendez-vous</button>`}
 
-    ${resas.length ? resas.map(r => {
+    ${agendaVue !== 'liste' ? '' : resas.length ? resas.map(r => {
       const et = ETAT_RDV[r.statut] || ['—', 'neutre'];
       const fin = OCR.min2hm(OCR.hm2min(heureCourte(r.heure_prevue)) + (r.duree_min || 60));
       const p = OCR.prestation(r.prestation);
@@ -4346,6 +4663,15 @@ async function vueAgenda() {
     rdvForm.heure = '';
     rendre();
   }));
+  $('#vue').querySelectorAll('[data-ajour]').forEach(b => b.addEventListener('click', () => {
+    jourAgenda = b.dataset.ajour; rdvForm.heure = ''; rendre();
+  }));
+  $('#vue').querySelectorAll('[data-avue]').forEach(b => b.addEventListener('click', () => {
+    agendaVue = b.dataset.avue; prefs.agenda = agendaVue; sauverPrefs(); rendre();
+  }));
+  // la frise s'ouvre déjà cadrée sur ce qui compte, sans faire défiler
+  const fb = $('#friseBoite');
+  if (fb) fb.scrollTop = Number(fb.dataset.depart) || 0;
 
   // gestion des baies
   $('#vue').querySelectorAll('[data-baie]').forEach(b => b.addEventListener('click', () => {
@@ -4396,51 +4722,111 @@ async function vueAgenda() {
     } catch (ex) { toast(ex.message, true); cr.disabled = false; }
   });
 
-  // actions sur les rendez-vous
-  $('#vue').querySelectorAll('[data-arrive]').forEach(b => b.addEventListener('click', async () => {
-    const r = resas.find(x => x.id === b.dataset.arrive);
-    let nom = '', tel = '';
-    if (r.client_id) {
-      const { data } = await sb.from('clients').select('nom,telephone').eq('id', r.client_id).maybeSingle();
-      if (data) { nom = data.nom || ''; tel = data.telephone || ''; }
-    }
-    // Le véhicule saisi par le client à la réservation (marque/modèle/plaque) —
-    // avant, ces champs étaient vidés et il fallait tout retaper (remonté le 12/08).
-    const veh = r.vehicules || {};
-    Object.assign(form, { tel, nom, clientTrouve: null, gabarit: r.gabarit,
-      marque: veh.marque || '', modele: veh.modele || '', immat: OCR.plaque(veh.immatriculation),
-      vehTrouve: null,
-      prestation: r.prestation, options: (r.options || []).slice(), remise: 0, manuel: 0,
-      note: r.note || '', reservation: r.reference });
-    onglet = 'saisie';
-    rendre();
+  // actions sur les rendez-vous — les mêmes depuis la frise et depuis la liste
+  $('#vue').querySelectorAll('[data-arrive]').forEach(b => b.addEventListener('click', () =>
+    rdvArrive(resas.find(x => x.id === b.dataset.arrive))));
+  $('#vue').querySelectorAll('[data-confirmer]').forEach(b => b.addEventListener('click', () => {
+    b.disabled = true; rdvStatut(b.dataset.confirmer, 'confirmee', 'Rendez-vous confirmé');
   }));
-  $('#vue').querySelectorAll('[data-confirmer]').forEach(b => b.addEventListener('click', async () => {
-    b.disabled = true;
-    const { error } = await API.majRdv(b.dataset.confirmer, { statut: 'confirmee' });
-    if (error) toast(error.message, true); else toast('Rendez-vous confirmé');
-    rendre();
+  $('#vue').querySelectorAll('[data-absent]').forEach(b => b.addEventListener('click', () => {
+    b.disabled = true; rdvStatut(b.dataset.absent, 'absente', 'Marqué absent');
   }));
-  $('#vue').querySelectorAll('[data-absent]').forEach(b => b.addEventListener('click', async () => {
-    b.disabled = true;
-    const { error } = await API.majRdv(b.dataset.absent, { statut: 'absente' });
-    if (error) toast(error.message, true); else toast('Marqué absent');
-    rendre();
-  }));
-  $('#vue').querySelectorAll('[data-annulrdv]').forEach(b => b.addEventListener('click', () => {
-    const v = modale(`<h3 class="ocr-h2">Annuler ce rendez-vous ?</h3>
-      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Le créneau redevient disponible immédiatement.</p>
-      <div style="display:flex;gap:9px">
-        <button class="ocr-btn ocr-btn--fantome" data-fermer>Garder</button>
-        <div style="flex:1"></div>
-        <button class="ocr-btn ocr-btn--primaire" data-ok>Annuler le rendez-vous</button></div>`);
-    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
-    v.querySelector('[data-ok]').addEventListener('click', async () => {
-      const { error } = await API.majRdv(b.dataset.annulrdv, { statut: 'annulee' });
-      if (error) return toast(error.message, true);
-      fermerModale(); toast('Rendez-vous annulé'); rendre();
-    });
-  }));
+  $('#vue').querySelectorAll('[data-annulrdv]').forEach(b =>
+    b.addEventListener('click', () => rdvAnnuler(b.dataset.annulrdv)));
+  // un bloc de la frise ouvre sa fiche
+  $('#vue').querySelectorAll('[data-bloc]').forEach(b =>
+    b.addEventListener('click', () => boiteRdv(resas.find(x => x.id === b.dataset.bloc), estAuj)));
+}
+
+/* ---------- les quatre gestes sur un rendez-vous, partagés ---------- */
+async function rdvArrive(r) {
+  if (!r) return;
+  let nom = '', tel = '';
+  if (r.client_id) {
+    const { data } = await sb.from('clients').select('nom,telephone').eq('id', r.client_id).maybeSingle();
+    if (data) { nom = data.nom || ''; tel = data.telephone || ''; }
+  }
+  // Le véhicule saisi par le client à la réservation (marque/modèle/plaque) —
+  // avant, ces champs étaient vidés et il fallait tout retaper (remonté le 12/08).
+  const veh = r.vehicules || {};
+  Object.assign(form, { tel, nom, clientTrouve: null, gabarit: r.gabarit,
+    marque: veh.marque || '', modele: veh.modele || '', immat: OCR.plaque(veh.immatriculation),
+    vehTrouve: null,
+    prestation: r.prestation, options: (r.options || []).slice(), remise: 0, motifRemise: '', manuel: 0,
+    note: r.note || '', reservation: r.reference });
+  fermerModale();
+  onglet = 'saisie';
+  rendre();
+}
+async function rdvStatut(id, statut, message) {
+  const { error } = await API.majRdv(id, { statut });
+  if (error) toast(error.message, true); else toast(message);
+  fermerModale();
+  rendre();
+}
+function rdvAnnuler(id) {
+  const v = modale(`<h3 class="ocr-h2">Annuler ce rendez-vous ?</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Le créneau redevient disponible immédiatement.</p>
+    <div style="display:flex;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Garder</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Annuler le rendez-vous</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async () => {
+    const { error } = await API.majRdv(id, { statut: 'annulee' });
+    if (error) return toast(error.message, true);
+    fermerModale(); toast('Rendez-vous annulé'); rendre();
+  });
+}
+
+/* La fiche d'un rendez-vous, ouverte en touchant son bloc dans la frise.
+   Les blocs sont trop petits pour porter quatre boutons ; ici tout tient. */
+function boiteRdv(r, estAuj) {
+  if (!r) return;
+  const p = OCR.prestation(r.prestation);
+  const et = ETAT_RDV[r.statut] || ['—', 'neutre'];
+  const deb = heureCourte(r.heure_prevue);
+  const fin = OCR.min2hm(OCR.hm2min(deb) + (r.duree_min || 60));
+  const g = OCR.groupeLavage(r.prestation);
+  const passe = ['honoree', 'absente'].includes(r.statut);
+  const veh = r.vehicules || {};
+  const nomVeh = [veh.marque, veh.modele].filter(Boolean).join(' ') || veh.immatriculation || '';
+  const v = modale(`
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:var(--ocr-e3)">
+      <span style="width:12px;height:12px;border-radius:3px;background:var(--lav-${g});flex:none"></span>
+      <h3 class="ocr-h2" style="margin:0">${deb} → ${fin}</h3>
+      <span class="ocr-pastille ocr-pastille--${et[1]}">${et[0]}</span>
+    </div>
+    <p class="ocr-petit" style="margin:0 0 var(--ocr-e4)">
+      <strong style="color:var(--ocr-blanc)">${esc(p ? p.nom : r.prestation)}</strong> ·
+      ${esc((OCR.gabarit(r.gabarit) || {}).nom || r.gabarit)}${nomVeh ? ' · ' + esc(nomVeh) : ''}<br>
+      <span class="ocr-mini">${esc(r.reference)}${r.note ? ' · ' + esc(r.note) : ''}</span></p>
+    ${r.montant_total ? `<div class="ocr-carte" style="padding:12px;margin-bottom:var(--ocr-e4)">
+      <div style="display:flex;justify-content:space-between"><span class="ocr-petit">Total</span>
+        <strong style="font-variant-numeric:tabular-nums">${OCR.fcfa(r.montant_total)}</strong></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span class="ocr-petit">Avance reçue</span>
+        <span style="font-variant-numeric:tabular-nums">${OCR.fcfa(r.acompte_attendu || 0)}</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px;padding-top:6px;border-top:1px solid var(--ocr-sep)">
+        <span class="ocr-petit">${r.acompte_attendu >= r.montant_total ? 'Rien à encaisser' : 'Reste sur place'}</span>
+        <strong style="font-variant-numeric:tabular-nums;color:${r.acompte_attendu >= r.montant_total ? 'var(--ocr-vert)' : 'var(--ocr-blanc)'}">
+          ${OCR.fcfa(Math.max(0, (r.montant_total || 0) - (r.acompte_attendu || 0)))}</strong></div>
+    </div>` : ''}
+    ${passe ? '' : `
+    ${estAuj && r.statut !== 'en_attente_paiement'
+      ? '<button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-a>Arrivé → saisie</button>' : ''}
+    ${r.statut === 'en_attente_paiement'
+      ? '<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-c style="margin-top:8px">Confirmer (avance reçue)</button>' : ''}
+    ${estAuj ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-ab style="margin-top:8px">Marquer absent</button>' : ''}
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-an style="margin-top:8px;color:var(--ocr-argent-2)">Annuler le rendez-vous</button>`}
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:${passe ? 'var(--ocr-e4)' : '8px'}">Fermer</button>`);
+  const b = s => v.querySelector(s);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  if (b('[data-a]'))  b('[data-a]').addEventListener('click', () => rdvArrive(r));
+  if (b('[data-c]'))  b('[data-c]').addEventListener('click', e => {
+    e.target.disabled = true; rdvStatut(r.id, 'confirmee', 'Rendez-vous confirmé'); });
+  if (b('[data-ab]')) b('[data-ab]').addEventListener('click', e => {
+    e.target.disabled = true; rdvStatut(r.id, 'absente', 'Marqué absent'); });
+  if (b('[data-an]')) b('[data-an]').addEventListener('click', () => { fermerModale(); rdvAnnuler(r.id); });
 }
 
 /* ==========================================================================
@@ -4449,33 +4835,56 @@ async function vueAgenda() {
    son numéro ou sa plaque, on voit tout son historique, et on relance la
    saisie pré-remplie sans rien retaper.
    ========================================================================== */
-const rech = { q: '', liste: null, cherche: false, fiche: null, vue: 'part', rapide: null };
+/* La liste s'affiche d'entrée — obliger à taper un nom pour voir ses propres
+   clients n'a aucun sens quand on en a quelques centaines. Par défaut : les
+   derniers venus en premier. Les filtres remplacent la recherche à l'aveugle. */
+const FILTRES_CLI = [
+  ['recents',     '🕘 Vus récemment',   'Les derniers passages en premier'],
+  ['relance',     '📣 À relancer',      'Plus de 30 jours sans venir, les plus gros d’abord'],
+  ['meilleurs',   '★ Meilleurs',        'Ceux qui dépensent le plus'],
+  ['espace',      '📱 Espace actif',    'Ceux qui ont l’app avec leur code'],
+  ['partenaires', '🤝 Partenaires',     'Employés Ehu Motors et autres entreprises liées'],
+  ['sansvisite',  '◌ Jamais venus',     'Fiches créées mais aucun passage'],
+];
+const rech = { q: '', liste: null, cherche: false, fiche: null, vue: 'part', rapide: 'recents' };
 let cliNouveau = null;   // brouillon de fiche client en cours de création
 
 const dateFr = d => { const [a, m, j] = String(d || '').split('-'); return j ? j + '/' + m : (d || '—'); };
 const numWhatsApp = t => String(t || '').replace(/\D/g, '').replace(/^0+/, '');
 const joursDepuis = d => d ? Math.round((new Date(auj() + 'T12:00') - new Date(d + 'T12:00')) / 86400000) : null;
+/* Tous les numéros sont béninois : afficher « +229 » sur chaque ligne mange la
+   place du véhicule pour une information que personne ne lit. On l'enlève à
+   l'affichage seulement — la base garde le numéro complet. */
+const telCourt = t => String(t || '').replace(/^\+?229[\s.]*/, '').trim();
 
+/* Une ligne de client : de quoi le reconnaître sans l'ouvrir — son véhicule,
+   sa dernière visite, ce qu'il pèse, et les badges qui changent la façon de
+   le servir (remise partenaire, app installée). */
 function ligneClientStats(c) {
   const jd = joursDepuis(c.dernier_passage);
   const nom = c.nom || 'Sans nom';
   const ini = nom.trim().split(/\s+/).map(m => m[0]).slice(0, 2).join('').toUpperCase() || '?';
   const coul = COULEURS_AVATAR[nom.length % COULEURS_AVATAR.length];
+  // Le véhicule sert à reconnaître la voiture qui arrive : son nom parle plus
+  // qu'une plaque, la plaque ne sert de repli que s'il n'y a pas de modèle.
+  const veh = c.vehicule_nom || c.vehicule_plaque || '';
+  const quand = jd == null ? 'jamais venu'
+    : jd === 0 ? 'aujourd’hui' : jd === 1 ? 'hier' : 'il y a ' + jd + ' j';
   return `
-    <button class="fiche" data-cli="${c.client_id || c.id}"
-      style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer">
-      <span style="width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;
-        background:${coul};color:#f4f4f5;font:700 15px/1 var(--ocr-titre)">${esc(ini)}</span>
-      <span style="min-width:0;flex:1">
-        <span style="font:600 15px/1.25 var(--ocr-texte);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nom)}</span>
-        <span class="ocr-mini" style="display:block;margin-top:2px">${esc(c.telephone || 'Pas de numéro')}${
-          jd != null ? ' · venu il y a ' + (jd === 0 ? 'moins d’un jour' : jd + ' j') : ''}</span>
+    <button class="fiche ligne-cli" data-cli="${c.client_id || c.id}">
+      <span class="av" style="background:${coul}">${esc(ini)}</span>
+      <span class="mid">
+        <span class="nom">${esc(nom)}${c.espace_actif ? ' <span title="Espace client actif">📱</span>' : ''}${
+          c.entreprise_remise_pct > 0 ? ' <span title="' + esc(c.entreprise_nom || '') + ' −' +
+            c.entreprise_remise_pct + ' %">🤝</span>' : ''}</span>
+        <span class="ocr-mini det">${esc(telCourt(c.telephone) || 'pas de numéro')}${veh ? ' · ' + esc(veh) : ''}${
+          c.nb_vehicules > 1 ? ' +' + (c.nb_vehicules - 1) : ''}</span>
       </span>
-      ${c.depense != null ? `<span style="text-align:right;flex:none">
-        <span style="font:700 14px/1.2 var(--ocr-texte);font-variant-numeric:tabular-nums;display:block">${OCR.fcfa(c.depense)}</span>
-        <span class="ocr-mini">${c.passages || 0} passage${(c.passages || 0) > 1 ? 's' : ''}</span>
-      </span>` : ''}
-      <span style="color:var(--ocr-argent-2);flex:none">›</span>
+      <span class="dr">
+        <span class="mt">${c.passages ? OCR.fcfa(c.depense) : '—'}</span>
+        <span class="ocr-mini">${c.passages ? c.passages + ' × · ' + quand : quand}</span>
+      </span>
+      <span class="ch">›</span>
     </button>`;
 }
 
@@ -4495,6 +4904,7 @@ async function vueClients() {
 
   if (rech.vue === 'pro') return vueEntreprises($('#zoneCli'));
 
+  const fActif = FILTRES_CLI.find(f => f[0] === rech.rapide);
   $('#zoneCli').innerHTML = `
     <div class="ocr-carte">
       <div style="position:relative">
@@ -4502,14 +4912,17 @@ async function vueClients() {
         <input class="ocr-saisie" id="qCli" value="${esc(rech.q)}" placeholder="Nom, numéro ou plaque…"
                autocomplete="off" enterkeyhint="search" style="padding-left:42px">
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:var(--ocr-e3)">
-        <button class="ocr-chip" data-rapide="relance" aria-pressed="${rech.rapide === 'relance'}">📣 À relancer (30 j+)</button>
-        <button class="ocr-chip" data-rapide="meilleurs" aria-pressed="${rech.rapide === 'meilleurs'}">★ Meilleurs clients</button>
+      <div class="rangee-filtres">
+        ${FILTRES_CLI.map(([id, lab]) => `<button class="ocr-chip" data-rapide="${id}"
+          aria-pressed="${rech.rapide === id}">${lab}</button>`).join('')}
       </div>
     </div>
     ${cliNouveau ? formNouveauClient() : `
     <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="cliOuvrir" style="margin-top:var(--ocr-e4)">＋ Nouveau client</button>`}
-    <div id="resCli" style="margin-top:var(--ocr-e4)"></div>`;
+    <div id="enteteRes" class="ocr-mini" style="margin:var(--ocr-e4) 0 8px">${
+      rech.q.trim() ? 'Résultats pour « ' + esc(rech.q.trim()) + ' »'
+                    : fActif ? esc(fActif[2]) : ''}</div>
+    <div id="resCli"></div>`;
 
   const bo = $('#cliOuvrir');
   if (bo) bo.addEventListener('click', () => { cliNouveau = { gabarit: 'berline' }; rendre(); });
@@ -4521,47 +4934,65 @@ async function vueClients() {
     try { rech.fiche = await API.ficheClient(b.dataset.cli); vueClients(); }
     catch (ex) { toast(ex.message, true); peindre(); }
   }));
+  const VIDES = {
+    recents: 'Aucun client encore. Le premier se créera tout seul à la première saisie.',
+    relance: 'Personne à relancer — tout le monde est venu dans les 30 derniers jours. 👍',
+    meilleurs: 'Aucun passage encore enregistré.',
+    espace: 'Personne n’a encore activé son espace client. Invite-les à installer l’app.',
+    partenaires: 'Aucun employé rattaché à une entreprise. Onglet Entreprises pour en ajouter.',
+    sansvisite: 'Toutes les fiches ont au moins un passage. 👍',
+  };
   const peindre = () => {
     if (rech.cherche) { zone.innerHTML = '<div class="vide"><span class="tourne"></span></div>'; return; }
-    if (rech.liste === null) { zone.innerHTML = '<div class="vide">Tape un nom, un numéro, une plaque — ou choisis une liste.</div>'; return; }
-    if (!rech.liste.length) {
-      zone.innerHTML = '<div class="vide">' + (rech.rapide === 'relance'
-        ? 'Personne à relancer — tous tes clients sont venus dans les 30 derniers jours. 👍'
-        : 'Aucun client trouvé.<br>Il sera créé automatiquement à la première saisie.') + '</div>';
+    if (!rech.liste || !rech.liste.length) {
+      zone.innerHTML = '<div class="ocr-carte vide">' + (rech.q.trim()
+        ? 'Aucun client ne correspond à « ' + esc(rech.q.trim()) + ' ».<br>Il sera créé automatiquement à la première saisie.'
+        : (VIDES[rech.rapide] || 'Rien à afficher.')) + '</div>';
       return;
     }
-    zone.innerHTML = (rech.rapide === 'relance'
-      ? '<p class="ocr-mini" style="margin:0 0 10px">Classés du plus gros client au plus petit — commence par le haut.</p>' : '')
-      + rech.liste.map(ligneClientStats).join('');
+    zone.innerHTML = rech.liste.map(ligneClientStats).join('') +
+      (rech.liste.length >= 60 ? '<p class="ocr-mini" style="margin:10px 0 0;text-align:center">' +
+        '60 premiers affichés — affine avec la recherche.</p>' : '');
     brancherFiches();
   };
   peindre();
 
-  const chercherRapide = async mode => {
-    rech.rapide = rech.rapide === mode ? null : mode;
-    rech.q = '';
-    if (!rech.rapide) { rech.liste = null; vueClients(); return; }
-    rech.cherche = true; vueClients();
+  const charger = async () => {
+    rech.cherche = true; peindre();
     try { rech.liste = await API.listeClients(rech.rapide); }
     catch (ex) { toast(ex.message, true); rech.liste = []; }
-    rech.cherche = false; vueClients();
+    if (!document.body.contains(zone)) return;   // l'écran a changé entre-temps
+    rech.cherche = false; peindre();
   };
+  // Un filtre déjà actif se garde : le désélectionner laisserait un écran vide.
   $('#zoneCli').querySelectorAll('[data-rapide]').forEach(b =>
-    b.addEventListener('click', () => chercherRapide(b.dataset.rapide)));
+    b.addEventListener('click', () => {
+      if (rech.rapide === b.dataset.rapide && !rech.q.trim()) return;
+      rech.rapide = b.dataset.rapide; rech.q = ''; rech.liste = null; vueClients();
+    }));
 
   let minuteur;
   $('#qCli').addEventListener('input', e => {
     rech.q = e.target.value;
-    rech.rapide = null;
     clearTimeout(minuteur);
     minuteur = setTimeout(async () => {
-      if (rech.q.trim().length < 2) { rech.liste = null; peindre(); return; }
+      // Le minuteur peut se déclencher après un changement d'écran : la zone
+      // n'existe alors plus et écrire dedans lèverait une erreur. On abandonne.
+      if (!document.body.contains(zone)) return;
+      const t = rech.q.trim();
+      const eR = $('#enteteRes');
+      if (eR) eR.textContent = t ? 'Résultats pour « ' + t + ' »' : (fActif ? fActif[2] : '');
+      if (t.length < 2) { rech.liste = null; return charger(); }   // champ vidé → on revient au filtre
       rech.cherche = true; peindre();
-      try { rech.liste = await API.chercherClients(rech.q); }
+      try { rech.liste = await API.chercherClients(t); }
       catch (ex) { toast(ex.message, true); rech.liste = []; }
+      if (!document.body.contains(zone)) return;
       rech.cherche = false; peindre();
     }, 320);
   });
+
+  // Rien en mémoire (arrivée sur l'onglet) : on remplit tout seul.
+  if (rech.liste === null && !rech.q.trim()) charger();
 }
 
 /* ---------- nouveau client : la fiche se crée en 30 secondes ----------
@@ -4809,6 +5240,7 @@ async function vueEntreprises(el) {
             ', ici OCR Brillance (Station Oryx Saint Michel). Nous proposons un entretien professionnel des véhicules d’entreprise — lavage soigné, suivi et facturation mensuelle groupée. Quand pourrions-nous en parler ?')}">WhatsApp</a>` : ''}
           ${peutCloturer() ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-premise="${e.id}"
             ${e.remise_pct > 0 ? '' : 'style="color:var(--ocr-argent-2)"'}>Remise employés…</button>` : ''}
+          ${peutCloturer() ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pemploye="${e.id}">＋ Employé</button>` : ''}
           <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-promod="${e.id}" style="margin-left:auto">Modifier</button>
         </div>
       </div>`;
@@ -4826,7 +5258,73 @@ async function vueEntreprises(el) {
   el.querySelectorAll('[data-premise]').forEach(b => b.addEventListener('click', () => {
     boiteRemisePartenaire(liste.find(x => x.id === b.dataset.premise));
   }));
+  el.querySelectorAll('[data-pemploye]').forEach(b => b.addEventListener('click', () => {
+    boiteNouvelEmploye(liste.find(x => x.id === b.dataset.pemploye));
+  }));
   brancherFormEntreprise(el);
+}
+
+/* Créer un employé DEPUIS l'entreprise : il naît déjà rattaché, donc sa remise
+   s'applique dès son premier passage sans que Samuel n'ait rien à faire.
+   Avant, il fallait créer la fiche puis la lier en deux gestes séparés. */
+function boiteNouvelEmploye(e) {
+  let gab = 'berline';
+  const v = modale(`
+    <h3 class="ocr-h2">＋ Employé — ${esc(e.nom)}</h3>
+    <div class="ocr-message ocr-message--succes" style="margin:10px 0 var(--ocr-e4)"><span>🤝</span><div>
+      Il sera rattaché à ${esc(e.nom)} dès sa création : sa remise de
+      <strong>${e.remise_pct || 0} %</strong> s'appliquera toute seule à chaque passage,
+      quel que soit le véhicule qu'il amène.</div></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Nom *</span>
+        <input class="ocr-saisie" id="neNom"></label>
+      <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
+        <input class="ocr-saisie" id="neTel" inputmode="tel" value="${INDICATIF}">
+        <span class="ocr-aide">Recommandé — c'est lui qui relie la fidélité.</span></label>
+    </div>
+    <div class="ocr-mini" style="margin:2px 0 8px;letter-spacing:.14em;text-transform:uppercase">Son véhicule (facultatif)</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+      ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-negab="${g.id}" aria-pressed="${gab === g.id}">${esc(g.court)}</button>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Marque</span>
+        <input class="ocr-saisie" id="neMarque"></label>
+      <label class="ocr-champ"><span class="ocr-label">Modèle</span>
+        <input class="ocr-saisie" id="neModele"></label>
+    </div>
+    <label class="ocr-champ"><span class="ocr-label">Immatriculation</span>
+      <input class="ocr-saisie" id="neImmat" placeholder="${OCR.PLAQUE_EXEMPLES.voiture}"></label>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Créer et rattacher</button></div>`);
+  v.querySelectorAll('[data-negab]').forEach(b => b.addEventListener('click', () => {
+    gab = b.dataset.negab;
+    v.querySelectorAll('[data-negab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.negab === gab)));
+    v.querySelector('#neImmat').placeholder = gab === 'moto' ? OCR.PLAQUE_EXEMPLES.moto : OCR.PLAQUE_EXEMPLES.voiture;
+  }));
+  brancherTel(v.querySelector('#neTel'));
+  brancherPlaque(v.querySelector('#neImmat'));
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async ev => {
+    const nom = v.querySelector('#neNom').value.trim();
+    if (!nom) return toast('Le nom est obligatoire.', true);
+    ev.target.disabled = true;
+    const { data, error } = await API.creerClientEntreprise({
+      p_entreprise: e.id, p_nom: nom,
+      p_telephone: telPropre(v.querySelector('#neTel').value) || null,
+      p_gabarit: gab,
+      p_marque: v.querySelector('#neMarque').value.trim() || null,
+      p_modele: v.querySelector('#neModele').value.trim() || null,
+      p_immat: OCR.plaque(v.querySelector('#neImmat').value) || null,
+    });
+    if (error) { toast(error.message, true); ev.target.disabled = false; return; }
+    const r = Array.isArray(data) ? data[0] : data;
+    fermerModale();
+    toast(r && r.deja_existant
+      ? nom + ' existait déjà — sa fiche est maintenant rattachée à ' + e.nom + ' ✓'
+      : nom + ' créé et rattaché à ' + e.nom + ' ✓');
+    rendre();
+  });
 }
 
 /* La remise employés d'une entreprise partenaire — direction/comptable. */
