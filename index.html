@@ -557,6 +557,8 @@ body.texte-tresgrand{zoom:1.2}
       <p class="ocr-erreur-champ masque" id="errConnexion"></p>
       <button type="button" class="ocr-btn ocr-btn--secondaire ocr-btn--bloc masque" id="btnPasskey"
         style="margin-top:10px">🔑 Entrer avec Face ID / empreinte</button>
+      <button type="button" class="ocr-btn ocr-btn--fantome ocr-btn--bloc masque" data-installer
+        style="margin-top:10px">📲 Installer l’application sur cet appareil</button>
       <p style="text-align:center;margin:14px 0 0">
         <button type="button" id="btnOubli" style="all:unset;cursor:pointer;font:var(--ocr-t-mini);
           color:var(--ocr-argent-2);text-decoration:underline">Mot de passe oublié ?</button></p>
@@ -1081,7 +1083,7 @@ function creerClientDemo() {
       { id: 'e5', user_id: 'u5', nom: 'Cabo',          role: 'technicien', email: 'cabo@ocrbrillance.com', actif: true, repos_jour: 4, remplacant: false },
     ],
     clients: [
-      { id: 'c1', nom: 'Koffi Adjovi', telephone: '+229 01 97 45 12 30' },
+      { id: 'c1', nom: 'Koffi Adjovi', telephone: '+229 01 97 45 12 30', pin_pose_le: '2026-08-01T10:00:00Z' },
       { id: 'c2', nom: 'Sylvie Dossou', telephone: '+229 01 62 30 88 14' },
       { id: 'c3', nom: 'Clinique Étoile', telephone: null },
     ],
@@ -1210,14 +1212,18 @@ function creerClientDemo() {
   // Prospection : deux entreprises, dont une relance en retard.
   D.entreprises.push(
     { id: uid(), nom: 'Clinique Étoile', contact_nom: 'Mme Dossou', contact_role: 'Directrice',
-      telephone: '+229 01 62 30 88 14', email: null, statut: 'devis', flotte_estimee: 6,
+      telephone: '+229 01 62 30 88 14', email: null, statut: 'devis', flotte_estimee: 6, remise_pct: 0,
       prochaine_action: 'Rappeler pour le devis flotte', prochaine_le: jourMoins(2), note: '4 ambulances + 2 berlines de direction.',
       cree_le: jourMoins(9) + 'T10:00:00Z', maj_le: jourMoins(2) + 'T10:00:00Z' },
-    { id: uid(), nom: 'EHU Motors', contact_nom: 'Guénolé', contact_role: 'Gérant',
-      telephone: '+229 01 97 00 11 22', email: null, statut: 'contacte', flotte_estimee: 12,
-      prochaine_action: 'Proposer un essai sur 2 véhicules', prochaine_le: jourPlus(3), note: 'Véhicules d’occasion à préparer avant vente.',
+    { id: 'ehu', nom: 'Ehu Motors', contact_nom: 'Edwin Olympio', contact_role: 'Fondateur',
+      telephone: '+229 01 97 00 11 22', email: null, statut: 'client', flotte_estimee: 12, remise_pct: 30,
+      prochaine_action: null, prochaine_le: null,
+      note: 'Entreprise sœur — les employés liés ont la remise automatique, quel que soit le véhicule.',
       cree_le: jourMoins(5) + 'T10:00:00Z', maj_le: jourMoins(1) + 'T10:00:00Z' },
   );
+  // Rodrigue, employé Ehu Motors : sa remise le suit, moto du showroom ou sa voiture.
+  D.clients.push({ id: 'c9', nom: 'Rodrigue Sènou', telephone: '+229 01 44 66 20 09', entreprise_id: 'ehu' });
+  D.vehicules.push({ id: 'v9', client_id: 'c9', gabarit: 'moto', marque: 'Haojue', modele: 'DK 150', immatriculation: null });
 
   const lier = p => ({
     ...p,
@@ -1318,6 +1324,8 @@ function creerClientDemo() {
       if (table === 'passages')          return D.passages.map(lier);
       if (table === 'vehicules')         return D.vehicules.map(v =>
         ({ ...v, clients: D.clients.find(c => c.id === v.client_id) || null }));
+      if (table === 'clients')           return D.clients.map(c =>
+        ({ ...c, entreprises: D.entreprises.find(e => e.id === c.entreprise_id) || null }));
       return D[table] || [];
     };
     const filtrer = () => {
@@ -1330,6 +1338,7 @@ function creerClientDemo() {
       order(k, o) { tri = [k, !o || o.ascending !== false]; return api; },
       limit(n) { borne = n; return api; },
       eq(k, v) { f.push(r => String(r[k]) === String(v)); return api; },
+      not(k, op, v) { if (op === 'is' && v === null) f.push(r => r[k] != null); return api; },
       gte(k, v) { f.push(r => String(r[k]) >= String(v)); return api; },
       lte(k, v) { f.push(r => String(r[k]) <= String(v)); return api; },
       lt(k, v) { f.push(r => r[k] != null && cmp(r[k], v) < 0); return api; },
@@ -1394,6 +1403,46 @@ function creerClientDemo() {
   }
 
   const RPC = {
+    ocr_reinitialiser_code_client(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['direction', 'comptable', 'manager'].includes(emp.role))
+        throw new Error('Seuls le manager, le comptable et la direction réinitialisent un code client');
+      const c = D.clients.find(x => x.id === a.p_client);
+      if (!c) throw new Error('Client introuvable');
+      c.pin_pose_le = null;
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Code de l’espace client réinitialisé — ' + c.nom, entite: 'client' });
+      return [];
+    },
+    ocr_lier_employe(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seuls la direction et le comptable lient un client à une entreprise partenaire');
+      const c = D.clients.find(x => x.id === a.p_client);
+      if (!c) throw new Error('Client introuvable');
+      const e = a.p_entreprise ? D.entreprises.find(x => x.id === a.p_entreprise) : null;
+      if (a.p_entreprise && !e) throw new Error('Entreprise introuvable');
+      c.entreprise_id = e ? e.id : null;
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: c.nom + (e ? ' lié à ' + e.nom + ' (employé partenaire)' : ' délié de son entreprise partenaire'),
+        entite: 'client' });
+      return [];
+    },
+    ocr_regler_remise_entreprise(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seuls la direction et le comptable fixent une remise partenaire');
+      const e = D.entreprises.find(x => x.id === a.p_entreprise);
+      if (!e) throw new Error('Entreprise introuvable');
+      if (!(a.p_pct >= 0 && a.p_pct <= 100)) throw new Error('Le pourcentage doit être entre 0 et 100');
+      e.remise_pct = a.p_pct;
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Remise partenaire ' + e.nom + ' fixée à ' + a.p_pct + ' %', entite: 'entreprise' });
+      return [];
+    },
     ocr_avancer_passage(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp) throw new Error('Accès réservé au personnel');
@@ -1567,11 +1616,73 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v23';
+const VERSION = 'v25';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
   (navigator.standalone === true ? ' · plein écran' : '');
+
+/* ---------- installation sur l'appareil : 1 tap Android/ordinateur, guide iPhone ----------
+   Un nouvel employé installe l'app lui-même, sans qu'on touche à son téléphone. */
+let promptInstall = null;
+const estInstallee = () => navigator.standalone === true ||
+  (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+const surIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const installDispo = () => !estInstallee() && (promptInstall !== null || surIOS);
+function majBoutonsInstall() {
+  document.querySelectorAll('[data-installer]').forEach(b =>
+    b.classList.toggle('masque', !installDispo()));
+}
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); promptInstall = e; majBoutonsInstall();
+});
+async function installerApp() {
+  if (promptInstall) {
+    promptInstall.prompt();
+    const { outcome } = await promptInstall.userChoice;
+    if (outcome === 'accepted') {
+      toast('Installée ✓ — l’app est sur ton écran d’accueil');
+      promptInstall = null; majBoutonsInstall();
+    }
+    return;
+  }
+  if (surIOS) return boiteInstallIOS();
+  toast('Menu du navigateur → « Installer l’application »');
+}
+function boiteInstallIOS() {
+  const etape = n => `<span style="width:26px;height:26px;flex:none;border-radius:50%;display:grid;
+    place-items:center;background:var(--ocr-rouge);color:#fff;font:700 13px/1 var(--ocr-texte)">${n}</span>`;
+  const v = modale(`
+    <h3 class="ocr-h2">Installer sur cet iPhone</h3>
+    <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">Deux gestes, dans Safari :</p>
+    <div style="display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
+      ${etape(1)}<span class="ocr-petit">Touche le bouton <strong>Partager</strong>
+        <span style="display:inline-block;border:1.5px solid currentColor;border-radius:5px;padding:0 7px;margin:0 2px">↑</span>
+        en bas de l’écran</span></div>
+    <div style="display:flex;gap:12px;align-items:center;padding:10px 0">
+      ${etape(2)}<span class="ocr-petit">Choisis <strong>« Sur l’écran d’accueil »</strong> puis <strong>Ajouter</strong></span></div>
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" style="margin-top:var(--ocr-e4)" data-fermer>Compris</button>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+}
+document.addEventListener('click', e => {
+  if (e.target.closest && e.target.closest('[data-installer]')) installerApp();
+});
+majBoutonsInstall();
+
+/* Le service worker : ouverture instantanée et mises à jour silencieuses.
+   Les pages passent toujours par le réseau — jamais de vieille caisse. */
+if ('serviceWorker' in navigator && !MODE_DEMO &&
+    (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const nv = reg.installing;
+      if (nv) nv.addEventListener('statechange', () => {
+        if (nv.state === 'activated' && navigator.serviceWorker.controller)
+          toast('✨ L’application vient de se mettre à jour');
+      });
+    });
+  }).catch(() => {});
+}
 // Double authentification exigée pour ces rôles (décision du 11 août).
 const ROLES_2FA = ['direction', 'comptable', 'manager'];
 
@@ -1625,8 +1736,19 @@ const API = {
     return data || [];
   },
   async clientParTelephone(tel) {
-    const { data } = await sb.from('clients').select('id,nom,telephone').eq('telephone', tel).maybeSingle();
+    const { data } = await sb.from('clients')
+      .select('id,nom,telephone,entreprise_id,entreprises(nom,remise_pct)')
+      .eq('telephone', tel).maybeSingle();
     return data || null;
+  },
+  reinitialiserCodeClient: id => sb.rpc('ocr_reinitialiser_code_client', { p_client: id }),
+  lierEmploye: (clientId, entrepriseId) =>
+    sb.rpc('ocr_lier_employe', { p_client: clientId, p_entreprise: entrepriseId }),
+  reglerRemisePartenaire: (entrepriseId, pct) =>
+    sb.rpc('ocr_regler_remise_entreprise', { p_entreprise: entrepriseId, p_pct: pct }),
+  async employesDe(entrepriseId) {
+    const { data } = await sb.from('clients').select('id,nom,telephone').eq('entreprise_id', entrepriseId).order('nom');
+    return data || [];
   },
   async vehiculesDe(clientId) {
     const { data } = await sb.from('vehicules').select('*').eq('client_id', clientId);
@@ -1643,7 +1765,7 @@ const API = {
   },
   async passages(d) {
     const { data, error } = await sb.from('passages')
-      .select('*, clients(nom,telephone), vehicules(marque,modele,immatriculation), passage_lignes(*)')
+      .select('*, clients(nom,telephone,entreprise_id), vehicules(marque,modele,immatriculation), passage_lignes(*)')
       .eq('journee', d).order('heure_arrivee');
     if (error) throw error;
     return data || [];
@@ -1676,7 +1798,10 @@ const API = {
   },
   async ficheClient(id) {
     const [cl, veh, pass, fid] = await Promise.all([
-      sb.from('clients').select('*').eq('id', id).maybeSingle(),
+      // colonnes explicites : l'empreinte du code client n'a rien à faire ici
+      sb.from('clients')
+        .select('id,nom,telephone,email,est_pro,societe,note,cree_le,entreprise_id,pin_pose_le, entreprises(nom,remise_pct)')
+        .eq('id', id).maybeSingle(),
       sb.from('vehicules').select('*').eq('client_id', id),
       sb.from('passages').select('*, passage_lignes(*), vehicules(marque,modele,immatriculation)')
         .eq('client_id', id).order('journee', { ascending: false }).limit(40),
@@ -2100,8 +2225,18 @@ function boiteReglages() {
       ce bouton force une synchronisation immédiate.</p>
 
     <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-compte>👤 Mon compte (mot de passe, photo${ROLES_2FA.includes(moi && moi.role) ? ', double sécurité' : ''})</button>
+
+    <div class="ocr-surtitre" style="margin-top:var(--ocr-e5)">Application</div>
+    ${estInstallee() ? `<p class="ocr-petit" style="margin:var(--ocr-e3) 0 0">✓ Installée sur cet appareil.
+        Les mises à jour arrivent tout seules — rien à télécharger.</p>`
+      : `<p class="ocr-petit" style="margin:var(--ocr-e3) 0">Installe-la pour l’ouvrir comme une vraie app,
+          sans passer par le navigateur.</p>
+        <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc${installDispo() ? '' : ' masque'}" data-installer>
+          📲 Installer sur cet appareil</button>`}
+
     <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>
-    <p class="ocr-mini" style="text-align:center;margin:10px 0 0">OCR Brillance — Atelier ${VERSION} · ${esc((moi && moi.nom) || '')}</p>`);
+    <p class="ocr-mini" style="text-align:center;margin:10px 0 0">OCR Brillance — Atelier ${VERSION}${
+      estInstallee() ? ' · installée' : ''} · ${esc((moi && moi.nom) || '')}</p>`);
 
   v.querySelectorAll('[data-pref]').forEach(b => b.addEventListener('click', () => {
     const [nom, val] = b.dataset.pref.split(':');
@@ -2408,8 +2543,13 @@ function totalForm() {
     form.options.forEach(o => { const op = OCR.option(o); if (op) cat += op.prix; });
   }
   const brut = cat + Math.max(0, Number(form.manuel) || 0);
-  const remise = Math.min(Math.max(0, Number(form.remise) || 0), brut);
-  return { brut, remise, total: brut - remise, devis };
+  // Employé d'une entreprise partenaire (Ehu Motors…) : la remise suit la
+  // PERSONNE, quel que soit le véhicule. Le champ Remise peut la remplacer.
+  const ent = form.clientTrouve && form.clientTrouve.entreprises;
+  const auto = ent && ent.remise_pct > 0 ? Math.round(brut * ent.remise_pct / 100) : 0;
+  const remise = Math.min(Number(form.remise) > 0 ? Number(form.remise) : auto, brut);
+  return { brut, remise, total: brut - remise, devis,
+           partenaire: auto > 0 && !(Number(form.remise) > 0) ? ent : null };
 }
 
 async function vueSaisie(j) {
@@ -2435,6 +2575,11 @@ async function vueSaisie(j) {
         </label>
         <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Nom</span>
           <input class="ocr-saisie" id="fNom" value="${esc(form.nom)}" placeholder="Koffi Adjovi"></label>
+        ${form.clientTrouve && form.clientTrouve.entreprises && form.clientTrouve.entreprises.remise_pct > 0 ? `
+        <div class="ocr-message ocr-message--succes" style="margin-top:var(--ocr-e4)"><span>🤝</span><div>
+          <strong>Employé ${esc(form.clientTrouve.entreprises.nom)}</strong><br>
+          Remise de ${form.clientTrouve.entreprises.remise_pct} % appliquée automatiquement — peu importe le véhicule
+          (moto du showroom, moto d’un client, sa voiture…).</div></div>` : ''}
       </div>
 
       <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
@@ -2492,7 +2637,9 @@ async function vueSaisie(j) {
                placeholder="Montant convenu après évaluation"></label>` : ''}
 
       <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Remise</span>
-        <input class="ocr-saisie" id="fRemise" type="number" min="0" step="500" value="${form.remise || ''}" placeholder="0"></label>
+        <input class="ocr-saisie" id="fRemise" type="number" min="0" step="500" value="${form.remise || ''}"
+               placeholder="${T.partenaire ? OCR.fcfa(T.remise) + ' auto (' + esc(T.partenaire.nom) + ')' : '0'}">
+        ${T.partenaire ? `<span class="ocr-aide">Remise ${T.partenaire.remise_pct} % ${esc(T.partenaire.nom)} appliquée — remplis ce champ seulement pour la remplacer.</span>` : ''}</label>
       <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Observation</span>
         <textarea class="ocr-saisie" id="fNote" rows="2" placeholder="Rayure signalée sur l’aile avant droite…">${esc(form.note)}</textarea></label>
 
@@ -2500,7 +2647,8 @@ async function vueSaisie(j) {
         <div>
           <div class="ocr-mini">Total à encaisser</div>
           <div style="font:700 22px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(T.total)}</div>
-          ${T.remise ? `<div class="ocr-mini">Brut ${OCR.fcfa(T.brut)} − remise ${OCR.fcfa(T.remise)}</div>` : ''}
+          ${T.remise ? `<div class="ocr-mini">Brut ${OCR.fcfa(T.brut)} − remise ${OCR.fcfa(T.remise)}${
+            T.partenaire ? ' · ' + esc(T.partenaire.nom) + ' ' + T.partenaire.remise_pct + ' %' : ''}</div>` : ''}
         </div>
         <div style="flex:1"></div>
         <button class="ocr-btn ocr-btn--primaire" id="btnEnregistrer" ${T.total > 0 ? '' : 'disabled'}>Enregistrer</button>
@@ -2575,7 +2723,7 @@ async function enregistrer() {
       p_telephone: form.tel,
       p_gabarit: form.gabarit,
       p_lignes: lignes,
-      p_remise: Math.max(0, Number(form.remise) || 0),
+      p_remise: T.remise,
       p_marque: form.marque, p_modele: form.modele, p_immat: form.immat,
       p_equipe: form.equipe, p_note: form.note,
       p_reservation: form.reservation,
@@ -2828,7 +2976,8 @@ function calculerAnomalies(ps) {
       out.push({ cle: 'impaye-' + p.id, gravite: 'critique', titre: 'Véhicule livré sans encaissement',
         detail: p.reference + ' · ' + (c.nom || 'client') + ' · ' + OCR.fcfa(p.montant_total) + ' non encaissés.',
         passage_id: p.id });
-    if (p.remise > 0 && p.montant_brut > 0 && p.remise / p.montant_brut > OCR.CONFIG.seuilRemiseAlerte)
+    if (p.remise > 0 && p.montant_brut > 0 && p.remise / p.montant_brut > OCR.CONFIG.seuilRemiseAlerte
+        && !(p.clients && p.clients.entreprise_id))   // remise partenaire = légitime, pas d'alerte
       out.push({ cle: 'remise-' + p.id, gravite: 'alerte',
         titre: 'Remise de ' + Math.round(p.remise / p.montant_brut * 100) + ' %',
         detail: p.reference + ' · ' + OCR.fcfa(p.remise) + ' sur ' + OCR.fcfa(p.montant_brut) +
@@ -3870,6 +4019,70 @@ function brancherNouveauClient() {
   });
 }
 
+/* Le client a oublié le code de son espace : on le remet à zéro, il en
+   choisit un nouveau depuis son téléphone (avec sa plaque comme preuve).
+   À ne faire qu'en le voyant — c'est l'accès à son historique. */
+function boiteResetCodeClient(client) {
+  const v = modale(`
+    <h3 class="ocr-h2">Code oublié — ${esc(client.nom || 'ce client')}</h3>
+    <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">Son code sera effacé et il pourra en choisir
+      un nouveau depuis son téléphone, en donnant sa plaque. Ses véhicules, son historique
+      et sa fidélité ne bougent pas.</p>
+    <div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>⚠</span><div>
+      <strong>Vérifie que c'est bien lui.</strong><br>Ce code protège son historique et ses reçus.
+      À faire seulement en face à face. L'action est tracée à ton nom.</div></div>
+    <div style="display:flex;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Remettre son code à zéro</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    const { error } = await API.reinitialiserCodeClient(client.id);
+    if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    fermerModale();
+    toast('Code effacé — il peut en choisir un nouveau depuis son téléphone');
+    rech.fiche = await API.ficheClient(client.id);
+    rendre();
+  });
+}
+
+/* Lier un client à une entreprise partenaire (Ehu Motors…) : ses lavages
+   auront la remise automatiquement, quel que soit le véhicule.
+   Réservé à la direction et au comptable — c'est de l'argent. */
+async function boiteLierEntreprise(client) {
+  let liste = [];
+  try { liste = await API.entreprises(); } catch (ex) { return toast(ex.message, true); }
+  const partenaires = liste.filter(e => e.remise_pct > 0 || e.id === client.entreprise_id);
+  const v = modale(`
+    <h3 class="ocr-h2">🤝 ${esc(client.nom || 'Ce client')}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Employé d'une entreprise partenaire ?
+      La remise s'appliquera automatiquement à chaque passage — moto du showroom, moto d'un client,
+      sa propre voiture, peu importe. Tout est tracé au journal.</p>
+    ${partenaires.length ? partenaires.map(e => `
+      <button class="presta" data-lier="${e.id}" aria-pressed="${client.entreprise_id === e.id}">
+        <span class="coche">${client.entreprise_id === e.id ? '✓' : ''}</span>
+        <span style="min-width:0"><span class="nm">${esc(e.nom)}</span>
+          <span class="du">remise employés ${e.remise_pct} %</span></span>
+      </button>`).join('')
+    : '<p class="ocr-mini">Aucune entreprise avec remise employés pour l’instant — fixe d’abord un pourcentage sur la fiche entreprise (onglet Entreprises).</p>'}
+    ${client.entreprise_id ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-delier
+        style="margin-top:var(--ocr-e3);color:var(--ocr-argent-2)">Délier — plus aucune remise automatique</button>` : ''}
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  const appliquer = async entrepriseId => {
+    const { error } = await API.lierEmploye(client.id, entrepriseId);
+    if (error) return toast(error.message, true);
+    toast(entrepriseId ? 'Lié ✓ — remise automatique à chaque passage' : 'Délié — plus de remise automatique');
+    fermerModale();
+    rech.fiche = await API.ficheClient(client.id);
+    rendre();
+  };
+  v.querySelectorAll('[data-lier]').forEach(b => b.addEventListener('click', () => appliquer(b.dataset.lier)));
+  const bd = v.querySelector('[data-delier]');
+  if (bd) bd.addEventListener('click', () => appliquer(null));
+}
+
 /* Ajouter un deuxième (ou troisième) véhicule à un client existant :
    jamais de nouvelle fiche, tout reste sous le même téléphone. */
 function boiteAjoutVehicule(client) {
@@ -3925,9 +4138,14 @@ let proEdite = null;   // null, ou le brouillon en cours d'édition
 
 async function vueEntreprises(el) {
   el.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
-  let liste;
-  try { liste = await API.entreprises(); }
+  let liste, lies = [];
+  try {
+    liste = await API.entreprises();
+    const { data } = await sb.from('clients').select('id,nom,entreprise_id').not('entreprise_id', 'is', null);
+    lies = data || [];
+  }
   catch (ex) { el.innerHTML = '<div class="ocr-message ocr-message--erreur"><span>⛔</span><div>' + esc(ex.message) + '</div></div>'; return; }
+  const employesDe = id => lies.filter(c => c.entreprise_id === id);
 
   const nb = s => liste.filter(e => e.statut === s).length;
   const enCours = liste.filter(e => !['client', 'perdu'].includes(e.statut)).length;
@@ -3959,8 +4177,11 @@ async function vueEntreprises(el) {
         <div class="ligne1">
           <strong style="font:600 15px/1.2 var(--ocr-texte)">${esc(e.nom)}</strong>
           <span class="ocr-pastille ocr-pastille--${ton}">${lab}</span>
+          ${e.remise_pct > 0 ? `<span class="ocr-pastille ocr-pastille--marque">🤝 employés −${e.remise_pct} %</span>` : ''}
           ${e.flotte_estimee ? `<span class="ocr-mini">~${e.flotte_estimee} véhicules</span>` : ''}
         </div>
+        ${employesDe(e.id).length ? `<div class="ocr-mini" style="margin-top:4px">
+          ${employesDe(e.id).length} employé(s) lié(s) : ${esc(employesDe(e.id).map(c => c.nom).join(', '))}</div>` : ''}
         ${e.contact_nom ? `<div class="ocr-mini" style="margin-top:4px">${esc(e.contact_nom)}${e.contact_role ? ' · ' + esc(e.contact_role) : ''}${e.telephone ? ' · ' + esc(e.telephone) : ''}</div>` : ''}
         ${e.prochaine_action ? `<div class="ocr-petit" style="margin-top:5px;${retard ? 'color:var(--ocr-erreur)' : ''}">
           ${retard ? '⚠ ' : '→ '}${esc(e.prochaine_action)}${e.prochaine_le ? ' · ' + dateFr(e.prochaine_le) : ''}</div>` : ''}
@@ -3970,6 +4191,8 @@ async function vueEntreprises(el) {
           ${wa ? `<a class="ocr-btn ocr-btn--secondaire ocr-btn--petit" target="_blank" rel="noopener"
             href="https://wa.me/${wa}?text=${encodeURIComponent('Bonjour' + (e.contact_nom ? ' ' + e.contact_nom : '') +
             ', ici OCR Brillance (Station Oryx Saint Michel). Nous proposons un entretien professionnel des véhicules d’entreprise — lavage soigné, suivi et facturation mensuelle groupée. Quand pourrions-nous en parler ?')}">WhatsApp</a>` : ''}
+          ${peutCloturer() ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-premise="${e.id}"
+            ${e.remise_pct > 0 ? '' : 'style="color:var(--ocr-argent-2)"'}>Remise employés…</button>` : ''}
           <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-promod="${e.id}" style="margin-left:auto">Modifier</button>
         </div>
       </div>`;
@@ -3984,7 +4207,35 @@ async function vueEntreprises(el) {
     proEdite = { ...liste.find(x => x.id === b.dataset.promod) };
     rendre();
   }));
+  el.querySelectorAll('[data-premise]').forEach(b => b.addEventListener('click', () => {
+    boiteRemisePartenaire(liste.find(x => x.id === b.dataset.premise));
+  }));
   brancherFormEntreprise(el);
+}
+
+/* La remise employés d'une entreprise partenaire — direction/comptable. */
+function boiteRemisePartenaire(e) {
+  const v = modale(`
+    <h3 class="ocr-h2">🤝 Remise employés — ${esc(e.nom)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Appliquée automatiquement à chaque passage
+      des clients liés à cette entreprise. 0 = pas de remise. Changement tracé au journal.</p>
+    <label class="ocr-champ"><span class="ocr-label">Pourcentage (0 à 100)</span>
+      <input class="ocr-saisie" id="rpPct" type="number" min="0" max="100" step="5" value="${e.remise_pct || 0}"
+             style="text-align:center;font:700 22px/1.2 var(--ocr-texte)"></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Enregistrer</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async ev => {
+    const pct = Number(v.querySelector('#rpPct').value);
+    if (!(pct >= 0 && pct <= 100)) return toast('Entre 0 et 100.', true);
+    ev.target.disabled = true;
+    const { error } = await API.reglerRemisePartenaire(e.id, pct);
+    if (error) { toast(error.message, true); ev.target.disabled = false; return; }
+    fermerModale(); toast('Remise ' + esc(e.nom) + ' : ' + pct + ' % ✓');
+    rendre();
+  });
 }
 
 function formEntreprise() {
@@ -4071,6 +4322,9 @@ function vueFicheClient() {
 
   // segments : lisibles d'un coup d'œil, calculés — jamais stockés
   const badges = [];
+  if (c.entreprises && c.entreprises.remise_pct > 0)
+    badges.push(['🤝 ' + c.entreprises.nom + ' · −' + c.entreprises.remise_pct + ' %', 'marque']);
+  if (c.pin_pose_le) badges.push(['📱 Espace client actif', 'succes']);
   if (depense >= 50000) badges.push(['★ VIP', 'marque']);
   else if (ps.length >= 5) badges.push(['Fidèle', 'succes']);
   if (jd != null && jd > 30) badges.push(['À relancer · ' + jd + ' j', 'erreur']);
@@ -4110,6 +4364,9 @@ function vueFicheClient() {
               href="https://wa.me/${wa}?text=${encodeURIComponent(msgRelance)}">📣 Relancer</a>`
             : wa ? `<a class="ocr-btn ocr-btn--fantome ocr-btn--petit" target="_blank" rel="noopener"
               href="https://wa.me/${wa}">WhatsApp</a>` : ''}
+          ${peutCloturer() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnLierEnt">🤝 Partenaire…</button>' : ''}
+          ${c.pin_pose_le && ['direction', 'comptable', 'manager'].includes(roleEffectif())
+            ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnResetCode">📱 Code oublié…</button>' : ''}
           <button class="ocr-btn ocr-btn--primaire ocr-btn--petit" id="btnNouveauPassage">Nouveau passage</button>
         </div>
       </div>
@@ -4180,6 +4437,10 @@ function vueFicheClient() {
     </div>`;
 
   $('#btnAjoutVeh').addEventListener('click', () => boiteAjoutVehicule(c));
+  const ble = $('#btnLierEnt');
+  if (ble) ble.addEventListener('click', () => boiteLierEntreprise(c));
+  const brc = $('#btnResetCode');
+  if (brc) brc.addEventListener('click', () => boiteResetCodeClient(c));
   $('#btnRetourCli').addEventListener('click', () => { rech.fiche = null; vueClients(); });
   $('#btnNouveauPassage').addEventListener('click', () => {
     const v = vs[0] || {};
