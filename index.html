@@ -428,6 +428,10 @@ body{padding-bottom:env(safe-area-inset-bottom)}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .barre .role{font:var(--ocr-t-mini);color:var(--ocr-argent-2);text-transform:uppercase;letter-spacing:.12em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Une plaque se lit caractère par caractère : chiffres à largeur fixe,
+   majuscules, un peu d'air entre les signes. */
+.ocr-saisie.plaque{text-transform:uppercase;letter-spacing:.1em;
+  font-variant-numeric:tabular-nums;font-weight:600}
 #etatJour{flex:none;font-size:10px;padding:3px 9px;white-space:nowrap}
 /* Les boutons de droite ne rétrécissent jamais : mieux vaut effacer la
    pastille de statut que de couper un bouton en deux (bug du 12/08). */
@@ -1032,6 +1036,51 @@ function lireReference(ref) {
   return m ? { annee: 2000 + +m[1], mois: +m[2], sequence: +m[3] } : null;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   IMMATRICULATION (Bénin)
+   Voiture : 2 lettres + 4 chiffres              — CB5916
+   Moto    : 1 chiffre + 2 lettres + 4 chiffres  — 2FB9408
+
+   Le champ n'est JAMAIS obligatoire : on peut compléter à l'atelier,
+   véhicule devant nous. Mais dès qu'une plaque est saisie, elle est
+   ramenée à sa forme canonique (majuscules, sans espace ni tiret) :
+   c'est ce qui permet de rattacher tout seul un véhicule à son client
+   au passage suivant. « cb 5916 », « CB-5916 » et « CB5916 » doivent
+   désigner le MÊME véhicule, sinon on crée des doublons et la fidélité
+   se disperse.
+
+   Les formats sont VÉRIFIÉS mais pas IMPOSÉS : une plaque étrangère,
+   diplomatique ou ancienne reste acceptée, simplement signalée. Refuser
+   un vrai véhicule coûterait plus cher qu'une saisie inhabituelle.
+   ───────────────────────────────────────────────────────────── */
+const PLAQUE_VOITURE = /^[A-Z]{2}[0-9]{4}$/;
+const PLAQUE_MOTO    = /^[0-9][A-Z]{2}[0-9]{4}$/;
+const PLAQUE_EXEMPLES = { voiture: 'CB5916', moto: '2FB9408' };
+
+/** Forme canonique d'une plaque : majuscules, sans espace ni ponctuation. */
+function plaque(v) {
+  return String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * État d'une plaque saisie : forme propre, type reconnu, format connu ou non.
+ * `gabarit` est facultatif — s'il est fourni, on signale une plaque moto sur
+ * un gabarit voiture (et l'inverse), qui est presque toujours une erreur.
+ */
+function plaqueEtat(v, gabarit) {
+  const cle = plaque(v);
+  if (!cle) return { cle: '', vide: true, type: null, ok: true, accord: true, aide: '' };
+  const type = PLAQUE_VOITURE.test(cle) ? 'voiture' : PLAQUE_MOTO.test(cle) ? 'moto' : null;
+  if (!type) return { cle, vide: false, type: null, ok: false, accord: true,
+    aide: 'Format inhabituel — voiture : ' + PLAQUE_EXEMPLES.voiture + ' · moto : ' + PLAQUE_EXEMPLES.moto };
+  // Cohérence avec le gabarit choisi, quand on le connaît.
+  const accord = gabarit ? (gabarit === 'moto' ? type === 'moto' : type === 'voiture') : true;
+  return { cle, vide: false, type, ok: true, accord,
+    aide: accord ? (type === 'moto' ? '✓ Plaque moto' : '✓ Plaque voiture')
+                 : (type === 'moto' ? 'Plaque au format moto — vérifie le type de véhicule'
+                                    : 'Plaque au format voiture — vérifie le type de véhicule') };
+}
+
 /** Lien WhatsApp pré-rempli. */
 function lienWhatsApp(message) {
   return 'https://wa.me/' + MARQUE.whatsapp + (message ? '?text=' + encodeURIComponent(message) : '');
@@ -1051,6 +1100,7 @@ const API = {
   carnet, prixCarnet, prixCarnetUnite, economieCarnet,
   recetteMensuelleCarnet, heuresCarnet, porteursPourCouvrir,
   reference, lireReference, lienWhatsApp,
+  plaque, plaqueEtat, PLAQUE_EXEMPLES,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
@@ -1090,9 +1140,9 @@ function creerClientDemo() {
       { id: 'c3', nom: 'Clinique Étoile', telephone: null },
     ],
     vehicules: [
-      { id: 'v1', client_id: 'c1', gabarit: 'berline',  marque: 'Toyota',   modele: 'RAV4', immatriculation: '1234 AB 1' },
-      { id: 'v2', client_id: 'c2', gabarit: 'petite',   marque: 'Kia',      modele: 'Rio',  immatriculation: '5521 AC 2' },
-      { id: 'v3', client_id: 'c3', gabarit: 'grandsuv', marque: 'Toyota',   modele: 'Hilux',immatriculation: '9042 BB 3' },
+      { id: 'v1', client_id: 'c1', gabarit: 'berline',  marque: 'Toyota',   modele: 'RAV4', immatriculation: 'CB5916' },
+      { id: 'v2', client_id: 'c2', gabarit: 'petite',   marque: 'Kia',      modele: 'Rio',  immatriculation: 'AJ2274' },
+      { id: 'v3', client_id: 'c3', gabarit: 'grandsuv', marque: 'Toyota',   modele: 'Hilux',immatriculation: 'BD8830' },
     ],
     journees: [{ date: jourCourant, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null }],
     passages: [], passage_lignes: [], paiements: [], anomalies: [], journal: [],
@@ -1177,21 +1227,21 @@ function creerClientDemo() {
 
   // Un client parti depuis 40 jours — pour la liste « à relancer ».
   D.clients.push({ id: 'c4', nom: 'Pascal Houngbo', telephone: '+229 01 55 20 41 07' });
-  D.vehicules.push({ id: 'v4', client_id: 'c4', gabarit: 'berline', marque: 'Peugeot', modele: '3008', immatriculation: '7788 AD 4' });
+  D.vehicules.push({ id: 'v4', client_id: 'c4', gabarit: 'berline', marque: 'Peugeot', modele: '3008', immatriculation: 'CE1147' });
   semer('c4', 'v4', 'berline', 'signature', ['cire'], 'livre', 'paye', 'kkiapay', 0, 40);
   semer('c4', 'v4', 'berline', 'signature', [],       'livre', 'paye', 'kkiapay', 0, 47);
 
   // Rendez-vous : deux aujourd'hui, un demain.
   const jourPlus = n => { const d = new Date(); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
   D.reservations.push(
-    { id: uid(), reference: ref(), client_id: 'c2', prestation: 'express', gabarit: 'petite',
+    { id: uid(), reference: ref(), client_id: 'c2', vehicule_id: 'v2', prestation: 'express', gabarit: 'petite',
       options: [], date_prevue: jourCourant, heure_prevue: '15:00:00', duree_min: 20,
       montant_total: 2500, acompte_attendu: 500, statut: 'confirmee', canal: 'comptoir', note: null },
-    { id: uid(), reference: ref(), client_id: 'c1', prestation: 'signature', gabarit: 'berline',
+    { id: uid(), reference: ref(), client_id: 'c1', vehicule_id: 'v1', prestation: 'signature', gabarit: 'berline',
       options: [], date_prevue: jourCourant, heure_prevue: '16:30:00', duree_min: 75,
       montant_total: 8000, acompte_attendu: 8000, statut: 'en_attente_paiement', canal: 'app',
       note: 'Réservé depuis l’application — a choisi de tout payer d’avance' },
-    { id: uid(), reference: ref(), client_id: 'c4', prestation: 'signature', gabarit: 'berline',
+    { id: uid(), reference: ref(), client_id: 'c4', vehicule_id: 'v4', prestation: 'signature', gabarit: 'berline',
       options: [], date_prevue: jourPlus(1), heure_prevue: '10:00:00', duree_min: 75,
       montant_total: 8000, acompte_attendu: 1600, statut: 'confirmee', canal: 'comptoir', note: null },
   );
@@ -1210,6 +1260,13 @@ function creerClientDemo() {
     if (n !== 4) semerPointage('e5', n, '08:10:00', '17:45:00');
   });
   semerPointage('e5', 2, '08:15:00', null);   // départ oublié
+  // Pauses : Abel a déjeuné et repris, Cabo est en pause en ce moment —
+  // les deux états visibles d'un coup d'œil pour la démonstration.
+  const ptAuj = e => D.pointages.find(x => x.employe_id === e && x.jour === jourCourant);
+  const pAbel = ptAuj('e4'); if (pAbel) pAbel.pointage_pauses = [
+    { id: uid(), debut: '12:00:00', fin: '12:42:00', hors_ligne: false }];
+  const pCabo = ptAuj('e5'); if (pCabo) pCabo.pointage_pauses = [
+    { id: uid(), debut: plusMin(new Date().toTimeString().slice(0, 8), -12), fin: null, hors_ligne: false }];
 
   // Prospection : deux entreprises, dont une relance en retard.
   D.entreprises.push(
@@ -1225,7 +1282,7 @@ function creerClientDemo() {
   );
   // Rodrigue, employé Ehu Motors : sa remise le suit, moto du showroom ou sa voiture.
   D.clients.push({ id: 'c9', nom: 'Rodrigue Sènou', telephone: '+229 01 44 66 20 09', entreprise_id: 'ehu' });
-  D.vehicules.push({ id: 'v9', client_id: 'c9', gabarit: 'moto', marque: 'Haojue', modele: 'DK 150', immatriculation: null });
+  D.vehicules.push({ id: 'v9', client_id: 'c9', gabarit: 'moto', marque: 'Haojue', modele: 'DK 150', immatriculation: '2FB9408' });
 
   const lier = p => ({
     ...p,
@@ -1328,6 +1385,10 @@ function creerClientDemo() {
         ({ ...v, clients: D.clients.find(c => c.id === v.client_id) || null }));
       if (table === 'clients')           return D.clients.map(c =>
         ({ ...c, entreprises: D.entreprises.find(e => e.id === c.entreprise_id) || null }));
+      // Comme en base : reservations.vehicule_id pointe vers vehicules, la marque/
+      // modèle/plaque ne sont pas dupliqués sur la réservation elle-même.
+      if (table === 'reservations')      return D.reservations.map(r =>
+        ({ ...r, vehicules: D.vehicules.find(v => v.id === r.vehicule_id) || null }));
       return D[table] || [];
     };
     const filtrer = () => {
@@ -1482,8 +1543,11 @@ function creerClientDemo() {
       if (!lignes.length) throw new Error('Aucune prestation sélectionnée');
       let cl = D.clients.find(c => c.telephone && c.telephone === (a.p_telephone || '').trim());
       if (!cl) { cl = { id: uid(), nom: a.p_client_nom || 'Client de passage', telephone: (a.p_telephone || '').trim() || null }; D.clients.push(cl); }
-      let ve = D.vehicules.find(v => v.client_id === cl.id && a.p_immat && v.immatriculation === a.p_immat.trim());
-      if (!ve) { ve = { id: uid(), client_id: cl.id, gabarit: a.p_gabarit, marque: a.p_marque, modele: a.p_modele, immatriculation: (a.p_immat || '').trim() || null }; D.vehicules.push(ve); }
+      // Plaque : même règle qu'en base (ocr_plaque_cle) — on compare et on
+      // stocke la forme canonique, sinon « cb 5916 » créerait un doublon.
+      const plaque = OCR.plaque(a.p_immat);
+      let ve = plaque ? D.vehicules.find(v => v.client_id === cl.id && OCR.plaque(v.immatriculation) === plaque) : null;
+      if (!ve) { ve = { id: uid(), client_id: cl.id, gabarit: a.p_gabarit, marque: a.p_marque, modele: a.p_modele, immatriculation: plaque || null }; D.vehicules.push(ve); }
       const brut = lignes.reduce((s, l) => s + l.prix, 0);
       const remise = Math.min(Math.max(0, a.p_remise || 0), brut);
       const id = uid(), r = ref();
@@ -1534,14 +1598,59 @@ function creerClientDemo() {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp) throw new Error('Accès réservé au personnel');
       if (!['arrivee', 'depart'].includes(a.p_sens)) throw new Error('Sens inconnu');
-      let pt = D.pointages.find(x => x.employe_id === emp.id && x.jour === jourCourant);
-      if (!pt) { pt = { id: uid(), employe_id: emp.id, jour: jourCourant, arrivee: null, depart: null }; D.pointages.push(pt); }
-      const heure = new Date().toTimeString().slice(0, 8);
-      if (a.p_sens === 'arrivee') { if (!pt.arrivee) pt.arrivee = heure; pt.arrivee_par = emp.id; }
-      else { pt.depart = heure; pt.depart_par = emp.id; }
+      const cible = a.p_employe ? D.employes.find(e => e.id === a.p_employe) : emp;
+      if (!cible) throw new Error('Employé inconnu');
+      if (cible.id !== emp.id && !['manager', 'comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls le manager, le comptable et la direction pointent pour un employé');
+      const jour = a.p_jour || jourCourant;
+      const heure = a.p_heure ? String(a.p_heure).slice(0, 8) : new Date().toTimeString().slice(0, 8);
+      let pt = D.pointages.find(x => x.employe_id === cible.id && x.jour === jour);
+      if (!pt) { pt = { id: uid(), employe_id: cible.id, jour, arrivee: null, depart: null }; D.pointages.push(pt); }
+      if (a.p_sens === 'arrivee') {
+        if (!pt.arrivee) { pt.arrivee = heure; pt.arrivee_hors_ligne = !!a.p_hors_ligne; }
+        pt.arrivee_par = emp.id;
+      } else {
+        pt.depart = heure; pt.depart_par = emp.id; pt.depart_hors_ligne = !!a.p_hors_ligne;
+      }
       D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
-        quoi: emp.nom + (a.p_sens === 'arrivee' ? ' est arrivé à ' : ' est parti à ') + heure.slice(0, 5), entite: 'pointage' });
+        quoi: cible.nom + (a.p_sens === 'arrivee' ? ' est arrivé à ' : ' est parti à ') + heure.slice(0, 5) +
+              (cible.id !== emp.id ? ' — pointé par ' + emp.nom : '') +
+              (a.p_hors_ligne ? ' (hors ligne)' : ''), entite: 'pointage' });
       return [{ jour_pointe: pt.jour, heure_arrivee: pt.arrivee, heure_depart: pt.depart }];
+    },
+    ocr_pause(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['debut', 'fin'].includes(a.p_sens)) throw new Error('Sens inconnu');
+      const cible = a.p_employe ? D.employes.find(e => e.id === a.p_employe) : emp;
+      if (!cible) throw new Error('Employé inconnu');
+      if (cible.id !== emp.id && !['manager', 'comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls le manager, le comptable et la direction pointent pour un employé');
+      const jour = a.p_jour || jourCourant;
+      const heure = a.p_heure ? String(a.p_heure).slice(0, 8) : new Date().toTimeString().slice(0, 8);
+      const pt = D.pointages.find(x => x.employe_id === cible.id && x.jour === jour);
+      if (!pt || !pt.arrivee) throw new Error('Il faut d’abord pointer l’arrivée');
+      pt.pointage_pauses = pt.pointage_pauses || [];
+      const ouverte = pt.pointage_pauses.filter(x => !x.fin).pop() || null;
+      if (a.p_sens === 'debut') {
+        if (ouverte) return [{ pause_id: ouverte.id, debut: ouverte.debut, fin: null }];
+        if (a.p_cle && pt.pointage_pauses.some(x => x.cle_client === a.p_cle)) {
+          const d = pt.pointage_pauses.find(x => x.cle_client === a.p_cle);
+          return [{ pause_id: d.id, debut: d.debut, fin: d.fin }];
+        }
+        const p = { id: uid(), debut: heure, fin: null, cle_client: a.p_cle || null, hors_ligne: !!a.p_hors_ligne };
+        pt.pointage_pauses.push(p);
+        D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+          quoi: cible.nom + ' en pause à ' + heure.slice(0, 5) +
+                (cible.id !== emp.id ? ' — pointé par ' + emp.nom : ''), entite: 'pointage' });
+        return [{ pause_id: p.id, debut: p.debut, fin: null }];
+      }
+      if (!ouverte) throw new Error('Aucune pause en cours');
+      ouverte.fin = heure;
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: cible.nom + ' a reprise à ' + heure.slice(0, 5) +
+              (cible.id !== emp.id ? ' — pointé par ' + emp.nom : ''), entite: 'pointage' });
+      return [{ pause_id: ouverte.id, debut: ouverte.debut, fin: ouverte.fin }];
     },
     ocr_annuler_passage(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -1618,7 +1727,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v26';
+const VERSION = 'v29';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -1726,10 +1835,31 @@ const fermerModale = () => {
   if (history.state && history.state.ocrModale) { retourInterne = true; history.back(); }
 };
 
+/* Branche un champ d'immatriculation : mise en forme pendant la frappe
+   (majuscules, sans espace ni tiret) en gardant le curseur là où il est.
+   Une plaque doit toujours être stockée sous la MÊME forme — sinon « cb 5916 »
+   et « CB5916 » créent deux véhicules, et la fidélité du client se disperse. */
+function brancherPlaque(el, apres) {
+  if (!el) return;
+  el.classList.add('plaque');
+  el.setAttribute('autocapitalize', 'characters');
+  el.setAttribute('autocomplete', 'off');
+  el.setAttribute('spellcheck', 'false');
+  el.setAttribute('maxlength', '10');
+  el.addEventListener('input', () => {
+    const utilesAvant = OCR.plaque(el.value.slice(0, el.selectionStart || 0)).length;
+    const propre = OCR.plaque(el.value);
+    if (el.value !== propre) { el.value = propre; el.setSelectionRange(utilesAvant, utilesAvant); }
+    if (apres) apres(propre);
+  });
+}
+
 function bandeau() {
   let h = '';
   if (MODE_DEMO) h += '<div class="bandeau bandeau--demo">✦ Mode démonstration — aucune donnée réelle n’est enregistrée.</div>';
-  if (!navigator.onLine) h += '<div class="bandeau bandeau--hors">⛔ Hors ligne — la saisie est impossible tant que la connexion n’est pas rétablie.</div>';
+  // Le pointage, lui, marche sans réseau : le dire ici évite de contredire
+  // l'écran Pointage, qui invite justement à pointer quand même.
+  if (!navigator.onLine) h += '<div class="bandeau bandeau--hors">⛔ Hors ligne — encaissements et saisie attendent la connexion. Le pointage, lui, fonctionne : il partira tout seul.</div>';
   $('#bandeau').innerHTML = h;
 }
 window.addEventListener('online', bandeau);
@@ -1769,6 +1899,15 @@ const API = {
   async vehiculesDe(clientId) {
     const { data } = await sb.from('vehicules').select('*').eq('client_id', clientId);
     return data || [];
+  },
+  // Retrouve un véhicule par sa plaque CANONIQUE (majuscules, sans espace) —
+  // c'est ce qui permet de rattacher tout seul un habitué à l'arrivée.
+  async vehiculeParPlaque(cle) {
+    if (!cle) return null;
+    const { data } = await sb.from('vehicules')
+      .select('id,gabarit,marque,modele,immatriculation,client_id,clients(id,nom,telephone)')
+      .eq('immatriculation', cle).limit(1);
+    return (data && data[0]) || null;
   },
   ajouterVehicule: v => sb.from('vehicules').insert(v),
   async journee(d) {
@@ -1854,7 +1993,7 @@ const API = {
       client_id: cl.id, gabarit: d.gabarit,
       marque: String(d.marque || '').trim() || null,
       modele: String(d.modele || '').trim() || null,
-      immatriculation: String(d.immat || '').trim() || null,
+      immatriculation: OCR.plaque(d.immat) || null,
     });
     if (ev) throw ev;
     return { id: cl.id };
@@ -1871,7 +2010,10 @@ const API = {
 
   /* --- rendez-vous --- */
   async rdvJour(d) {
-    const { data, error } = await sb.from('reservations').select('*')
+    // Le véhicule (marque/modèle/immatriculation) vit sur vehicules, pas sur
+    // reservations — sans ce join, « Arrivé → saisie » ne peut rien pré-remplir
+    // et on doit tout retaper (remonté le 12/08).
+    const { data, error } = await sb.from('reservations').select('*, vehicules(marque,modele,immatriculation)')
       .eq('date_prevue', d).in('statut', ['en_attente_paiement', 'confirmee', 'honoree', 'absente'])
       .order('heure_prevue');
     if (error) throw error;
@@ -1946,18 +2088,23 @@ const API = {
     return data || [];
   },
 
+  // Les pauses voyagent avec le pointage : les heures travaillées, c'est la
+  // présence MOINS les pauses, et il faut les deux pour le calculer.
   async pointagesJour(d) {
-    const { data, error } = await sb.from('pointages').select('*').eq('jour', d);
+    const { data, error } = await sb.from('pointages')
+      .select('*, pointage_pauses(id,debut,fin,hors_ligne)').eq('jour', d);
     if (error) throw error;
     return data || [];
   },
   async pointagesPeriode(du, au, empId) {
-    let q = sb.from('pointages').select('*').gte('jour', du).lte('jour', au).order('jour', { ascending: false });
+    let q = sb.from('pointages').select('*, pointage_pauses(id,debut,fin,hors_ligne)')
+      .gte('jour', du).lte('jour', au).order('jour', { ascending: false });
     if (empId) q = q.eq('employe_id', empId);
     const { data, error } = await q;
     if (error) throw error;
     return data || [];
   },
+  pause: args => sb.rpc('ocr_pause', args),
   corrigerPointage(ligneId, empId, d, patch) {
     return ligneId
       ? sb.from('pointages').update(patch).eq('id', ligneId)
@@ -2104,6 +2251,9 @@ async function demarrer() {
   onglet = peutCloturer() ? 'direction' : 'saisie';
   majBoucler();
   await rendre();
+  // Des pointages attendaient le réseau depuis la dernière session : on les
+  // envoie dès qu'on sait qui est connecté.
+  viderFile();
 }
 
 const peutCloturer = () => moi && (moi.role === 'comptable' || moi.role === 'direction');
@@ -2534,10 +2684,13 @@ async function rendre(discret) {
         { id: 'agenda',  ic: '◷',  l: 'Agenda' },
         { id: 'clients', ic: '☺',  l: 'Clients' },
       ];
+  // Le manager pointe pour lui ET pour ceux qui ont oublié : son onglet
+  // Pointage est le même que celui des techniciens, avec l'équipe en dessous.
+  if (roleEffectif() === 'manager') items.push({ id: 'pointage', ic: '◉', l: 'Pointage' });
   // Toi et Guénolé : un seul onglet Direction qui regroupe tout
-  // (Bilan, Clôture, objectifs, baies, absences, journal…).
+  // (Bilan, Clôture, objectifs, baies, absences, journal, pointage…).
   if (peutCloturer()) items.push({ id: 'direction', ic: '◆', l: 'Direction' });
-  const sousDirection = ['direction', 'bilan', 'cloture', 'journal'];
+  const sousDirection = ['direction', 'bilan', 'cloture', 'journal', 'pointage'];
   if (!items.some(i => i.id === onglet) && !(peutCloturer() && sousDirection.includes(onglet)))
     onglet = items[0].id;
 
@@ -2548,10 +2701,14 @@ async function rendre(discret) {
   }
 
   $('#onglets').innerHTML = items.map(i => {
-    const actif = i.id === onglet || (i.id === 'direction' && sousDirection.includes(onglet));
+    const actif = i.id === onglet || (i.id === 'direction' && sousDirection.includes(onglet) && onglet !== 'pointage');
+    // Les pointages qui attendent le réseau : un chiffre sur l'onglet, pour
+    // qu'on n'ait jamais à se demander si c'est bien parti.
+    const enAttente = i.id === 'pointage' ? filePointage.length : 0;
     return '<button class="onglet" ' + (actif ? 'aria-current="page"' : '') +
     ' data-onglet="' + i.id + '"><span class="ic">' + i.ic +
     (i.id === 'agenda' && badgeRdv ? '<span class="pastille-nb">' + badgeRdv + '</span>' : '') +
+    (enAttente ? '<span class="pastille-nb">' + enAttente + '</span>' : '') +
     '</span>' + i.l + '</button>';
   }).join('');
   $('#onglets').querySelectorAll('[data-onglet]').forEach(b =>
@@ -2584,6 +2741,7 @@ async function rendre(discret) {
    SAISIE
    ========================================================================== */
 const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque: '', modele: '', immat: '',
+               vehTrouve: null,   // véhicule retrouvé par sa plaque, pour rattacher le client
                prestation: null, options: [], equipe: [], remise: 0, manuel: 0, note: '', reservation: null };
 
 function totalForm() {
@@ -2601,6 +2759,28 @@ function totalForm() {
   const remise = Math.min(Number(form.remise) > 0 ? Number(form.remise) : auto, brut);
   return { brut, remise, total: brut - remise, devis,
            partenaire: auto > 0 && !(Number(form.remise) > 0) ? ent : null };
+}
+
+/* L'aide sous le champ Immatriculation — jamais bloquante, toujours parlante.
+   Elle dit, selon le cas : le format attendu, la plaque reconnue, ou le
+   véhicule déjà connu et à qui il appartient. */
+function aideImmat() {
+  const et = OCR.plaqueEtat(form.immat, form.gabarit);
+  if (et.vide)
+    return 'Pas obligatoire — mais saisie une fois, le véhicule se rattache tout seul au client ensuite. ' +
+           'Voiture : ' + OCR.PLAQUE_EXEMPLES.voiture + ' · Moto : ' + OCR.PLAQUE_EXEMPLES.moto;
+  const v = form.vehTrouve;
+  if (v && v.immatriculation === et.cle && v.clients) {
+    // La plaque appartient à quelqu'un d'autre que le client saisi : on le dit,
+    // on ne corrige rien tout seul (il arrive qu'on lave la voiture d'un proche).
+    if (form.clientTrouve && form.clientTrouve.id !== v.clients.id)
+      return '<span style="color:var(--ocr-ambre)">⚠ Cette plaque est au nom de ' + esc(v.clients.nom) +
+             ', pas de ' + esc(form.clientTrouve.nom) + ' — à vérifier.</span>';
+    return '<span style="color:var(--ocr-vert)">✓ Véhicule connu — ' + esc(v.clients.nom) + '</span>';
+  }
+  if (!et.ok || !et.accord)
+    return '<span style="color:var(--ocr-ambre)">' + esc(et.aide) + '</span>';
+  return '<span style="color:var(--ocr-vert)">' + esc(et.aide) + '</span>';
 }
 
 async function vueSaisie(j) {
@@ -2651,8 +2831,11 @@ async function vueSaisie(j) {
           <label class="ocr-champ"><span class="ocr-label">Modèle</span>
             <input class="ocr-saisie" id="fModele" value="${esc(form.modele)}" placeholder="RAV4"></label>
         </div>
-        <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Immatriculation</span>
-          <input class="ocr-saisie" id="fImmat" value="${esc(form.immat)}" placeholder="1234 AB 1"></label>
+        <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Immatriculation
+            <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— conseillé</span></span>
+          <input class="ocr-saisie plaque" id="fImmat" value="${esc(form.immat)}"
+                 placeholder="${form.gabarit === 'moto' ? OCR.PLAQUE_EXEMPLES.moto : OCR.PLAQUE_EXEMPLES.voiture}">
+          <span class="ocr-aide" id="aideImmat">${aideImmat()}</span></label>
       </div>
 
     </div>
@@ -2719,13 +2902,50 @@ async function vueSaisie(j) {
   $('#vue').querySelectorAll('[data-vcli]').forEach(b => b.addEventListener('click', () => {
     const v = form.vehsClient.find(x => x.id === b.dataset.vcli);
     Object.assign(form, { gabarit: v.gabarit, marque: v.marque || '', modele: v.modele || '',
-                          immat: v.immatriculation || '' });
+                          immat: OCR.plaque(v.immatriculation), vehTrouve: null });
     vueSaisie(j);
   }));
-  ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fImmat:immat', 'fNote:note'].forEach(p => {
+  ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note'].forEach(p => {
     const [id, k] = p.split(':');
     const el = $('#' + id); if (el) el.addEventListener('input', e => { form[k] = e.target.value; });
   });
+  /* Immatriculation : mise en forme pendant la frappe (majuscules, sans espace
+     ni tiret) pour que « cb 5916 » et « CB5916 » soient LE MÊME véhicule — sinon
+     on crée des doublons et la fidélité se disperse. On repositionne le curseur
+     sur le bon caractère, sinon il saute à la fin dès qu'on corrige au milieu. */
+  const elImmat = $('#fImmat');
+  if (elImmat) {
+    brancherPlaque(elImmat, propre => {
+      form.immat = propre;
+      if (form.vehTrouve && form.vehTrouve.immatriculation !== propre) form.vehTrouve = null;
+      const aide = $('#aideImmat'); if (aide) aide.innerHTML = aideImmat();
+    });
+    // À la validation du champ : si la plaque est déjà connue, on rattache le
+    // client tout seul — le véhicule arrive, on lit la plaque, on sait qui c'est.
+    elImmat.addEventListener('change', async () => {
+      form.immat = OCR.plaque(form.immat);
+      if (!form.immat) { form.vehTrouve = null; return vueSaisie(j); }
+      let v = null;
+      try { v = await API.vehiculeParPlaque(form.immat); } catch (ex) {}
+      form.vehTrouve = v;
+      if (v) {
+        if (v.gabarit) form.gabarit = v.gabarit;
+        if (!form.marque && v.marque) form.marque = v.marque;
+        if (!form.modele && v.modele) form.modele = v.modele;
+        // On ne remplace jamais un client déjà saisi : on le complète seulement.
+        if (v.clients && !form.tel) {
+          form.tel = v.clients.telephone || '';
+          form.nom = v.clients.nom || '';
+          if (form.tel) {
+            form.clientTrouve = await API.clientParTelephone(form.tel).catch(() => null);
+            form.vehsClient = form.clientTrouve ? await API.vehiculesDe(form.clientTrouve.id) : [];
+          }
+          toast('Véhicule connu — ' + v.clients.nom);
+        }
+      }
+      vueSaisie(j);
+    });
+  }
   ['fRemise:remise', 'fManuel:manuel'].forEach(p => {
     const [id, k] = p.split(':');
     const el = $('#' + id); if (el) el.addEventListener('change', e => maj(k, Number(e.target.value) || 0));
@@ -2775,7 +2995,7 @@ async function enregistrer() {
       p_gabarit: form.gabarit,
       p_lignes: lignes,
       p_remise: T.remise,
-      p_marque: form.marque, p_modele: form.modele, p_immat: form.immat,
+      p_marque: form.marque, p_modele: form.modele, p_immat: OCR.plaque(form.immat) || null,
       p_equipe: form.equipe, p_note: form.note,
       p_reservation: form.reservation,
     });
@@ -2783,6 +3003,7 @@ async function enregistrer() {
     const r = Array.isArray(data) ? data[0] : data;
     toast(r.reference + ' enregistré · ' + OCR.fcfa(r.montant_total));
     Object.assign(form, { tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
+                          vehTrouve: null,
                           prestation: null, options: [], remise: 0, manuel: 0, note: '', reservation: null });
     onglet = 'journee';
     await rendre();
@@ -3176,14 +3397,106 @@ const maPosition = () => new Promise((res, rej) => {
     { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
 });
 
-/* Pointer, avec position si l'atelier est géolocalisé. Le serveur revérifie tout. */
-async function pointerAvecPosition(sens) {
-  let args = { p_sens: sens };
-  if (REGLAGES && REGLAGES.lat != null && REGLAGES.lng != null) {
-    const pos = await maPosition();
-    args = { ...args, p_lat: pos.lat, p_lng: pos.lng, p_precision: pos.precision };
+/* ══════════════════════════════════════════════════════════════════════════
+   POINTAGE HORS LIGNE
+   Le réseau tombe souvent ; une arrivée ratée, c'est une heure de travail
+   perdue pour quelqu'un. Alors on n'échoue jamais : le pointage part tout de
+   suite s'il y a du réseau, sinon il attend dans le téléphone et s'envoie dès
+   que ça revient — avec l'HEURE RÉELLE du geste, pas celle de l'envoi.
+
+   Le GPS d'un téléphone fonctionne sans réseau : on joint donc la position
+   même hors ligne, et c'est le SERVEUR qui vérifie les 150 m à l'arrivée du
+   message. Le garde-fou reste entier. Faute de position, le pointage passe
+   quand même mais reste marqué « hors ligne » — perdre l'heure d'un employé
+   de bonne foi serait pire que devoir lui poser la question.
+   ══════════════════════════════════════════════════════════════════════════ */
+const CLE_FILE = MODE_DEMO ? 'ocr-file-demo' : 'ocr-file-pointage';
+let filePointage = [];
+try { filePointage = JSON.parse(localStorage.getItem(CLE_FILE) || '[]') || []; } catch (e) {}
+const sauverFile = () => { try { localStorage.setItem(CLE_FILE, JSON.stringify(filePointage)); } catch (e) {} };
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
+
+const heureLocale = () => new Date().toTimeString().slice(0, 8);
+
+/* Position du téléphone, sans jamais faire échouer le pointage : si elle est
+   refusée ou introuvable, on part sans — le serveur tranchera. */
+async function positionSiPossible() {
+  if (!(REGLAGES && REGLAGES.lat != null && REGLAGES.lng != null)) return null;
+  try { return await maPosition(); } catch (e) { return null; }
+}
+
+/* Envoie un geste de pointage, ou le met en file s'il ne passe pas. */
+async function envoyerGeste(g, silencieux) {
+  const args = g.type === 'pause'
+    ? { p_sens: g.sens, p_employe: g.employe || null, p_heure: g.heure, p_jour: g.jour,
+        p_hors_ligne: g.horsLigne, p_cle: g.cle }
+    : { p_sens: g.sens, p_employe: g.employe || null, p_heure: g.heure, p_jour: g.jour,
+        p_hors_ligne: g.horsLigne, p_lat: g.lat, p_lng: g.lng, p_precision: g.precision };
+  const { data, error } = g.type === 'pause' ? await API.pause(args) : await API.pointer(args);
+  if (!error) return { ok: true, data };
+  // Le serveur a répondu et refuse : réessayer éternellement n'y changera
+  // rien. On le sort de la file et on le dit — sauf hors ligne, où l'échec
+  // vient du réseau, pas du serveur.
+  if (!navigator.onLine) return { ok: false, reseau: true };
+  return { ok: false, message: error.message };
+}
+
+/* Vide la file. Appelée au démarrage, au retour du réseau, et après chaque
+   pointage réussi. Silencieuse quand il n'y a rien à faire. */
+let envoiEnCours = false;
+async function viderFile() {
+  if (envoiEnCours || !filePointage.length || !moi || !navigator.onLine) return;
+  envoiEnCours = true;
+  const restants = [], refuses = [];
+  let envoyes = 0;
+  for (const g of filePointage) {
+    const r = await envoyerGeste(g, true);
+    if (r.ok) envoyes++;
+    else if (r.reseau) restants.push(g);
+    else refuses.push({ g, message: r.message });
   }
-  return API.pointer(args);
+  filePointage = restants; sauverFile();
+  envoiEnCours = false;
+  if (envoyes) toast(envoyes + ' pointage' + (envoyes > 1 ? 's' : '') + ' en attente envoyé' + (envoyes > 1 ? 's' : '') + ' ✓');
+  refuses.forEach(r => toast('Pointage refusé : ' + r.message, true));
+  if (envoyes || refuses.length) rendre(true);
+}
+window.addEventListener('online', () => { toast('Connexion revenue'); viderFile(); });
+window.__ocrViderFile = viderFile;   // testable
+
+/* LE point d'entrée de tout pointage, en ligne comme hors ligne.
+   Renvoie { enFile: true } quand le geste a été mis de côté. */
+async function pointerMaintenant(type, sens, employe) {
+  const pourMoi = !employe || employe === moi.id;
+  const g = {
+    type, sens, employe: employe || null,
+    heure: heureLocale(), jour: auj(),
+    horsLigne: false, cle: uuid(),
+  };
+  if (type === 'pointage' && pourMoi) {
+    const pos = await positionSiPossible();
+    if (pos) { g.lat = pos.lat; g.lng = pos.lng; g.precision = pos.precision; }
+  }
+  // En ligne : on laisse le serveur mettre SON heure (plus fiable que celle
+  // du téléphone) en n'envoyant pas d'heure déclarée.
+  if (navigator.onLine) {
+    const direct = { ...g, heure: null, jour: null };
+    const r = await envoyerGeste(direct);
+    if (r.ok) { await viderFile(); return { ok: true, data: r.data }; }
+    if (!r.reseau) throw new Error(r.message);
+  }
+  // Hors ligne : on garde l'heure du geste et on attend le réseau.
+  g.horsLigne = true;
+  filePointage.push(g); sauverFile();
+  return { enFile: true };
+}
+
+/* Aperçu local de la file, pour que l'écran montre tout de suite ce qui a été
+   pointé hors ligne au lieu d'avoir l'air de n'avoir rien enregistré. */
+function fileDe(empId, jour) {
+  return filePointage.filter(g => (g.employe || moi.id) === empId && g.jour === jour);
 }
 
 const debutSemaine = () => {
@@ -3208,8 +3521,24 @@ const fmtDuree = min => {
   if (min == null || min <= 0) return '—';
   return Math.floor(min / 60) + ' h ' + String(Math.round(min % 60)).padStart(2, '0');
 };
+const pausesDe = p => (p && p.pointage_pauses) || [];
+/* Minutes de pause d'une journée. Une pause encore ouverte compte jusqu'à
+   maintenant si on est aujourd'hui — sinon elle s'arrête à l'heure de départ,
+   pour ne pas gonfler indéfiniment une pause que personne n'a fermée. */
+function minutesPauses(p) {
+  const fin = p && p.depart ? OCR.hm2min(heureCourte(p.depart))
+            : (p && p.jour === auj() ? OCR.hm2min(heureCourte(heureLocale())) : null);
+  return pausesDe(p).reduce((s, x) => {
+    const d = OCR.hm2min(heureCourte(x.debut));
+    const f = x.fin ? OCR.hm2min(heureCourte(x.fin)) : fin;
+    return f != null && f > d ? s + (f - d) : s;
+  }, 0);
+}
+const pauseEnCours = p => pausesDe(p).find(x => !x.fin) || null;
+/* Heures travaillées = présence − pauses. C'est ce chiffre qui compte. */
 const minutesPointage = p => (p && p.arrivee && p.depart)
-  ? Math.max(0, OCR.hm2min(heureCourte(p.depart)) - OCR.hm2min(heureCourte(p.arrivee))) : null;
+  ? Math.max(0, OCR.hm2min(heureCourte(p.depart)) - OCR.hm2min(heureCourte(p.arrivee)) - minutesPauses(p))
+  : null;
 
 /* Objectifs d'équipe : CA et lavages Signature — jour, semaine, mois. */
 function carteObjectifs(obj, moisRows, sigRows) {
@@ -3346,9 +3675,11 @@ function carteEquipe(pts, d) {
       const abs = estAuj ? absenceDe(e.id) : null;
       const p = pts.find(x => x.employe_id === e.id);
       const duree = minutesPointage(p);
+      const pause = pauseEnCours(p);
       const statut = (enRepos || abs) && (!p || !p.arrivee) ? ''
         : !p || !p.arrivee ? (estAuj ? 'pas encore arrivé' : 'absent')
-        : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(duree) : ' · présent');
+        : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(duree)
+                                             : pause ? ' · ☕ en pause' : ' · présent');
       const moiMeme = e.id === moi.id;
       return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap${enRepos || abs ? ';opacity:.65' : ''}">
         ${avatar(e, 40)}
@@ -3492,15 +3823,18 @@ function brancherEquipe(pts, d) {
   if (ba) ba.addEventListener('click', boiteAbsences);
   const bp = $('#btnPlanning');
   if (bp) bp.addEventListener('click', boitePlanning);
+  // Même chemin que l'écran Pointage : hors ligne, le geste est mis de côté.
   $('#vue').querySelectorAll('[data-pointer]').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true;
     try {
-      const { data, error } = await pointerAvecPosition(b.dataset.pointer);
-      if (error) throw new Error(error.message);
-      const r = Array.isArray(data) ? data[0] : data;
-      toast(b.dataset.pointer === 'arrivee'
-        ? 'Arrivée pointée à ' + heureCourte(r.heure_arrivee)
-        : 'Départ pointé à ' + heureCourte(r.heure_depart));
+      const r = await pointerMaintenant('pointage', b.dataset.pointer, b.dataset.emp || null);
+      if (r.enFile) toast('Gardé hors ligne, partira tout seul 📶');
+      else {
+        const d = Array.isArray(r.data) ? r.data[0] : r.data;
+        toast(b.dataset.pointer === 'arrivee'
+          ? 'Arrivée pointée à ' + heureCourte(d && d.heure_arrivee)
+          : 'Départ pointé à ' + heureCourte(d && d.heure_depart));
+      }
       rendre();
     } catch (ex) { toast(ex.message, true); b.disabled = false; }
   }));
@@ -3543,38 +3877,65 @@ function boiteCorrectionPointage(emp, p, d) {
   });
 }
 
-/* Écran unique du technicien : pointer, voir ses heures et l'objectif du jour. */
+/* Écran de pointage. Le technicien y pointe pour lui ; le manager (et la
+   direction) y pointe aussi pour ceux qui ont oublié — c'est le cas normal,
+   pas l'exception, alors ça se fait en un geste et pas dans une fenêtre de
+   correction. */
 async function vuePointage() {
-  const [mes, obj, totJour, sigJour] = await Promise.all([
-    API.pointagesPeriode(debutMois(), auj(), moi.id),
+  const jePointe = equipePointage().some(e => e.id === moi.id);
+  const [mes, obj, totJour, sigJour, ptsJour] = await Promise.all([
+    jePointe ? API.pointagesPeriode(debutMois(), auj(), moi.id) : Promise.resolve([]),
     API.objectifs().catch(() => null),
     API.totaux(auj()),
     API.signaturesDepuis(auj()).catch(() => []),
+    peutCorriger() ? API.pointagesJour(auj()).catch(() => []) : Promise.resolve([]),
   ]);
   const auJour = mes.find(x => x.jour === auj());
   const duree = minutesPointage(auJour);
+  const enPause = pauseEnCours(auJour);
   const joursFaits = mes.filter(x => x.arrivee).length;
   const totalMin = mes.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
   const oublis = mes.filter(x => x.arrivee && !x.depart && x.jour < auj()).length;
+  const mesEnFile = fileDe(moi.id, auj());
 
   $('#vue').innerHTML = `
+    ${filePointage.length ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>📶</span><div>
+      <strong>${filePointage.length} pointage${filePointage.length > 1 ? 's' : ''} en attente de réseau</strong><br>
+      Ils sont enregistrés dans ce téléphone avec leur heure exacte et partiront tout seuls
+      dès que la connexion revient. Rien n'est perdu.
+      ${navigator.onLine ? '<br><button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-envoyer style="margin-top:8px">Envoyer maintenant</button>' : ''}
+    </div></div>` : ''}
+
+    ${jePointe ? `
     <div class="ocr-carte" style="text-align:center;padding:var(--ocr-e6) var(--ocr-e4)">
       <div class="ocr-surtitre" style="justify-content:center">${jourLong(auj())}</div>
       <div style="font:700 34px/1.1 var(--ocr-titre);margin:14px 0 6px">
-        ${!auJour || !auJour.arrivee ? 'Pas encore pointé'
+        ${!auJour || !auJour.arrivee ? (mesEnFile.length ? 'Pointé hors ligne' : 'Pas encore pointé')
           : heureCourte(auJour.arrivee) + (auJour.depart ? ' → ' + heureCourte(auJour.depart) : '')}
       </div>
       <div class="ocr-petit" style="margin-bottom:var(--ocr-e5)">
-        ${!auJour || !auJour.arrivee ? 'Appuie sur « J’arrive » en commençant ta journée.'
-          : auJour.depart ? 'Journée de ' + fmtDuree(duree) + ' — bonne soirée !' : 'Présent — bon travail !'}
+        ${mesEnFile.length && (!auJour || !auJour.arrivee)
+            ? 'Enregistré à ' + heureCourte(mesEnFile[0].heure) + ' — en attente d’envoi.'
+          : !auJour || !auJour.arrivee ? 'Appuie sur « J’arrive » en commençant ta journée.'
+          : auJour.depart ? 'Journée de ' + fmtDuree(duree) + ' — bonne soirée !'
+          : enPause ? '☕ En pause depuis ' + heureCourte(enPause.debut)
+          : 'Présent — bon travail !'}
+        ${auJour && minutesPauses(auJour) > 0 ? '<br><span class="ocr-mini">Pauses du jour : ' + fmtDuree(minutesPauses(auJour)) + '</span>' : ''}
       </div>
       ${!auJour || !auJour.arrivee
         ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-pointer="arrivee" style="font-size:16px;padding:16px">🟢 J’arrive</button>`
-        : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-pointer="depart" style="font-size:16px;padding:16px">
+        : `${!auJour.depart ? (enPause
+             ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-pause="fin" style="font-size:16px;padding:16px;margin-bottom:9px">▶ Je reprends</button>`
+             : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-pause="debut" style="font-size:16px;padding:16px;margin-bottom:9px">☕ Je prends ma pause</button>`) : ''}
+           <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-pointer="depart" style="font-size:16px;padding:16px">
             ${auJour.depart ? 'Je repars (remplace ' + heureCourte(auJour.depart) + ')' : '🔴 Je pars'}</button>`}
-      <p class="ocr-mini" style="margin:12px 0 0">L’heure enregistrée est celle du serveur, pas celle du téléphone.${
-        REGLAGES && REGLAGES.lat != null ? ' Le pointage vérifie que tu es à l’atelier.' : ''}</p>
-    </div>
+      <p class="ocr-mini" style="margin:12px 0 0">${navigator.onLine
+        ? 'L’heure enregistrée est celle du serveur, pas celle du téléphone.' +
+          (REGLAGES && REGLAGES.lat != null ? ' Le pointage vérifie que tu es à l’atelier.' : '')
+        : '📶 Hors ligne — ton pointage est gardé avec son heure exacte et partira tout seul.'}</p>
+    </div>` : ''}
+
+    ${peutCorriger() ? carteEquipePointage(ptsJour) : ''}
 
     ${obj && (obj.jour.ca || obj.jour.signatures) ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
       <div class="ocr-surtitre">Objectif du jour — toute l’équipe</div>
@@ -3588,35 +3949,112 @@ async function vuePointage() {
       })() : ''}
     </div>` : ''}
 
+    ${jePointe ? `
     <div class="tuiles" style="grid-template-columns:repeat(2,1fr);margin-top:var(--ocr-e4)">
       <div class="tuile"><div class="lab">Jours ce mois</div><div class="val">${joursFaits}</div>
         <div class="sub">${oublis ? '⚠ ' + oublis + ' départ(s) non pointé(s)' : 'pointages complets'}</div></div>
       <div class="tuile"><div class="lab">Heures ce mois</div><div class="val">${fmtDuree(totalMin)}</div>
-        <div class="sub">hors jours sans départ</div></div>
+        <div class="sub">pauses déduites</div></div>
     </div>
 
     <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
       <div class="ocr-surtitre">Mes journées</div>
-      ${mes.length ? mes.map(x => `
-        <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+      ${mes.length ? mes.map(x => {
+        const pz = minutesPauses(x);
+        return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
           <span class="ocr-mini" style="width:46px;flex:none">${dateFr(x.jour)}</span>
-          <span style="font-variant-numeric:tabular-nums">${x.arrivee ? heureCourte(x.arrivee) : '—'} → ${x.depart ? heureCourte(x.depart) : '…'}</span>
+          <span style="font-variant-numeric:tabular-nums">${x.arrivee ? heureCourte(x.arrivee) : '—'} → ${x.depart ? heureCourte(x.depart) : '…'}
+            ${pz > 0 ? '<span class="ocr-mini">· ☕ ' + fmtDuree(pz) + '</span>' : ''}</span>
           <span style="flex:1"></span>
           <span style="font-weight:600">${fmtDuree(minutesPointage(x))}</span>
-        </div>`).join('') : '<div class="vide">Aucun pointage ce mois.</div>'}
-    </div>`;
+        </div>`;
+      }).join('') : '<div class="vide">Aucun pointage ce mois.</div>'}
+    </div>` : ''}`;
 
-  $('#vue').querySelectorAll('[data-pointer]').forEach(b => b.addEventListener('click', async () => {
-    b.disabled = true; const txt = b.textContent; b.textContent = '📍 Localisation…';
+  brancherGestesPointage();
+}
+
+/* La carte du manager : toute l'équipe, chacun avec ses boutons. Pointer pour
+   quelqu'un est inscrit au journal au nom de celui qui appuie. */
+function carteEquipePointage(pts) {
+  const js = jourSemaineDe(auj());
+  return `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div class="ocr-surtitre">L’équipe aujourd’hui</div>
+      <span style="flex:1"></span>
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnAbsences">Absences</button>
+    </div>
+    <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Quelqu’un a oublié de pointer ? Fais-le pour lui —
+      c’est enregistré à ton nom.</p>
+    ${equipePointage().map(e => {
+      const enRepos = e.repos_jour != null && e.repos_jour === js;
+      const abs = absenceDe(e.id);
+      const p = pts.find(x => x.employe_id === e.id);
+      const pz = minutesPauses(p);
+      const pause = pauseEnCours(p);
+      const enFile = fileDe(e.id, auj());
+      const etat = abs ? (MOTIFS_ABSENCE[abs.motif] || ['absent'])[0]
+        : !p || !p.arrivee ? (enFile.length ? '⏳ ' + heureCourte(enFile[0].heure) + ' — en attente d’envoi'
+                              : enRepos ? 'repos' : 'pas encore arrivé')
+        : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(minutesPointage(p))
+                                            : pause ? ' · ☕ en pause' : ' · présent')
+          + (pz > 0 && !pause ? ' · ☕ ' + fmtDuree(pz) : '');
+      const marque = p && (p.arrivee_hors_ligne || p.depart_hors_ligne);
+      return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap${enRepos || abs ? ';opacity:.65' : ''}">
+        ${avatar(e, 38)}
+        <span style="min-width:0;flex:1 1 45%">
+          <span style="font-weight:600;display:block">${esc(e.nom)}${e.id === moi.id ? ' <span class="ocr-mini">(moi)</span>' : ''}
+            ${marque ? '<span class="ocr-pastille ocr-pastille--alerte" style="margin-left:6px">hors ligne</span>' : ''}</span>
+          <span class="ocr-mini">${esc(etat)}</span>
+        </span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+          ${abs ? '' : !p || !p.arrivee
+            ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pointer="arrivee" data-emp="${e.id}">Arrivé</button>`
+            : `${!p.depart ? (pause
+                 ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pause="fin" data-emp="${e.id}">Reprend</button>`
+                 : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-pause="debut" data-emp="${e.id}">☕ Pause</button>`) : ''}
+               <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-pointer="depart" data-emp="${e.id}">${p.depart ? 'Repart' : 'Part'}</button>`}
+          <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-corriger="${e.id}">Corriger</button>
+        </span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+/* Un seul câblage pour tous les boutons de pointage de l'écran — le mien comme
+   ceux de l'équipe. Le geste ne peut pas échouer : hors ligne, il est mis de côté. */
+function brancherGestesPointage() {
+  const be = $('#vue').querySelector('[data-envoyer]');
+  if (be) be.addEventListener('click', async () => { be.disabled = true; await viderFile(); rendre(); });
+  const ba = $('#btnAbsences');
+  if (ba) ba.addEventListener('click', boiteAbsences);
+
+  const agir = async (b, type, sens, emp) => {
+    b.disabled = true;
+    const txt = b.innerHTML;
+    b.textContent = navigator.onLine ? '…' : '📶 …';
     try {
-      const { data, error } = await pointerAvecPosition(b.dataset.pointer);
-      if (error) throw new Error(error.message);
-      const r = Array.isArray(data) ? data[0] : data;
-      toast(b.dataset.pointer === 'arrivee'
-        ? 'Bonne journée ! Arrivée : ' + heureCourte(r.heure_arrivee)
-        : 'À demain ! Départ : ' + heureCourte(r.heure_depart));
+      const r = await pointerMaintenant(type, sens, emp || null);
+      const qui = emp && emp !== moi.id ? ((equipe.find(x => x.id === emp) || {}).nom || '') + ' — ' : '';
+      if (r.enFile) toast(qui + 'Gardé hors ligne, partira tout seul 📶');
+      else if (type === 'pause') toast(qui + (sens === 'debut' ? 'Pause commencée ☕' : 'Reprise du travail ✓'));
+      else {
+        const d = Array.isArray(r.data) ? r.data[0] : r.data;
+        toast(qui + (sens === 'arrivee'
+          ? 'Arrivée : ' + heureCourte(d && d.heure_arrivee)
+          : 'Départ : ' + heureCourte(d && d.heure_depart)));
+      }
       rendre();
-    } catch (ex) { toast(ex.message, true); b.disabled = false; b.textContent = txt; }
+    } catch (ex) { toast(ex.message, true); b.disabled = false; b.innerHTML = txt; }
+  };
+  $('#vue').querySelectorAll('[data-pointer]').forEach(b =>
+    b.addEventListener('click', () => agir(b, 'pointage', b.dataset.pointer, b.dataset.emp)));
+  $('#vue').querySelectorAll('[data-pause]').forEach(b =>
+    b.addEventListener('click', () => agir(b, 'pause', b.dataset.pause, b.dataset.emp)));
+  $('#vue').querySelectorAll('[data-corriger]').forEach(b => b.addEventListener('click', async () => {
+    const emp = equipePointage().find(e => e.id === b.dataset.corriger);
+    const pts = await API.pointagesJour(auj()).catch(() => []);
+    boiteCorrectionPointage(emp, pts.find(x => x.employe_id === emp.id), auj());
   }));
 }
 
@@ -3856,7 +4294,12 @@ async function vueAgenda() {
       const { data } = await sb.from('clients').select('nom,telephone').eq('id', r.client_id).maybeSingle();
       if (data) { nom = data.nom || ''; tel = data.telephone || ''; }
     }
-    Object.assign(form, { tel, nom, clientTrouve: null, gabarit: r.gabarit, marque: '', modele: '', immat: '',
+    // Le véhicule saisi par le client à la réservation (marque/modèle/plaque) —
+    // avant, ces champs étaient vidés et il fallait tout retaper (remonté le 12/08).
+    const veh = r.vehicules || {};
+    Object.assign(form, { tel, nom, clientTrouve: null, gabarit: r.gabarit,
+      marque: veh.marque || '', modele: veh.modele || '', immat: OCR.plaque(veh.immatriculation),
+      vehTrouve: null,
       prestation: r.prestation, options: (r.options || []).slice(), remise: 0, manuel: 0,
       note: r.note || '', reservation: r.reference });
     onglet = 'saisie';
@@ -4028,7 +4471,7 @@ function formNouveauClient() {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Immatriculation</span>
-        <input class="ocr-saisie" id="ncImmat" value="${esc(d.immat || '')}" placeholder="1234 AB 1"></label>
+        <input class="ocr-saisie" id="ncImmat" value="${esc(d.immat || '')}" placeholder="${OCR.PLAQUE_EXEMPLES.voiture}"></label>
       <label class="ocr-champ"><span class="ocr-label">Note</span>
         <input class="ocr-saisie" id="ncNote" value="${esc(d.note || '')}" placeholder="De passage, en vacances…"></label>
     </div>
@@ -4049,6 +4492,7 @@ function brancherNouveauClient() {
   $('#zoneCli').querySelectorAll('[data-ncgab]').forEach(b => b.addEventListener('click', () => {
     lire(); cliNouveau.gabarit = b.dataset.ncgab; rendre();
   }));
+  brancherPlaque($('#ncImmat'), propre => { cliNouveau.immat = propre; });
   $('#ncFermer').addEventListener('click', () => { cliNouveau = null; rendre(); });
   $('#ncCreer').addEventListener('click', async e => {
     lire();
@@ -4150,8 +4594,10 @@ function boiteAjoutVehicule(client) {
       <label class="ocr-champ"><span class="ocr-label">Modèle</span>
         <input class="ocr-saisie" id="avModele" placeholder="Hilux"></label>
     </div>
-    <label class="ocr-champ"><span class="ocr-label">Immatriculation</span>
-      <input class="ocr-saisie" id="avImmat" placeholder="1234 AB 1"></label>
+    <label class="ocr-champ"><span class="ocr-label">Immatriculation
+        <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— conseillé</span></span>
+      <input class="ocr-saisie" id="avImmat" placeholder="${OCR.PLAQUE_EXEMPLES.voiture}">
+      <span class="ocr-aide">Voiture : ${OCR.PLAQUE_EXEMPLES.voiture} · Moto : ${OCR.PLAQUE_EXEMPLES.moto}</span></label>
     <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
       <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
       <div style="flex:1"></div>
@@ -4160,6 +4606,7 @@ function boiteAjoutVehicule(client) {
     gab = b.dataset.avgab;
     v.querySelectorAll('[data-avgab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.avgab === gab)));
   }));
+  brancherPlaque(v.querySelector('#avImmat'));
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
   v.querySelector('[data-ok]').addEventListener('click', async e => {
     e.target.disabled = true;
@@ -4167,7 +4614,7 @@ function boiteAjoutVehicule(client) {
       client_id: client.id, gabarit: gab,
       marque: v.querySelector('#avMarque').value.trim() || null,
       modele: v.querySelector('#avModele').value.trim() || null,
-      immatriculation: v.querySelector('#avImmat').value.trim() || null,
+      immatriculation: OCR.plaque(v.querySelector('#avImmat').value) || null,
     });
     if (error) { toast(error.message, true); e.target.disabled = false; return; }
     fermerModale(); toast('Véhicule ajouté à la fiche ✓');
@@ -4498,7 +4945,8 @@ function vueFicheClient() {
     Object.assign(form, {
       tel: c.telephone || '', nom: c.nom || '', clientTrouve: c,
       gabarit: v.gabarit || 'berline', marque: v.marque || '', modele: v.modele || '',
-      immat: v.immatriculation || '', prestation: null, options: [], remise: 0, manuel: 0, note: '',
+      immat: OCR.plaque(v.immatriculation), vehTrouve: null,
+      prestation: null, options: [], remise: 0, manuel: 0, note: '',
     });
     rech.fiche = null;
     onglet = 'saisie';
@@ -4766,6 +5214,8 @@ async function vueDirection() {
     ['baies', '🚿', 'Les baies', baiesActives + ' active(s) sur ' + baies.length],
     ['absences', '🤒', 'Absences', absents ? absents + ' en cours' : 'personne d’absent'],
     ['repos', '📅', 'Jours de repos', 'Planning hebdomadaire'],
+    ['pointage', '◉', 'Pointage', filePointage.length
+      ? filePointage.length + ' en attente d’envoi' : 'Arrivées, pauses, départs'],
     ['journal', '📜', 'Journal d’activité', 'Qui a fait quoi, quand'],
     ['compte', '🛡', 'Mon compte', 'Mot de passe, double sécurité'],
   ];
@@ -4872,7 +5322,8 @@ async function vueDirection() {
   if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
   $('#vue').querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.dir;
-    if (id === 'bilan' || id === 'cloture' || id === 'journal') { onglet = id; rendre(); window.scrollTo(0, 0); return; }
+    if (id === 'bilan' || id === 'cloture' || id === 'journal' || id === 'pointage') {
+      onglet = id; rendre(); window.scrollTo(0, 0); return; }
     if (id === 'objectifs') { const obj = await API.objectifs().catch(() => null); if (obj) boiteObjectifs(obj); return; }
     if (id === 'baies') { onglet = 'agenda'; rendre(); window.scrollTo(0, 0); return; }
     if (id === 'absences') return boiteAbsences();
