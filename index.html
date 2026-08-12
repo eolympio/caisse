@@ -414,8 +414,13 @@ body{padding-bottom:env(safe-area-inset-bottom)}
   display:flex;align-items:center;gap:var(--ocr-e3)}
 /* Épinglée sur l'écran d'accueil, l'app passe SOUS l'heure et la batterie de
    l'iPhone (plein écran). La barre s'écarte de cette zone, sinon les boutons
-   du haut sont inatteignables. */
+   du haut sont inatteignables. En plein écran (classe plein-ecran posée par
+   JS), on garantit un minimum de 54px même si l'iPhone ne fournit pas la
+   taille de son encoche. */
 #bandeau .bandeau:first-child{padding-top:calc(10px + env(safe-area-inset-top))}
+.plein-ecran .barre{padding-top:max(calc(var(--ocr-e3) + env(safe-area-inset-top)), 54px)}
+.plein-ecran #bandeau .bandeau:first-child{padding-top:max(calc(10px + env(safe-area-inset-top)), 54px)}
+.plein-ecran #connexion{padding-top:max(env(safe-area-inset-top), 54px)}
 .barre{overflow:hidden}
 .barre>div:nth-child(2){min-width:0;overflow:hidden}
 .barre .qui{font-family:var(--ocr-titre);font-weight:500;font-size:14px;
@@ -554,6 +559,7 @@ body.texte-tresgrand{zoom:1.2}
       <p style="text-align:center;margin:14px 0 0">
         <button type="button" id="btnOubli" style="all:unset;cursor:pointer;font:var(--ocr-t-mini);
           color:var(--ocr-argent-2);text-decoration:underline">Mot de passe oublié ?</button></p>
+      <p class="ocr-mini" id="marqueVersion" style="text-align:center;margin:18px 0 0;opacity:.45"></p>
     </form>
   </div>
 </section>
@@ -1560,6 +1566,11 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
+const VERSION = 'v23';
+// Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
+if (navigator.standalone === true) document.body.classList.add('plein-ecran');
+$('#marqueVersion').textContent = 'Atelier ' + VERSION +
+  (navigator.standalone === true ? ' · plein écran' : '');
 // Double authentification exigée pour ces rôles (décision du 11 août).
 const ROLES_2FA = ['direction', 'comptable', 'manager'];
 
@@ -2089,7 +2100,7 @@ function boiteReglages() {
 
     <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-compte>👤 Mon compte (mot de passe, photo${ROLES_2FA.includes(moi && moi.role) ? ', double sécurité' : ''})</button>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>
-    <p class="ocr-mini" style="text-align:center;margin:10px 0 0">OCR Brillance — Atelier · ${esc((moi && moi.nom) || '')}</p>`);
+    <p class="ocr-mini" style="text-align:center;margin:10px 0 0">OCR Brillance — Atelier ${VERSION} · ${esc((moi && moi.nom) || '')}</p>`);
 
   v.querySelectorAll('[data-pref]').forEach(b => b.addEventListener('click', () => {
     const [nom, val] = b.dataset.pref.split(':');
