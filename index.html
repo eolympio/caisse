@@ -87,6 +87,11 @@
   --ocr-ombre-feuille: 0 -30px 60px -20px rgba(0,0,0,.7);
 
   --ocr-transition: .16s cubic-bezier(.4,0,.2,1);
+
+  /* ── Détails d'interface pilotés par le thème ───────────── */
+  --ocr-sep:   rgba(244,244,245,.06);   /* filets internes des cartes     */
+  --ocr-trace: rgba(244,244,245,.08);   /* piste des barres de progression*/
+  --ocr-jauge: rgba(244,244,245,.28);   /* remplissage neutre d'une barre */
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -359,6 +364,38 @@
   .fiche:hover, .presta:hover { transform: none; }
 }
 
+/* ─────────────────────────────────────────────────────────────
+   MODE CLAIR — appliqué avec la classe .theme-clair sur .ocr.
+   Les noms de variables ne changent pas : --ocr-noir reste
+   « le fond » et --ocr-blanc « le texte », quel que soit le thème.
+   Contrastes vérifiés : texte principal 16,9:1, secondaire 7,3:1,
+   rouge texte 5,9:1 sur fond clair.
+   ───────────────────────────────────────────────────────────── */
+.ocr.theme-clair {
+  --ocr-noir:          #F5F5F6;
+  --ocr-noir-2:        #ECECEE;
+  --ocr-surface:       #FFFFFF;
+  --ocr-surface-haute: #EFEFF1;
+  --ocr-filet:         #DCDCE0;
+
+  --ocr-blanc:         #141417;
+  --ocr-argent:        #505257;
+  --ocr-argent-2:      #6E7075;
+
+  --ocr-rouge-texte:   #BB1F1D;
+  --ocr-vert:          #157A40;
+  --ocr-ambre:         #9C6200;
+  --ocr-erreur:        #BB1F1D;
+
+  --ocr-grad-chrome: linear-gradient(180deg, #3E3F43 0%, #6E7075 42%, #2E2F33 68%, #55575C 100%);
+  --ocr-lueur-rouge: radial-gradient(130% 90% at 80% -10%, rgba(214,32,30,.12), transparent 55%);
+  --ocr-ombre-feuille: 0 -30px 60px -20px rgba(0,0,0,.16);
+
+  --ocr-sep:   rgba(10,10,11,.08);
+  --ocr-trace: rgba(10,10,11,.09);
+  --ocr-jauge: rgba(10,10,11,.30);
+}
+
 
 /* ---- propre à la caisse ---- */
 html,body{margin:0;padding:0;min-height:100dvh}
@@ -382,6 +419,9 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 #etatJour{flex:none;font-size:10px;padding:3px 9px}
 @media(max-width:430px){#etatJour{font-size:9px;padding:3px 7px;letter-spacing:.04em}
   .barre #btnSortie{padding:8px 10px;font-size:11px}}
+/* Le prénom de la personne connectée reste toujours visible : appareil partagé. */
+@media(max-width:479px){.barre>div:nth-child(2){min-width:58px}
+  .barre .ic-barre{padding:8px 7px}}
 .corps{flex:1;padding:var(--ocr-e5) var(--ocr-e4) 110px;max-width:1100px;width:100%;margin:0 auto}
 .onglets{position:fixed;bottom:0;left:0;right:0;z-index:40;display:flex;
   background:rgba(22,22,26,.96);backdrop-filter:blur(16px);border-top:1px solid var(--ocr-filet);
@@ -436,7 +476,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .barre-jour .bj-date{font:600 14px/1.2 var(--ocr-titre);text-transform:capitalize}
 .barre-jour .bj-lien{all:unset;cursor:pointer;color:var(--ocr-rouge-texte);text-decoration:underline;font:inherit}
 .fiche .ligne1{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-.fiche .actions{display:flex;gap:7px;margin-top:11px;padding-top:11px;border-top:1px solid rgba(244,244,245,.06);flex-wrap:wrap}
+.fiche .actions{display:flex;gap:7px;margin-top:11px;padding-top:11px;border-top:1px solid var(--ocr-sep);flex-wrap:wrap}
 
 .alerte{display:flex;gap:11px;padding:12px 14px;border-radius:var(--ocr-r-m);margin-bottom:8px;
   border:1px solid var(--ocr-filet);background:var(--ocr-surface);align-items:flex-start}
@@ -457,6 +497,24 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .toast{background:var(--ocr-surface-haute);border:1px solid var(--ocr-filet);border-radius:999px;
   padding:10px 18px;font:600 13px/1.3 var(--ocr-texte);box-shadow:0 10px 34px rgba(0,0,0,.5);max-width:88vw}
 .toast--err{border-color:rgba(232,82,78,.5);color:var(--ocr-erreur)}
+
+/* ---- réglages : thème clair, taille, iPad ---- */
+/* Le logo complet est blanc : en clair, il vit sur une carte noire. */
+.theme-clair .conn-logo{background:#0A0A0B;border-radius:var(--ocr-r-m);padding:20px 24px}
+.theme-clair .barre{background:rgba(245,245,246,.92)}
+.theme-clair .onglets{background:rgba(255,255,255,.96)}
+.theme-clair .voile{background:rgba(20,20,23,.45)}
+.theme-clair .toast{box-shadow:0 10px 34px rgba(0,0,0,.18)}
+body.texte-grand{zoom:1.09}
+body.texte-tresgrand{zoom:1.2}
+.ic-barre{min-height:40px;padding:8px 10px;font-size:17px;line-height:1}
+.gira{animation:tr .7s linear infinite;display:inline-block}
+@media(max-width:479px){#btnRafraichir{display:none}}
+.jour-grille{display:grid;grid-template-columns:1fr;align-items:start;column-gap:var(--ocr-e4)}
+@media(min-width:920px){
+  .jour-grille{grid-template-columns:minmax(0,1fr) minmax(340px,400px)}
+  .jour-grille>.jg-principal{order:-1}
+}
 
 .bandeau{padding:10px 16px;font:var(--ocr-t-petit);display:flex;gap:10px;align-items:center}
 .bandeau--demo{background:rgba(245,166,35,.12);border-bottom:1px solid rgba(245,166,35,.4);color:var(--ocr-ambre)}
@@ -495,13 +553,15 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 <div class="appli masque" id="appli">
   <header class="barre">
     <div class="ocr-embleme" style="width:34px;height:34px"><img src="data:image/png;base64,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" alt=""></div>
-    <div style="min-width:0">
+    <div>
       <div class="qui" id="quiNom">—</div>
       <div class="role" id="quiRole">—</div>
     </div>
     <div style="flex:1"></div>
     <span class="ocr-pastille ocr-pastille--neutre" id="etatJour">—</span>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit ic-barre" id="btnRafraichir" title="Rafraîchir" aria-label="Rafraîchir"><span id="icRafraichir">↻</span></button>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit masque" id="btnSecu" title="Double sécurité" aria-label="Double sécurité">🛡</button>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit ic-barre" id="btnReglages" title="Réglages" aria-label="Réglages">⚙</button>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnSortie">Quitter</button>
   </header>
   <main class="corps" id="vue"></main>
@@ -1032,6 +1092,12 @@ function creerClientDemo() {
   // Véhicules déjà passés, dont une anomalie volontaire aujourd'hui.
   const jourMoins = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toLocaleDateString('en-CA'); };
 
+  const plusMin = (h, n) => {
+    const [hh, mm, ss] = h.split(':').map(Number);
+    const t = hh * 60 + mm + n;
+    return String(Math.floor(t / 60) % 24).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0') + ':' + String(ss || 0).padStart(2, '0');
+  };
+  let graine = 0;   // fait varier les temps de lavage semés, sans hasard
   function semer(clientId, vehId, gab, presta, opts, statutAtelier, statutPaiement, mode, remise, ilYa) {
     const jour = jourMoins(ilYa || 0);
     const p = OCR.prestation(presta), prix = OCR.prix(presta, gab) || 0;
@@ -1039,9 +1105,20 @@ function creerClientDemo() {
     opts.forEach(o => { const op = OCR.option(o); lignes.push({ type: 'option', code: o, libelle: op.nom, prix: op.prix, duree_min: op.duree }); });
     const brut = lignes.reduce((s, l) => s + l.prix, 0);
     const id = uid();
+    const arrivee = ['08:40:00', '10:15:00', '12:05:00', '14:30:00'][D.passages.length % 4];
+    // chrono : les lavages finis ont un vrai début et une vraie fin
+    const dRef = OCR.duree(presta, gab) || 30;
+    const facteur = [0.9, 1.05, 1.4, 0.85][graine++ % 4];   // dont un lavage lent, pour la discussion
+    let heure_debut = null, heure_fin = null;
+    if (statutAtelier === 'livre' || statutAtelier === 'pret') {
+      heure_debut = plusMin(arrivee, 6);
+      heure_fin = plusMin(heure_debut, Math.round(dRef * facteur));
+    } else if (statutAtelier === 'en_cours') {
+      heure_debut = plusMin(new Date().toTimeString().slice(0, 8), -18);   // démarré il y a 18 min
+    }
     D.passages.push({
       id, reference: ref(), journee: jour, client_id: clientId, vehicule_id: vehId, gabarit: gab,
-      heure_arrivee: ['08:40:00', '10:15:00', '12:05:00', '14:30:00'][D.passages.length % 4],
+      heure_arrivee: arrivee, heure_debut, heure_fin,
       montant_brut: brut, remise: remise || 0, montant_total: brut - (remise || 0),
       statut_atelier: statutAtelier, statut_paiement: statutPaiement, mode_paiement: mode, equipe: ['e4'],
     });
@@ -1053,17 +1130,27 @@ function creerClientDemo() {
         ? { date: jour, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null }
         : { date: jour, statut: 'validee', valide_par: 'e2', valide_le: jour + 'T21:05:00Z', totaux: null });
   }
-  // aujourd'hui
-  semer('c1', 'v1', 'berline',  'signature', ['hydrofuge'], 'livre', 'paye',   'kkiapay', 0);
-  semer('c2', 'v2', 'petite',   'express',   [],            'livre', 'paye',   'especes', 0);
-  semer('c3', 'v3', 'grandsuv', 'signature', [],            'livre', 'impaye', null,      2500);
-  // les jours précédents, pour que le bilan ait de quoi montrer
+  // aujourd'hui — dont un véhicule encore dans la baie, pour le tableau de bord
+  semer('c1', 'v1', 'berline',  'signature', ['hydrofuge'], 'livre',    'paye',   'kkiapay', 0);
+  semer('c2', 'v2', 'petite',   'express',   [],            'livre',    'paye',   'especes', 0);
+  semer('c3', 'v3', 'grandsuv', 'signature', [],            'livre',    'impaye', null,      2500);
+  semer('c2', 'v2', 'petite',   'interieur', [],            'en_cours', 'impaye', null,      0);
+  semer('c1', 'v1', 'berline',  'express',   [],            'attente',  'impaye', null,      0);
+  // les jours précédents, pour que le bilan et le pilotage aient de quoi montrer
+  // (les jours 7 à 13 nourrissent la comparaison « vs les 7 jours d'avant »)
   [[1, 'express', 'petite'], [1, 'signature', 'berline'], [1, 'express', 'berline'],
    [2, 'signature', 'grandsuv'], [2, 'express', 'petite'],
    [3, 'express', 'berline'], [3, 'express', 'petite'], [3, 'signature', 'berline'],
    [4, 'interieur', 'berline'], [4, 'express', 'grandsuv'],
    [5, 'signature', 'petite'], [5, 'express', 'berline'], [5, 'express', 'petite'],
    [6, 'signature', 'berline'], [6, 'express', 'petite'],
+   [7, 'express', 'berline'], [7, 'signature', 'petite'],
+   [8, 'express', 'petite'], [8, 'express', 'berline'],
+   [9, 'signature', 'berline'],
+   [10, 'express', 'petite'], [10, 'interieur', 'berline'],
+   [11, 'express', 'berline'], [11, 'express', 'petite'],
+   [12, 'signature', 'grandsuv'],
+   [13, 'express', 'petite'], [13, 'express', 'berline'],
   ].forEach(([n, presta, gab], i) => semer(
     ['c1', 'c2', 'c3'][i % 3], ['v1', 'v2', 'v3'][i % 3], gab, presta, [],
     'livre', 'paye', i % 3 === 0 ? 'especes' : 'kkiapay', 0, n));
@@ -1151,6 +1238,21 @@ function creerClientDemo() {
     return Object.values(g).map(o => ({ ...o,
       f_par_heure_baie: o.minutes_baie > 0 ? Math.round(o.ca / (o.minutes_baie / 60)) : null }));
   };
+  const tempsLavage = () => {
+    const g = {};
+    const m = t => { const [h, mi] = String(t).split(':').map(Number); return h * 60 + mi; };
+    D.passages.filter(p => !p.annule && p.heure_debut && p.heure_fin).forEach(p => {
+      const l = D.passage_lignes.find(x => x.passage_id === p.id && x.type === 'prestation');
+      if (!l) return;
+      const min = m(p.heure_fin) - m(p.heure_debut);
+      if (min <= 0) return;
+      const k = p.journee + '|' + l.code + '|' + p.gabarit;
+      const o = g[k] || (g[k] = { journee: p.journee, prestation: l.code, gabarit: p.gabarit, nombre: 0, somme: 0, minutes_max: 0 });
+      o.nombre++; o.somme += min; o.minutes_max = Math.max(o.minutes_max, min);
+    });
+    return Object.values(g).map(o => ({ journee: o.journee, prestation: o.prestation, gabarit: o.gabarit,
+      nombre: o.nombre, minutes_moyennes: Math.round(o.somme / o.nombre), minutes_max: o.minutes_max }));
+  };
   const fidelite = () => {
     const g = {};
     D.passages.filter(p => p.statut_atelier === 'livre' && !p.annule).forEach(p => {
@@ -1194,6 +1296,7 @@ function creerClientDemo() {
       if (table === 'v_journee_totaux')
         return [...new Set(D.passages.map(p => p.journee))].sort().map(totaux).filter(Boolean);
       if (table === 'v_mix_prestations') return mixPrestations();
+      if (table === 'v_temps_lavage')    return tempsLavage();
       if (table === 'v_fidelite')        return fidelite();
       if (table === 'v_clients_stats')   return clientsStats();
       if (table === 'passages')          return D.passages.map(lier);
@@ -1275,6 +1378,24 @@ function creerClientDemo() {
   }
 
   const RPC = {
+    ocr_avancer_passage(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      const p = D.passages.find(x => x.id === a.p_passage);
+      if (!p) throw new Error('Véhicule introuvable');
+      if (p.annule) throw new Error('Ce passage est annulé');
+      const j = D.journees.find(x => x.date === p.journee);
+      if (j && j.statut !== 'ouverte') throw new Error('Journée clôturée : modification impossible');
+      const h = new Date().toTimeString().slice(0, 8);
+      if (a.p_vers === 'en_cours' && p.statut_atelier === 'attente') {
+        p.statut_atelier = 'en_cours'; p.heure_debut = p.heure_debut || h;
+      } else if (a.p_vers === 'pret' && p.statut_atelier === 'en_cours') {
+        p.statut_atelier = 'pret'; p.heure_fin = p.heure_fin || h;
+      } else if (a.p_vers === 'livre' && ['pret', 'en_cours'].includes(p.statut_atelier)) {
+        p.statut_atelier = 'livre'; p.heure_fin = p.heure_fin || h; p.heure_livraison = h;
+      } else throw new Error('Enchaînement impossible : ' + p.statut_atelier + ' → ' + a.p_vers);
+      return [];
+    },
     ocr_changer_photo(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp) throw new Error('Accès réservé au personnel');
@@ -1301,8 +1422,9 @@ function creerClientDemo() {
       const id = uid(), r = ref();
       D.passages.push({ id, reference: r, journee: jourCourant, client_id: cl.id, vehicule_id: ve.id,
         gabarit: a.p_gabarit, heure_arrivee: new Date().toTimeString().slice(0, 8),
+        heure_debut: null, heure_fin: null,
         montant_brut: brut, remise, montant_total: brut - remise,
-        statut_atelier: 'en_cours', statut_paiement: 'impaye', mode_paiement: null, equipe: a.p_equipe || [] });
+        statut_atelier: 'attente', statut_paiement: 'impaye', mode_paiement: null, equipe: a.p_equipe || [] });
       lignes.forEach(l => D.passage_lignes.push({ id: uid(), passage_id: id, ...l }));
       if (a.p_reservation) {
         const resa = D.reservations.find(x => x.reference === String(a.p_reservation).toUpperCase().trim());
@@ -1427,6 +1549,8 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 
 // Règle maison : pas de cash. Si exception, dépôt sur ce compte MTN (= compte KKiapay).
 const COMPTE_MTN = '01 69 40 85 84';
+// Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
+const NOM_SITE = 'Station Oryx Saint Michel';
 // Double authentification exigée pour ces rôles (décision du 11 août).
 const ROLES_2FA = ['direction', 'comptable', 'manager'];
 
@@ -1699,10 +1823,11 @@ const API = {
   encaisser:   a => sb.rpc('ocr_encaisser', a),
   cloturer:    a => sb.rpc('ocr_cloturer_journee', a),
   annuler:     a => sb.rpc('ocr_annuler_passage', a),
-  avancer(id, statut) {
-    const p = { statut_atelier: statut };
-    if (statut === 'livre') p.heure_livraison = new Date().toTimeString().slice(0, 8);
-    return sb.from('passages').update(p).eq('id', id);
+  // L'heure de début/fin est tamponnée PAR LE SERVEUR : le chrono est incontestable.
+  avancer: (id, statut) => sb.rpc('ocr_avancer_passage', { p_passage: id, p_vers: statut }),
+  async tempsLavage(du) {
+    const { data } = await sb.from('v_temps_lavage').select('*').gte('journee', du);
+    return data || [];
   },
   poserAnomalies: rows => sb.from('anomalies').upsert(rows, { onConflict: 'journee,cle' }),
   justifier: (id, texte, par) => sb.from('anomalies')
@@ -1787,7 +1912,8 @@ async function demarrer() {
   $('#appli').classList.remove('masque');
   $('#quiNom').textContent = moi.nom;
   $('#quiRole').textContent = enInterim() ? 'remplace le manager aujourd’hui' : moi.role;
-  onglet = 'saisie';
+  // Edwin et Guénolé atterrissent sur le pilotage : ouvrir l'app = savoir où on en est.
+  onglet = peutCloturer() ? 'direction' : 'saisie';
   majBoucler();
   await rendre();
 }
@@ -1880,6 +2006,73 @@ function qrEnHtml(qr) {
     return img.outerHTML;
   }
   return '';
+}
+
+/* ---------- réglages d'affichage : propres à CET appareil ---------- */
+const PREFS_CLE = MODE_DEMO ? 'ocr-prefs-demo' : 'ocr-prefs';
+const prefs = { theme: 'sombre', taille: 'normal' };   // 'sombre'|'clair'|'auto' · 'normal'|'grand'|'tresgrand'
+function appliquerPrefs() {
+  const clair = prefs.theme === 'clair' ||
+    (prefs.theme === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches);
+  document.body.classList.toggle('theme-clair', clair);
+  document.body.classList.toggle('texte-grand', prefs.taille === 'grand');
+  document.body.classList.toggle('texte-tresgrand', prefs.taille === 'tresgrand');
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.content = clair ? '#F5F5F6' : '#0A0A0B';
+}
+function chargerPrefs() {
+  try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS_CLE) || '{}')); } catch (e) {}
+  appliquerPrefs();
+}
+function sauverPrefs() {
+  try { localStorage.setItem(PREFS_CLE, JSON.stringify(prefs)); } catch (e) {}
+  appliquerPrefs();
+}
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if (prefs.theme === 'auto') appliquerPrefs();
+});
+
+function boiteReglages() {
+  const chips = (nom, valeurs) => valeurs.map(([v, lab]) =>
+    `<button class="ocr-chip" data-pref="${nom}:${v}" aria-pressed="${prefs[nom] === v}">${lab}</button>`).join('');
+  const v = modale(`
+    <h3 class="ocr-h2">Réglages</h3>
+    <p class="ocr-mini" style="margin:6px 0 var(--ocr-e4)">Propres à cet appareil — chacun règle l’app à sa main.</p>
+
+    <div class="ocr-surtitre">Apparence</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin:var(--ocr-e3) 0 var(--ocr-e4)">
+      ${chips('theme', [['sombre', '🌙 Sombre'], ['clair', '☀️ Clair'], ['auto', 'Auto']])}
+    </div>
+    <p class="ocr-mini" style="margin:-6px 0 var(--ocr-e4)">« Auto » suit le réglage du téléphone.</p>
+
+    <div class="ocr-surtitre">Taille de l’affichage</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin:var(--ocr-e3) 0 var(--ocr-e4)">
+      ${chips('taille', [['normal', 'Normale'], ['grand', 'Grande'], ['tresgrand', 'Très grande']])}
+    </div>
+
+    <div class="ocr-surtitre">Données</div>
+    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-sync style="margin-top:var(--ocr-e3)">↻ Rafraîchir maintenant</button>
+    <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">L’écran se met déjà à jour tout seul toutes les minutes —
+      ce bouton force une synchronisation immédiate.</p>
+
+    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-compte>👤 Mon compte (mot de passe, photo${ROLES_2FA.includes(moi && moi.role) ? ', double sécurité' : ''})</button>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>
+    <p class="ocr-mini" style="text-align:center;margin:10px 0 0">OCR Brillance — Atelier · ${esc((moi && moi.nom) || '')}</p>`);
+
+  v.querySelectorAll('[data-pref]').forEach(b => b.addEventListener('click', () => {
+    const [nom, val] = b.dataset.pref.split(':');
+    prefs[nom] = val;
+    sauverPrefs();
+    v.querySelectorAll(`[data-pref^="${nom}:"]`).forEach(x =>
+      x.setAttribute('aria-pressed', x.dataset.pref === nom + ':' + val));
+  }));
+  v.querySelector('[data-sync]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    try { await rendre(); toast('À jour ✓'); fermerModale(); }
+    catch (ex) { toast('Impossible de rafraîchir — vérifie la connexion.', true); e.target.disabled = false; }
+  });
+  v.querySelector('[data-compte]').addEventListener('click', () => { fermerModale(); boiteCompte(); });
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
 }
 
 /* « Mon compte » : mot de passe pour tout le monde, double sécurité pour
@@ -2027,6 +2220,16 @@ async function majBoucler() {
   }
 }
 $('#btnSecu').addEventListener('click', boiteCompte);
+$('#btnReglages').addEventListener('click', boiteReglages);
+$('#btnRafraichir').addEventListener('click', async () => {
+  const b = $('#btnRafraichir'), ic = $('#icRafraichir');
+  if (b.disabled) return;
+  b.disabled = true; ic.classList.add('gira');
+  try { await rendre(); toast('À jour ✓'); }
+  catch (ex) { toast('Impossible de rafraîchir — vérifie la connexion.', true); }
+  setTimeout(() => { ic.classList.remove('gira'); b.disabled = false; }, 500);
+});
+chargerPrefs();   // le thème s'applique dès l'écran de connexion
 
 /* ---------- fraîcheur : l'écran se met à jour tout seul ----------
    Toutes les 60 s (et au retour sur l'app), la vue se recharge depuis la
@@ -2310,7 +2513,34 @@ async function enregistrer() {
 /* ==========================================================================
    JOURNÉE
    ========================================================================== */
-const ETAT_ATELIER = { en_cours: ['En cours', 'marque'], pret: ['Prêt', 'neutre'], livre: ['Livré', 'succes'] };
+const ETAT_ATELIER = { attente: ['À démarrer', 'neutre'], en_cours: ['En cours', 'marque'],
+                       pret: ['Prêt', 'neutre'], livre: ['Livré', 'succes'] };
+
+/* Minutes entre deux heures 'HH:MM:SS' — le chrono des lavages. */
+function minutesEntre(a, b) {
+  if (!a || !b) return null;
+  const m = t => { const [h, mi, s] = String(t).split(':').map(Number); return h * 60 + mi + (s || 0) / 60; };
+  const d = m(b) - m(a);
+  return d >= 0 ? Math.round(d) : null;
+}
+const heureMaintenant = () => new Date().toTimeString().slice(0, 8);
+
+/* La ligne chrono d'une fiche : démarré à…, ou temps réel vs référence. */
+function ligneChrono(p) {
+  const codeP = ((p.passage_lignes || []).find(l => l.type === 'prestation') || {}).code;
+  const ref = codeP ? OCR.duree(codeP, p.gabarit) : null;
+  if (p.statut_atelier === 'en_cours' && p.heure_debut) {
+    const depuis = minutesEntre(p.heure_debut, heureMaintenant());
+    const retard = ref != null && depuis != null && depuis > ref * 1.25;
+    return `<span class="ocr-mini" style="${retard ? 'color:var(--ocr-ambre)' : ''}">⏱ démarré à ${heureCourte(p.heure_debut)}${
+      depuis != null ? ' · ' + depuis + ' min' : ''}${ref != null ? ' (prévu ' + ref + ')' : ''}${retard ? ' ⚠' : ''}</span>`;
+  }
+  const reel = minutesEntre(p.heure_debut, p.heure_fin);
+  if (reel == null) return '';
+  const ton = ref == null ? '' : reel <= ref ? 'color:var(--ocr-vert)' : reel > ref * 1.25 ? 'color:var(--ocr-ambre)' : '';
+  return `<span class="ocr-mini" style="${ton}">⏱ ${reel} min de lavage${ref != null ? ' · prévu ' + ref : ''}${
+    ref != null && reel <= ref ? ' ✓' : ref != null && reel > ref * 1.25 ? ' ⚠' : ''}</span>`;
+}
 
 /* Barre de navigation par jour, partagée entre Journée et Clôture. */
 function barreJour(j) {
@@ -2362,10 +2592,16 @@ async function vueJournee(j) {
         <div class="val" style="${T.especes ? 'color:var(--ocr-ambre)' : ''}">${OCR.fcfa(T.especes || 0)}</div>
         <div class="sub">${T.especes ? '⚠ à déposer sur le ' + COMPTE_MTN : 'aucune — c’est la règle'}</div></div>
     </div>
-    ${obj ? carteObjectifs(obj, moisRows, sigRows) : ''}
-    ${carteEquipe(pts, d)}
-    ${ps.length ? ps.map(p => ficheePassage(p, verrou)).join('') :
-      `<div class="ocr-carte vide">Aucun véhicule enregistré ${estAuj ? 'aujourd’hui' : 'ce jour-là'}.</div>`}`;
+    <div class="jour-grille">
+      <div class="jg-lateral">
+        ${obj ? carteObjectifs(obj, moisRows, sigRows) : ''}
+        ${carteEquipe(pts, d)}
+      </div>
+      <div class="jg-principal">
+        ${ps.length ? ps.map(p => ficheePassage(p, verrou)).join('') :
+          `<div class="ocr-carte vide">Aucun véhicule enregistré ${estAuj ? 'aujourd’hui' : 'ce jour-là'}.</div>`}
+      </div>
+    </div>`;
 
   brancherJour();
   brancherEquipe(pts, d);
@@ -2414,10 +2650,14 @@ function ficheePassage(p, verrou) {
     <div class="ocr-mini" style="margin-top:4px">${heureCourte(p.heure_arrivee)} · ${esc(p.reference)}${
       v.marque ? ' · ' + esc(v.marque + ' ' + (v.modele || '')) : ''}${v.immatriculation ? ' · ' + esc(v.immatriculation) : ''}</div>
     <div class="ocr-petit" style="margin-top:5px">${esc(presta)}${opts ? ' <span class="ocr-mini">+ ' + esc(opts) + '</span>' : ''}</div>
+    ${(() => { const lc = ligneChrono(p); return lc ? '<div style="margin-top:5px">' + lc + '</div>' : ''; })()}
     ${verrou ? '' : `<div class="actions">
-      ${p.statut_atelier !== 'livre' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
-        data-avance="${p.id}" data-vers="${p.statut_atelier === 'en_cours' ? 'pret' : 'livre'}">
-        ${p.statut_atelier === 'en_cours' ? 'Marquer prêt' : 'Marquer livré'}</button>` : ''}
+      ${p.statut_atelier === 'attente' ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
+        data-avance="${p.id}" data-vers="en_cours">▶ Commencer</button>` : ''}
+      ${p.statut_atelier === 'en_cours' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
+        data-avance="${p.id}" data-vers="pret">✓ Lavage terminé</button>` : ''}
+      ${p.statut_atelier === 'pret' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
+        data-avance="${p.id}" data-vers="livre">Marquer livré</button>` : ''}
       ${!paye ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
         data-encaisser="${p.id}" data-montant="${p.montant_total}">Encaisser</button>` : ''}
       ${(!paye || peutCloturer()) ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
@@ -2626,7 +2866,7 @@ function carteRecap(t) {
     ['Encaissé espèces', OCR.fcfa(t.especes || 0)],
     ['Impayés', OCR.fcfa(t.impaye || 0)],
     ['Ticket moyen', OCR.fcfa(t.ticket_moyen || 0)],
-  ].map(([k, v]) => '<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06)">' +
+  ].map(([k, v]) => '<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">' +
       '<span class="ocr-petit">' + k + '</span><span style="font-weight:600;font-variant-numeric:tabular-nums">' + v + '</span></div>').join('') + '</div>';
 }
 
@@ -2672,7 +2912,7 @@ function barreObjectif(fait, cible) {
   if (!cible) return '<span class="ocr-mini">à définir</span>';
   const pct = Math.min(100, Math.round(fait / cible * 100));
   return `<div style="display:flex;align-items:center;gap:10px">
-    <div style="flex:1;height:8px;border-radius:999px;background:rgba(244,244,245,.08);overflow:hidden">
+    <div style="flex:1;height:8px;border-radius:999px;background:var(--ocr-trace);overflow:hidden">
       <div style="height:100%;width:${pct}%;border-radius:999px;background:${pct >= 100 ? 'var(--ocr-succes)' : 'var(--ocr-rouge)'}"></div>
     </div>
     <span style="font:600 12px/1 var(--ocr-texte);font-variant-numeric:tabular-nums;flex:none">${pct} %</span>
@@ -2825,7 +3065,7 @@ function carteEquipe(pts, d) {
         : !p || !p.arrivee ? (estAuj ? 'pas encore arrivé' : 'absent')
         : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(duree) : ' · présent');
       const moiMeme = e.id === moi.id;
-      return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06);flex-wrap:wrap${enRepos || abs ? ';opacity:.65' : ''}">
+      return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap${enRepos || abs ? ';opacity:.65' : ''}">
         ${avatar(e, 40)}
         <span style="min-width:0;flex:1 1 55%">
           <span style="font-weight:600;display:block">${esc(e.nom)}
@@ -2893,7 +3133,7 @@ function boiteAbsences() {
       ${ABSENCES.map(a => {
         const e = equipe.find(x => x.id === a.employe_id) || {};
         const [lab] = MOTIFS_ABSENCE[a.motif] || [a.motif];
-        return `<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(244,244,245,.06)">
+        return `<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
           <span style="min-width:0">
             <span style="font-weight:600">${esc(e.nom || '?')}</span>
             <span class="ocr-mini" style="display:block">${lab} · depuis le ${dateFr(a.du)}${a.au ? ' · jusqu’au ' + dateFr(a.au) : ''}${a.note ? ' · ' + esc(a.note) : ''}</span>
@@ -3073,7 +3313,7 @@ async function vuePointage() {
     <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
       <div class="ocr-surtitre">Mes journées</div>
       ${mes.length ? mes.map(x => `
-        <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06)">
+        <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
           <span class="ocr-mini" style="width:46px;flex:none">${dateFr(x.jour)}</span>
           <span style="font-variant-numeric:tabular-nums">${x.arrivee ? heureCourte(x.arrivee) : '—'} → ${x.depart ? heureCourte(x.depart) : '…'}</span>
           <span style="flex:1"></span>
@@ -3135,7 +3375,7 @@ function carteBaies(baies) {
   return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
     <div class="ocr-surtitre">Les baies</div>
     ${baies.map(b => `
-      <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06);flex-wrap:wrap">
+      <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap">
         <span style="min-width:0">
           <span style="font-weight:600">${esc(b.nom)}</span>
           <span class="ocr-pastille ocr-pastille--${b.active ? 'succes' : 'erreur'}" style="margin-left:8px">${b.active ? 'Active' : 'En pause'}</span>
@@ -3803,7 +4043,7 @@ function vueFicheClient() {
 
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
       <div class="ocr-surtitre">Progression fidélité</div>
-      <div style="margin-top:12px;height:10px;border-radius:999px;background:rgba(244,244,245,.08);overflow:hidden">
+      <div style="margin-top:12px;height:10px;border-radius:999px;background:var(--ocr-trace);overflow:hidden">
         <div style="height:100%;width:${part}%;background:${reste === 0 ? 'var(--ocr-succes)' : 'var(--ocr-rouge)'};
                     border-radius:999px;transition:width .4s"></div>
       </div>
@@ -3819,7 +4059,7 @@ function vueFicheClient() {
       ${!vs.length ? '<p class="ocr-mini" style="margin:10px 0 0">Aucun véhicule enregistré — ajoute le sien pour que tout se relie.</p>' : ''}
       ${vs.map(v => {
         const st = parVeh[v.id] || { n: 0, total: 0 };
-        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(244,244,245,.06);flex-wrap:wrap">
+        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap">
           <span style="min-width:0">
             <span style="font-weight:600;display:block">${esc([v.marque, v.modele].filter(Boolean).join(' ') || 'Véhicule')}
               <span class="ocr-mini" style="font-weight:400">· ${esc(v.immatriculation || 'sans plaque')}</span></span>
@@ -3841,7 +4081,7 @@ function vueFicheClient() {
         const vehLabel = [pv.marque, pv.modele].filter(Boolean).join(' ') || pv.immatriculation || '';
         return `
         <div style="display:flex;gap:10px;align-items:center;padding:10px 0;
-                    border-bottom:1px solid rgba(244,244,245,.06)${p.annule ? ';opacity:.5' : ''}">
+                    border-bottom:1px solid var(--ocr-sep)${p.annule ? ';opacity:.5' : ''}">
           <span class="ocr-mini" style="width:46px;flex:none">${dateFr(p.journee)}</span>
           <span style="min-width:0;flex:1">
             <span style="font:600 13.5px/1.3 var(--ocr-texte);display:block${p.annule ? ';text-decoration:line-through' : ''}">${esc(nomPresta(p))}</span>
@@ -3890,9 +4130,25 @@ function ilYA(n) {
 
 async function vueBilan() {
   const du = ilYA(bilanJours), au = auj();
-  const [{ jours, mix }, ptsRH, baiesRH] = await Promise.all([
+  const [{ jours, mix }, ptsRH, baiesRH, temps] = await Promise.all([
     API.periode(du, au), API.pointagesPeriode(du, au), API.baies().catch(() => []),
+    API.tempsLavage(du).catch(() => []),
   ]);
+
+  // temps réels chronométrés, regroupés par prestation + gabarit
+  const parChrono = {};
+  temps.forEach(r => {
+    const k = r.prestation + '|' + r.gabarit;
+    const o = parChrono[k] || (parChrono[k] = { prestation: r.prestation, gabarit: r.gabarit, n: 0, somme: 0, max: 0 });
+    o.n += Number(r.nombre) || 0;
+    o.somme += (Number(r.minutes_moyennes) || 0) * (Number(r.nombre) || 0);
+    o.max = Math.max(o.max, Number(r.minutes_max) || 0);
+  });
+  const lignesChrono = Object.values(parChrono).filter(o => o.n > 0).map(o => {
+    const ref = OCR.duree(o.prestation, o.gabarit);
+    const moy = Math.round(o.somme / o.n);
+    return { ...o, moy, ref, ecart: ref ? Math.round((moy / ref - 1) * 100) : null };
+  }).sort((a, b) => b.n - a.n);
   const nbBaiesActives = Math.max(1, baiesRH.filter(b => b.active).length);
 
   const S = (a, k) => a.reduce((s, x) => s + (Number(x[k]) || 0), 0);
@@ -3962,9 +4218,9 @@ async function vueBilan() {
             <span style="flex:1"></span>
             <span style="font-weight:700;font-variant-numeric:tabular-nums">${OCR.fcfa(l.fh)}<span class="ocr-mini"> /h</span></span>
           </div>
-          <div style="height:8px;border-radius:999px;background:rgba(244,244,245,.07);overflow:hidden">
+          <div style="height:8px;border-radius:999px;background:var(--ocr-trace);overflow:hidden">
             <div style="height:100%;width:${Math.round(l.fh / maxFh * 100)}%;border-radius:999px;
-                        background:${l.code === 'signature' ? 'var(--ocr-rouge)' : 'rgba(244,244,245,.28)'}"></div>
+                        background:${l.code === 'signature' ? 'var(--ocr-rouge)' : 'var(--ocr-jauge)'}"></div>
           </div>
         </div>`).join('')
       : '<div class="vide">Aucun lavage sur la période.</div>'}
@@ -3981,6 +4237,29 @@ async function vueBilan() {
     </div>` : ''}
 
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div class="ocr-surtitre">Temps par lavage — chronométré</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Mesuré entre « ▶ Commencer » et « ✓ Terminé », heures tamponnées
+        par le serveur. Réf. = durée prévue au catalogue — la base de discussion avec l’équipe.</p>
+      ${lignesChrono.length ? lignesChrono.map(l => {
+        const p = OCR.prestation(l.prestation), g = OCR.gabarit(l.gabarit);
+        const ton = l.ecart == null ? '' : l.ecart <= 0 ? 'color:var(--ocr-vert)' : l.ecart > 25 ? 'color:var(--ocr-ambre)' : '';
+        const badge = l.ecart == null ? '' : l.ecart <= 0 ? '✓ dans les temps' : (l.ecart > 25 ? '⚠ ' : '') + '+' + l.ecart + ' %';
+        return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span class="ocr-petit" style="display:block;color:var(--ocr-blanc);font-weight:600">${esc(p ? p.nom : l.prestation)}
+              <span class="ocr-mini" style="font-weight:400">· ${esc(g ? g.nom : l.gabarit)}</span></span>
+            <span class="ocr-mini">${l.n} lavage(s) chronométré(s)${l.max > (l.ref || 0) * 1.5 && l.max > l.moy ? ' · pire : ' + l.max + ' min' : ''}</span>
+          </span>
+          <span style="text-align:right">
+            <span style="font:700 15px/1.1 var(--ocr-texte);font-variant-numeric:tabular-nums;display:block">${l.moy} min</span>
+            <span class="ocr-mini" style="${ton}">${l.ref ? 'réf. ' + l.ref + ' · ' : ''}${badge}</span>
+          </span>
+        </div>`;
+      }).join('')
+      : '<div class="vide">Pas encore de lavage chronométré — les temps apparaissent dès que l’équipe tape « ▶ Commencer » puis « ✓ Terminé ».</div>'}
+    </div>
+
+    <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
       <div class="ocr-surtitre">Équipe — présence</div>
       <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Le rendement se mesure en équipe (voir les objectifs) — ici, seulement la présence de ceux qui pointent.</p>
       ${equipePointage().map(e => {
@@ -3988,7 +4267,7 @@ async function vueBilan() {
         const joursP = pe.filter(x => x.arrivee).length;
         const minutes = pe.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
         const oublis = pe.filter(x => x.arrivee && !x.depart && x.jour < auj()).length;
-        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(244,244,245,.06)">
+        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
           ${avatar(e, 36)}
           <span style="min-width:0;flex:1">
             <span style="font-weight:600;display:block">${esc(e.nom)} <span class="ocr-mini" style="font-weight:400">· ${esc(e.role)}</span></span>
@@ -4044,11 +4323,44 @@ function brancherRetourDirection() {
 }
 
 async function vueDirection() {
-  const [tot, dernierJournal, baies] = await Promise.all([
-    API.totaux(auj()), API.journal(6), API.baies().catch(() => []),
+  const d = auj();
+  const [tot, ps, pts, rdvs, baies, obj, moisRows, sigRows, quinzaine, dernierJournal] = await Promise.all([
+    API.totaux(d), API.passages(d), API.pointagesJour(d),
+    API.rdvJour(d).catch(() => []), API.baies().catch(() => []),
+    API.objectifs().catch(() => null),
+    API.totauxDepuis(debutMois()), API.signaturesDepuis(debutMois()).catch(() => []),
+    API.totauxDepuis(decaleJour(d, -13)),
+    API.journal(6),
   ]);
+
+  const actifs = ps.filter(p => !p.annule);
+  const enCoursV = actifs.filter(p => p.statut_atelier === 'en_cours');
+  const attentes = actifs.filter(p => p.statut_atelier === 'attente');
+  const prets = actifs.filter(p => p.statut_atelier === 'pret');
+  const aEncaisser = actifs.filter(p => p.statut_paiement === 'impaye');
+  const presents = pts.filter(p => p.arrivee && !p.depart)
+    .map(p => equipe.find(e => e.id === p.employe_id)).filter(Boolean);
+  const panier = tot.vehicules ? Math.round((tot.ca || 0) / tot.vehicules) : 0;
   const baiesActives = baies.filter(b => b.active).length;
   const absents = ABSENCES.length;
+
+  // 7 derniers jours, comparés aux 7 précédents — même vision qu'un relevé bancaire.
+  const parJour = {};
+  quinzaine.forEach(r => { parJour[r.date] = Number(r.ca) || 0; });
+  const jours7 = [];
+  for (let i = 6; i >= 0; i--) { const dt = decaleJour(d, -i); jours7.push({ date: dt, ca: parJour[dt] || 0 }); }
+  const total7 = jours7.reduce((s, x) => s + x.ca, 0);
+  let prec7 = 0;
+  for (let i = 13; i >= 7; i--) prec7 += parJour[decaleJour(d, -i)] || 0;
+  const delta = prec7 > 0 ? Math.round((total7 / prec7 - 1) * 100) : null;
+  const maxJ = Math.max(1, ...jours7.map(x => x.ca));
+
+  // Ce qui reste à venir aujourd'hui à l'agenda.
+  const hm = new Date().toTimeString().slice(0, 5);
+  const aVenir = rdvs.filter(r => ['confirmee', 'en_attente_paiement'].includes(r.statut) &&
+                                  heureCourte(r.heure_prevue) >= hm)
+                     .sort((a, b) => (a.heure_prevue < b.heure_prevue ? -1 : 1));
+  const honorees = rdvs.filter(r => r.statut === 'honoree').length;
 
   const menu = [
     ['bilan', '◫', 'Bilan', 'CA, seuil, mix, présence'],
@@ -4062,14 +4374,83 @@ async function vueDirection() {
   ];
 
   $('#vue').innerHTML = `
-    <div class="tuiles" style="grid-template-columns:repeat(2,1fr)">
-      <div class="tuile"><div class="lab">CA du jour</div><div class="val">${OCR.fcfa(tot.ca || 0)}</div>
-        <div class="sub">${tot.vehicules || 0} véhicule(s)</div></div>
-      <div class="tuile"><div class="lab">Impayés du jour</div>
-        <div class="val" style="${tot.impaye ? 'color:var(--ocr-erreur)' : ''}">${OCR.fcfa(tot.impaye || 0)}</div>
-        <div class="sub">${tot.impaye ? 'à régulariser' : 'RAS'}</div></div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:var(--ocr-e3)">
+      <div class="ocr-surtitre">Pilotage</div>
+      <span style="flex:1"></span>
+      <span class="ocr-mini">${esc(NOM_SITE)} · <span style="color:var(--ocr-vert)">●</span> en direct</span>
     </div>
 
+    <div class="tuiles">
+      <div class="tuile"><div class="lab">CA aujourd’hui</div><div class="val">${OCR.fcfa(tot.ca || 0)}</div>
+        <div class="sub">${tot.vehicules || 0} véhicule(s)${panier ? ' · panier ' + OCR.fcfa(panier) : ''}</div></div>
+      <div class="tuile"><div class="lab">Dans l’atelier</div><div class="val">${enCoursV.length}</div>
+        <div class="sub">${enCoursV.length ? 'en cours de lavage' : 'aucun lavage en cours'}${attentes.length ? ' · ' + attentes.length + ' à démarrer' : ''}${prets.length ? ' · ' + prets.length + ' prêt(s)' : ''}</div></div>
+      <div class="tuile"><div class="lab">Encaissé</div><div class="val">${OCR.fcfa(tot.encaisse || 0)}</div>
+        <div class="sub" style="${tot.impaye ? 'color:var(--ocr-erreur)' : ''}">${tot.impaye ? OCR.fcfa(tot.impaye) + ' à encaisser' : 'rien en attente'}</div></div>
+      <div class="tuile"><div class="lab">Sur place</div><div class="val">${presents.length}</div>
+        <div class="sub">${baiesActives}/${baies.length || '—'} baie(s) active(s)</div></div>
+    </div>
+
+    <div class="deux">
+      <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+        <div class="ocr-surtitre">En ce moment</div>
+        ${presents.length ? `
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:var(--ocr-e3) 0">
+            ${presents.map(e => `<span style="display:inline-flex;align-items:center;gap:6px">${avatar(e, 30)}
+              <span class="ocr-petit">${esc(e.nom)}</span></span>`).join('')}
+          </div>`
+        : `<p class="ocr-mini" style="margin:var(--ocr-e3) 0">Personne n’a pointé pour l’instant.</p>`}
+        ${enCoursV.length ? enCoursV.map(p => {
+          const presta = (p.passage_lignes || []).filter(l => l.type === 'prestation').map(l => l.libelle).join(' + ');
+          const depuis = p.heure_debut ? minutesEntre(p.heure_debut, heureMaintenant()) : null;
+          return `<div style="display:flex;gap:9px;align-items:center;padding:8px 0;border-top:1px solid var(--ocr-sep)">
+            <span class="ocr-mini" style="font-variant-numeric:tabular-nums">${depuis != null ? '⏱ ' + depuis + ' min' : heureCourte(p.heure_arrivee)}</span>
+            <span style="min-width:0;flex:1">
+              <span class="ocr-petit" style="display:block;color:var(--ocr-blanc);font-weight:600">${esc((p.clients || {}).nom || 'Client de passage')}</span>
+              <span class="ocr-mini">${esc(presta)}</span></span>
+            <span style="font:600 13px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(p.montant_total)}</span>
+          </div>`;
+        }).join('') : `<p class="ocr-mini" style="margin:0;padding-top:8px;border-top:1px solid var(--ocr-sep)">Aucun véhicule en cours — ${tot.vehicules ? 'tout est livré' : 'la journée démarre'}.</p>`}
+        ${attentes.length ? `<p class="ocr-mini" style="margin:8px 0 0">🕐 ${attentes.length} véhicule(s) enregistré(s), lavage pas encore commencé.</p>` : ''}
+        ${aEncaisser.length ? `<p class="ocr-petit" style="margin:10px 0 0;color:var(--ocr-ambre)">⚠ ${aEncaisser.length} véhicule(s) livré(s) ou en cours restent à encaisser.</p>` : ''}
+      </div>
+
+      <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+        <div class="ocr-surtitre">7 derniers jours</div>
+        <div style="display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:var(--ocr-e4)">
+          ${jours7.map(x => `
+            <div style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px"
+                 title="${dateFr(x.date)} · ${OCR.fcfa(x.ca)}">
+              <div style="width:100%;max-width:36px;border-radius:4px 4px 0 0;height:${Math.max(3, Math.round(x.ca / maxJ * 74))}px;
+                          background:${x.date === d ? 'var(--ocr-rouge)' : 'var(--ocr-jauge)'}"></div>
+              <span class="ocr-mini" style="font-size:10px;${x.date === d ? 'color:var(--ocr-rouge-texte);font-weight:700' : ''}">${JOURS_COURTS[jourSemaineDe(x.date)]}</span>
+            </div>`).join('')}
+        </div>
+        <p class="ocr-petit" style="margin:12px 0 0"><strong>${OCR.fcfa(total7)}</strong> sur 7 jours
+          ${delta == null ? '' : ` · <span style="color:var(--ocr-${delta >= 0 ? 'vert' : 'erreur'})">${delta >= 0 ? '▲ +' : '▼ '}${delta} %</span> <span class="ocr-mini">vs les 7 jours d’avant</span>`}</p>
+      </div>
+    </div>
+
+    ${obj ? carteObjectifs(obj, moisRows, sigRows) : ''}
+
+    <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="ocr-surtitre">Encore à l’agenda aujourd’hui</div>
+        <span style="flex:1"></span>
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-dir="baies">Agenda ›</button>
+      </div>
+      ${aVenir.length ? aVenir.slice(0, 4).map(r => `
+        <div style="display:flex;gap:9px;align-items:center;padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="font:600 14px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${heureCourte(r.heure_prevue)}</span>
+          <span style="min-width:0;flex:1">
+            <span class="ocr-petit" style="display:block;color:var(--ocr-blanc)">${esc((OCR.prestation(r.prestation) || {}).nom || r.prestation)}</span>
+            <span class="ocr-mini">${esc((OCR.gabarit(r.gabarit) || {}).nom || '')}</span></span>
+          <span class="ocr-pastille ocr-pastille--${r.statut === 'confirmee' ? 'succes' : 'neutre'}">${r.statut === 'confirmee' ? 'Confirmé' : 'Attente acompte'}</span>
+        </div>`).join('')
+      : `<p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">Plus rien de prévu aujourd’hui${honorees ? ' — ' + honorees + ' rendez-vous honoré(s)' : ''}.</p>`}
+    </div>
+
+    <div class="ocr-surtitre" style="margin-bottom:var(--ocr-e3)">Outils</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:var(--ocr-e4)">
       ${menu.map(([id, ic, titre, sous]) => `
         <button class="ocr-carte" data-dir="${id}" style="cursor:pointer;text-align:left;padding:14px">
@@ -4082,7 +4463,7 @@ async function vueDirection() {
     <div class="ocr-carte">
       <div class="ocr-surtitre">Dernières actions</div>
       ${dernierJournal.length ? dernierJournal.map(r => `
-        <div style="padding:8px 0;border-bottom:1px solid rgba(244,244,245,.06)">
+        <div style="padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
           <span class="ocr-petit" style="display:block">${esc(r.quoi)}</span>
           <span class="ocr-mini">${esc(r.qui_nom || '')}${(r.quand || r.cree_le) ? ' · ' +
             new Date(r.quand || r.cree_le).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</span>
@@ -4090,6 +4471,8 @@ async function vueDirection() {
       : '<div class="vide">Rien encore aujourd’hui.</div>'}
     </div>`;
 
+  const bo = $('#btnObjectifs');
+  if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
   $('#vue').querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.dir;
     if (id === 'bilan' || id === 'cloture' || id === 'journal') { onglet = id; rendre(); window.scrollTo(0, 0); return; }
@@ -4110,7 +4493,7 @@ async function vueJournal() {
       <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Les 60 dernières actions — encaissements, annulations,
         pointages, corrections, baies, absences. Rien ne s’efface.</p>
       ${lignes.length ? lignes.map(r => `
-        <div style="padding:9px 0;border-bottom:1px solid rgba(244,244,245,.06)">
+        <div style="padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
           <span class="ocr-petit" style="display:block">${esc(r.quoi)}</span>
           <span class="ocr-mini">${esc(r.qui_nom || 'Système')}${(r.quand || r.cree_le) ? ' · ' +
             new Date(r.quand || r.cree_le).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</span>
