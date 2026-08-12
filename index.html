@@ -542,6 +542,8 @@ body.texte-tresgrand{zoom:1.2}
         <input class="ocr-saisie" type="password" id="mdp" autocomplete="current-password" required></label>
       <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnConnexion" type="submit">Se connecter</button>
       <p class="ocr-erreur-champ masque" id="errConnexion"></p>
+      <button type="button" class="ocr-btn ocr-btn--secondaire ocr-btn--bloc masque" id="btnPasskey"
+        style="margin-top:10px">🔑 Entrer avec Face ID / empreinte</button>
       <p style="text-align:center;margin:14px 0 0">
         <button type="button" id="btnOubli" style="all:unset;cursor:pointer;font:var(--ocr-t-mini);
           color:var(--ocr-argent-2);text-decoration:underline">Mot de passe oublié ?</button></p>
@@ -1851,6 +1853,29 @@ $('#formConnexion').addEventListener('submit', async e => {
   } finally { b.disabled = false; b.textContent = 'Se connecter'; }
 });
 
+/* ---------- passkey : entrer avec Face ID ou l'empreinte ----------
+   Le bouton n'apparaît que hors démo, sur un appareil compatible.
+   La passkey remplace la saisie de l'adresse et du mot de passe ; si le
+   compte a la double sécurité, le code à 6 chiffres reste demandé. */
+const PASSKEY_DISPO = !MODE_DEMO && typeof window.PublicKeyCredential !== 'undefined';
+if (PASSKEY_DISPO) $('#btnPasskey').classList.remove('masque');
+$('#btnPasskey').addEventListener('click', async () => {
+  const b = $('#btnPasskey'), err = $('#errConnexion');
+  b.disabled = true; err.classList.add('masque');
+  try {
+    const { error } = await sb.auth.signInWithPasskey();
+    if (error) throw error;
+    if (!MODE_DEMO && !(await exigerMFA())) return;
+    await demarrer();
+  } catch (ex) {
+    if (!/abort|cancel|timed?.?out|NotAllowed/i.test(String(ex && (ex.message || ex.name)))) {
+      err.textContent = '⛔ ' + (/passkey_disabled|not enabled/i.test(ex.message || '')
+        ? 'La connexion par passkey n’est pas encore activée.' : (ex.message || 'Connexion refusée.'));
+      err.classList.remove('masque');
+    }
+  } finally { b.disabled = false; }
+});
+
 /* ---------- mot de passe oublié ----------
    Un e-mail de réinitialisation part vers l'adresse du compte ; le lien
    ramène ici et l'app propose d'en choisir un nouveau. Ne fonctionne que
@@ -2086,6 +2111,12 @@ async function boiteCompte() {
       actif = (fl && fl.totp && fl.totp.find(x => x.status === 'verified')) || null;
     } catch (e) {}
   }
+  // Passkeys : réservées au pilotage (Edwin, Guénolé) pour l'instant.
+  const avecPasskey = PASSKEY_DISPO && ['direction', 'comptable'].includes(moi.role);
+  let mesPasskeys = [];
+  if (avecPasskey) {
+    try { const { data: pk } = await sb.auth.passkey.list(); mesPasskeys = pk || []; } catch (e) {}
+  }
 
   const v = modale(`
     <h3 class="ocr-h2">Mon compte</h3>
@@ -2107,6 +2138,18 @@ async function boiteCompte() {
     <label class="ocr-champ"><span class="ocr-label">Confirme-le</span>
       <input class="ocr-saisie" type="password" id="mdpConfirme" autocomplete="new-password"></label>
     <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-mdp>Changer mon mot de passe</button>
+
+    ${avecPasskey ? `
+    <div class="ocr-surtitre" style="margin-top:var(--ocr-e5)">Face ID / empreinte</div>
+    ${mesPasskeys.length ? mesPasskeys.map(k => `
+      <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--ocr-sep)">
+        <span class="ocr-petit" style="flex:1;min-width:0">🔑 ${esc(k.friendly_name || 'Passkey')}
+          <span class="ocr-mini" style="display:block">ajoutée le ${new Date(k.created_at).toLocaleDateString('fr-FR')}</span></span>
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-pk-suppr="${esc(k.id)}">Retirer</button>
+      </div>`).join('')
+    : `<p class="ocr-petit" style="margin:var(--ocr-e3) 0">Entre dans l’app d’un simple Face ID ou d’une empreinte,
+        sans taper le mot de passe.</p>`}
+    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-pk-ajout style="margin-top:var(--ocr-e3)">🔑 Ajouter une passkey sur cet appareil</button>` : ''}
 
     ${avecMFA ? `
     <div class="ocr-surtitre" style="margin-top:var(--ocr-e5)">Double sécurité</div>
@@ -2147,6 +2190,29 @@ async function boiteCompte() {
     if (error) { toast(error.message, true); e.target.disabled = false; return; }
     fermerModale(); toast('Mot de passe changé ✓');
   });
+
+  const bpk = v.querySelector('[data-pk-ajout]');
+  if (bpk) bpk.addEventListener('click', async () => {
+    bpk.disabled = true; bpk.textContent = 'Suis les instructions de l’appareil…';
+    try {
+      const { error } = await sb.auth.registerPasskey();
+      if (error) throw error;
+      toast('Passkey ajoutée ✓ — au prochain retour, Face ID suffit.');
+      fermerModale(); boiteCompte();
+    } catch (ex) {
+      if (!/abort|cancel|NotAllowed/i.test(String(ex && (ex.message || ex.name))))
+        toast(/passkey_disabled|not enabled/i.test(ex.message || '')
+          ? 'Les passkeys ne sont pas encore activées côté Supabase.' : (ex.message || 'Impossible d’ajouter la passkey'), true);
+      bpk.disabled = false; bpk.textContent = '🔑 Ajouter une passkey sur cet appareil';
+    }
+  });
+  v.querySelectorAll('[data-pk-suppr]').forEach(x => x.addEventListener('click', async () => {
+    x.disabled = true;
+    const { error } = await sb.auth.passkey.delete({ passkeyId: x.dataset.pkSuppr });
+    if (error) { toast(error.message, true); x.disabled = false; return; }
+    toast('Passkey retirée');
+    fermerModale(); boiteCompte();
+  }));
 
   const ba = v.querySelector('[data-mfa-activer]');
   if (ba) ba.addEventListener('click', () => { fermerModale(); boiteActiverMFA(); });
@@ -4508,7 +4574,8 @@ async function vueJournal() {
   bandeau();
   try {
     sb = MODE_DEMO ? creerClientDemo()
-                   : window.supabase.createClient(CONFIG_SUPABASE.url, CONFIG_SUPABASE.cle);
+                   : window.supabase.createClient(CONFIG_SUPABASE.url, CONFIG_SUPABASE.cle,
+                       { auth: { experimental: { passkey: true } } });
   } catch (ex) {
     document.body.innerHTML = '<div class="ocr-message ocr-message--erreur" style="margin:40px auto;max-width:420px">' +
       '<span>⛔</span><div><strong>Connexion impossible</strong><br>La bibliothèque Supabase n’a pas pu être chargée. ' +
