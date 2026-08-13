@@ -555,6 +555,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 
 /* Une plaque se lit caractère par caractère : chiffres à largeur fixe,
    majuscules, un peu d'air entre les signes. */
+.ocr-saisie.plaque-grande{font-size:22px;letter-spacing:.14em;padding-top:14px;padding-bottom:14px}
 .ocr-saisie.plaque{text-transform:uppercase;letter-spacing:.1em;
   font-variant-numeric:tabular-nums;font-weight:600}
 #etatJour{flex:none;font-size:10px;padding:3px 9px;white-space:nowrap}
@@ -1239,6 +1240,294 @@ function lienWhatsApp(message) {
   return 'https://wa.me/' + MARQUE.whatsapp + (message ? '?text=' + encodeURIComponent(message) : '');
 }
 
+
+/* ─────────────────────────────────────────────────────────────
+   MARQUES ET MODÈLES — le parc automobile béninois (13/08)
+
+   Le port de Cotonou fait du pays un marché d'occasion : le parc est
+   massivement japonais et européen, avec Toyota très largement devant. Cette
+   liste sert d'aide à la frappe (le champ reste libre : une marque absente
+   s'écrit quand même). Elle est complétée automatiquement par les marques et
+   modèles DÉJÀ présents dans la base de l'atelier — la liste s'améliore donc
+   toute seule au fil des lavages.
+   ───────────────────────────────────────────────────────────── */
+const MARQUES = [
+  /* Chaque modèle est rangé dans SA taille de facturation — c'est ce qui
+     permet de déduire le tarif dès que la marque et le modèle sont connus,
+     sans plus poser la question au client. Les tailles sont celles de la
+     grille OCR : petite (Corolla, Civic, Rio), berline/SUV compact (Camry,
+     RAV4, Tucson), grand SUV/pick-up (Land Cruiser, Hilux, Prado),
+     camionnette (Hiace, Sprinter, fourgon), moto. */
+  { nom: 'Toyota', gab: {
+      petite: ['Corolla', 'Yaris', 'Vitz', 'Auris', 'Belta', 'Probox'],
+      berline: ['Camry', 'Avensis', 'RAV4', 'Prius', 'Rush', 'C-HR', 'Venza'],
+      grandsuv: ['Land Cruiser', 'Prado', 'Highlander', '4Runner', 'Fortuner', 'Sequoia', 'Tundra', 'Hilux'],
+      camionnette: ['Hiace', 'Sienna', 'Dyna', 'Coaster'] } },
+  { nom: 'Hyundai', gab: {
+      petite: ['i10', 'i20', 'Accent', 'Elantra', 'Getz', 'Verna'],
+      berline: ['Tucson', 'Sonata', 'Creta', 'Kona', 'ix35'],
+      grandsuv: ['Santa Fe', 'Palisade', 'Terracan'],
+      camionnette: ['H1', 'H100', 'Starex'] } },
+  { nom: 'Kia', gab: {
+      petite: ['Rio', 'Picanto', 'Cerato', 'Soul', 'Pride'],
+      berline: ['Sportage', 'Optima', 'Seltos', 'Niro'],
+      grandsuv: ['Sorento', 'Mohave', 'Telluride'],
+      camionnette: ['Carnival', 'K2500', 'Pregio'] } },
+  { nom: 'Nissan', gab: {
+      petite: ['Almera', 'Micra', 'Note', 'Sunny', 'Tiida', 'Versa'],
+      berline: ['Qashqai', 'X-Trail', 'Juke', 'Altima', 'Rogue', 'Kicks'],
+      grandsuv: ['Patrol', 'Pathfinder', 'Navara', 'Murano'],
+      camionnette: ['Urvan', 'NV200', 'Caravan'] } },
+  { nom: 'Peugeot', gab: {
+      petite: ['206', '207', '208', '301', '306', '307'],
+      berline: ['308', '3008', '406', '407', '508', '2008'],
+      grandsuv: ['5008'],
+      camionnette: ['Partner', 'Expert', 'Boxer', 'Bipper'] } },
+  { nom: 'Mercedes-Benz', gab: {
+      petite: ['Classe A', 'Classe B', 'CLA'],
+      berline: ['Classe C', 'Classe E', 'GLA', 'GLC', 'GLK'],
+      grandsuv: ['Classe S', 'ML', 'GLE', 'GLS', 'Classe G'],
+      camionnette: ['Sprinter', 'Vito', 'Viano'] } },
+  { nom: 'Renault', gab: {
+      petite: ['Clio', 'Symbol', 'Logan', 'Sandero', 'Twingo'],
+      berline: ['Mégane', 'Duster', 'Captur', 'Laguna', 'Koleos'],
+      camionnette: ['Kangoo', 'Trafic', 'Master'] } },
+  { nom: 'Volkswagen', gab: {
+      petite: ['Polo', 'Golf', 'Up', 'Jetta'],
+      berline: ['Passat', 'Tiguan', 'T-Roc', 'Bora'],
+      grandsuv: ['Touareg', 'Amarok', 'Atlas'],
+      camionnette: ['Transporter', 'Caddy', 'Crafter'] } },
+  { nom: 'Ford', gab: {
+      petite: ['Fiesta', 'Focus', 'Ka'],
+      berline: ['Escape', 'Kuga', 'EcoSport', 'Fusion', 'Mondeo', 'Edge'],
+      grandsuv: ['Explorer', 'Ranger', 'Everest', 'F-150', 'Expedition'],
+      camionnette: ['Transit', 'Tourneo'] } },
+  { nom: 'Honda', gab: {
+      petite: ['Civic', 'Fit', 'Jazz', 'City'],
+      berline: ['Accord', 'CR-V', 'HR-V', 'Insight'],
+      grandsuv: ['Pilot', 'Passport', 'Ridgeline'],
+      camionnette: ['Odyssey'] } },
+  { nom: 'BMW', gab: {
+      petite: ['Série 1', 'Série 2'],
+      berline: ['Série 3', 'Série 4', 'Série 5', 'X1', 'X2', 'X3'],
+      grandsuv: ['Série 7', 'X5', 'X6', 'X7'] } },
+  { nom: 'Mitsubishi', gab: {
+      petite: ['Lancer', 'Mirage', 'Colt'],
+      berline: ['ASX', 'Outlander', 'Eclipse Cross'],
+      grandsuv: ['Pajero', 'Montero', 'L200', 'Triton'],
+      camionnette: ['Canter', 'L300'] } },
+  { nom: 'Suzuki', gab: {
+      petite: ['Swift', 'Alto', 'Celerio', 'Baleno', 'Ciaz'],
+      berline: ['Vitara', 'S-Cross', 'Jimny', 'Ertiga'],
+      camionnette: ['Carry', 'APV'] } },
+  { nom: 'Opel', gab: {
+      petite: ['Corsa', 'Astra', 'Meriva'],
+      berline: ['Insignia', 'Mokka', 'Zafira', 'Grandland'],
+      camionnette: ['Vivaro', 'Movano'] } },
+  { nom: 'Citroën', gab: {
+      petite: ['C1', 'C3', 'C-Elysée'],
+      berline: ['C4', 'C5', 'C4 Cactus', 'C5 Aircross'],
+      camionnette: ['Berlingo', 'Jumpy', 'Jumper'] } },
+  { nom: 'Audi', gab: {
+      petite: ['A1', 'A3'],
+      berline: ['A4', 'A5', 'A6', 'Q2', 'Q3'],
+      grandsuv: ['A8', 'Q5', 'Q7', 'Q8'] } },
+  { nom: 'Mazda', gab: {
+      petite: ['2', '3', 'Demio', 'Axela'],
+      berline: ['6', 'CX-3', 'CX-30', 'CX-5', 'Atenza'],
+      grandsuv: ['CX-7', 'CX-9', 'BT-50'],
+      camionnette: ['Bongo'] } },
+  { nom: 'Chevrolet', gab: {
+      petite: ['Aveo', 'Spark', 'Sonic', 'Cruze', 'Optra'],
+      berline: ['Captiva', 'Trax', 'Equinox', 'Malibu'],
+      grandsuv: ['Tahoe', 'Suburban', 'Silverado', 'Trailblazer'],
+      camionnette: ['N300', 'Express'] } },
+  { nom: 'Lexus', gab: {
+      berline: ['IS', 'ES', 'NX', 'UX'],
+      grandsuv: ['RX', 'GX', 'LX', 'LS'] } },
+  { nom: 'Land Rover', gab: {
+      berline: ['Freelander', 'Evoque', 'Discovery Sport'],
+      grandsuv: ['Range Rover', 'Range Rover Sport', 'Discovery', 'Defender'] } },
+  { nom: 'Isuzu', gab: {
+      grandsuv: ['D-Max', 'Trooper', 'MU-X'],
+      camionnette: ['NPR', 'NKR', 'Elf'] } },
+  { nom: 'Daihatsu', gab: {
+      petite: ['Sirion', 'Mira', 'Charade'],
+      berline: ['Terios', 'Rocky'],
+      camionnette: ['Gran Max', 'Hijet'] } },
+  { nom: 'Fiat', gab: {
+      petite: ['Panda', 'Punto', '500', 'Tipo'],
+      berline: ['500X', 'Freemont'],
+      camionnette: ['Doblo', 'Ducato', 'Fiorino'] } },
+  { nom: 'Volvo', gab: {
+      petite: ['V40', 'S40'],
+      berline: ['S60', 'S80', 'XC40', 'XC60'],
+      grandsuv: ['XC90'] } },
+  { nom: 'Skoda', gab: {
+      petite: ['Fabia', 'Rapid'],
+      berline: ['Octavia', 'Superb', 'Karoq'],
+      grandsuv: ['Kodiaq'] } },
+  { nom: 'Jeep', gab: {
+      berline: ['Compass', 'Renegade', 'Cherokee'],
+      grandsuv: ['Grand Cherokee', 'Wrangler', 'Gladiator'] } },
+  { nom: 'Dacia', gab: {
+      petite: ['Logan', 'Sandero'],
+      berline: ['Duster', 'Lodgy'],
+      camionnette: ['Dokker'] } },
+  { nom: 'Chery', gab: {
+      petite: ['QQ', 'Arrizo'],
+      berline: ['Tiggo', 'Tiggo 4', 'Tiggo 7'],
+      grandsuv: ['Tiggo 8'] } },
+  { nom: 'Geely', gab: {
+      petite: ['Emgrand'],
+      berline: ['Coolray', 'Azkarra'],
+      grandsuv: ['Okavango'] } },
+  { nom: 'BYD', gab: {
+      petite: ['Dolphin', 'Seagull'],
+      berline: ['Atto 3', 'Seal', 'Song'],
+      grandsuv: ['Tang'] } },
+  { nom: 'Tata', gab: {
+      petite: ['Indica', 'Tiago'],
+      grandsuv: ['Xenon', 'Safari'],
+      camionnette: ['Super Ace', 'Ace'] } },
+  { nom: 'Iveco', gab: { camionnette: ['Daily', 'Eurocargo'] } },
+  // motos et tricycles — l'essentiel du parc deux-roues béninois
+  { nom: 'Haojue', moto: true, gab: { moto: ['DK 150', 'Lucky 110', 'HJ 125', 'TR 150', 'KA 150'] } },
+  { nom: 'Bajaj', moto: true, gab: { moto: ['Boxer', 'Boxer 100', 'Boxer 150', 'Pulsar', 'CT 100', 'Discover', 'RE (tricycle)'] } },
+  { nom: 'Sanili', moto: true, gab: { moto: ['SL 125', 'SL 150', 'Star'] } },
+  { nom: 'Apsonic', moto: true, gab: { moto: ['AP 110', 'AP 125', 'AP 150', 'Tricycle'] } },
+  { nom: 'TVS', moto: true, gab: { moto: ['Star HLX', 'Apache', 'Sport', 'King (tricycle)'] } },
+  { nom: 'Yamaha', moto: true, gab: { moto: ['Crux', 'YBR 125', 'Crypton', 'DT 125', 'Nmax'] } },
+  { nom: 'Honda', moto: true, gab: { moto: ['CG 125', 'ACE 110', 'CB 125', 'XR 125', 'PCX'] } },
+  { nom: 'Suzuki', moto: true, gab: { moto: ['GN 125', 'AX 100', 'Burgman'] } },
+  { nom: 'Jincheng', moto: true, gab: { moto: ['JC 110', 'JC 125'] } },
+  { nom: 'Lifan', moto: true, gab: { moto: ['LF 125', 'KPR 150'] } },
+  { nom: 'Dayun', moto: true, gab: { moto: ['DY 110', 'DY 150'] } },
+  { nom: 'Royal', moto: true, gab: { moto: ['RY 110', 'RY 125'] } },
+  { nom: 'KTM', moto: true, gab: { moto: ['Duke 125', 'Duke 200'] } },
+].map(m => ({ ...m, modeles: Object.values(m.gab).flat() }));
+
+/* CATALOGUE VIVANT (13/08) — la liste ci-dessus est le point de départ et le
+   secours hors ligne ; l'atelier en ajoute et en corrige depuis l'application
+   (table modeles_vehicules). Les deux apps appellent OCR.poserCatalogue() au
+   démarrage, et tout le reste — suggestions, orthographe, taille déduite —
+   consulte l'ensemble fusionné. Une seule règle : ZÉRO DOUBLON, arbitré sur la
+   forme normalisée, l'entrée de l'atelier gagnant sur celle du socle. */
+let CATALOGUE = MARQUES;          // fusion socle + base, recalculée à l'injection
+let CATA_SOURCE = [];             // ce qui vient de la base, tel quel
+
+function poserCatalogue(lignes) {
+  CATA_SOURCE = Array.isArray(lignes) ? lignes : [];
+  const parMarque = new Map();    // clé marque → { nom, moto, gab }
+  const vus = new Set();          // clé marque|modèle → anti-doublon
+  const ajouter = (nom, modele, g, prioritaire) => {
+    const km = clefTexte(nom), kmo = clefTexte(modele || '');
+    if (!km) return;
+    // une marque peut exister en voiture ET en moto (Honda, Suzuki, Yamaha) :
+    // la clé d'unicité inclut donc le type.
+    const type = g === 'moto' ? 'm' : 'v';
+    const cleM = km + '|' + type;
+    let e = parMarque.get(cleM);
+    if (!e) { e = { nom, moto: g === 'moto', gab: {} }; parMarque.set(cleM, e); }
+    if (prioritaire) e.nom = nom;                       // l'atelier fixe l'orthographe
+    if (!modele) return;
+    const cle = km + '|' + kmo;
+    if (vus.has(cle) && !prioritaire) return;
+    if (vus.has(cle)) {                                  // l'atelier corrige la taille
+      Object.keys(e.gab).forEach(gg => { e.gab[gg] = e.gab[gg].filter(x => clefTexte(x) !== kmo); });
+    }
+    vus.add(cle);
+    (e.gab[g] || (e.gab[g] = [])).push(modele);
+  };
+  // la base d'abord (elle a le dernier mot), le socle ensuite pour compléter
+  CATA_SOURCE.forEach(l => ajouter(String(l.marque || '').trim(), String(l.modele || '').trim(),
+                                   l.gabarit, true));
+  MARQUES.forEach(m => Object.keys(m.gab).forEach(g => m.gab[g].forEach(mo => ajouter(m.nom, mo, g, false))));
+  CATALOGUE = [...parMarque.values()].map(m => ({ ...m, modeles: Object.values(m.gab).flat() }));
+  return CATALOGUE;
+}
+const catalogue = () => CATALOGUE;
+const catalogueSource = () => CATA_SOURCE;
+
+// Sans accents ni ponctuation : « mercedes benz », « MERCEDES-BENZ » et
+// « Mercédès Benz » doivent tomber sur la même marque.
+function clefTexte(t) {
+  return String(t == null ? '' : t).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+// Les marques à proposer selon le gabarit : une moto n'a rien à faire dans la
+// liste d'une berline, et inversement.
+function marques(gabarit) {
+  const moto = gabarit === 'moto';
+  // ordre : le socle d'abord (fréquence au Bénin), les ajouts de l'atelier ensuite
+  const ordre = new Map(MARQUES.map((m, i) => [clefTexte(m.nom), i]));
+  return CATALOGUE.filter(m => !!m.moto === moto)
+    .sort((a, b) => (ordre.has(clefTexte(a.nom)) ? ordre.get(clefTexte(a.nom)) : 999) -
+                    (ordre.has(clefTexte(b.nom)) ? ordre.get(clefTexte(b.nom)) : 999))
+    .map(m => m.nom);
+}
+// Honda, Suzuki et Yamaha font des voitures ET des motos : on rend l'entrée qui
+// correspond au gabarit choisi, sinon la première trouvée.
+function trouverMarque(nom, gabarit) {
+  const k = clefTexte(nom);
+  if (!k) return null;
+  const exact = CATALOGUE.filter(m => clefTexte(m.nom) === k);
+  if (!exact.length) return null;
+  const moto = gabarit === 'moto';
+  return exact.find(m => !!m.moto === moto) || exact[0];
+}
+// L'orthographe officielle si la marque est connue, sinon ce qui a été tapé
+// (jamais de blocage) — c'est ce qui évite « toyota », « TOYOTA » et « Toyota »
+// comme trois marques différentes.
+function marqueCanon(nom, gabarit) {
+  const m = trouverMarque(nom, gabarit);
+  return m ? m.nom : String(nom == null ? '' : nom).trim();
+}
+function modeles(marque, gabarit) {
+  const m = trouverMarque(marque, gabarit);
+  if (m) return m.modeles.slice();
+  // marque inconnue ou pas encore tapée : on propose les modèles du bon type
+  const moto = gabarit === 'moto';
+  return CATALOGUE.filter(x => !!x.moto === moto).flatMap(x => x.modeles).slice(0, 160);
+}
+/* LA TAILLE DÉDUITE DU MODÈLE (13/08) — « ça éviterait les questions au
+   niveau du prix, donc c'est sans surprise ». On rend la taille de
+   facturation quand le modèle est reconnu, sinon rien (jamais de devinette
+   sur un modèle inconnu : mieux vaut laisser choisir que se tromper de prix). */
+function gabaritDe(marque, modele) {
+  const km = clefTexte(modele);
+  if (!km) return null;
+  // Honda fait des voitures ET des motos : on cherche dans TOUTES les entrées
+  // qui portent ce nom, c'est le modèle qui tranche (« CG 125 » → moto).
+  const k = clefTexte(marque);
+  const listes = k ? CATALOGUE.filter(x => clefTexte(x.nom) === k) : [];
+  if (!listes.length) listes.push(...CATALOGUE);
+  // 1 · le modèle exact, dans la bonne marque d'abord
+  for (const mq of listes)
+    for (const g of Object.keys(mq.gab))
+      if (mq.gab[g].some(x => clefTexte(x) === km)) return g;
+  // 2 · une finition (« Corolla LE », « Hilux Double Cabine ») : on retient le
+  //     modèle connu le plus long qui commence la saisie.
+  let meilleur = null;
+  for (const mq of listes)
+    for (const g of Object.keys(mq.gab))
+      for (const x of mq.gab[g]) {
+        const kx = clefTexte(x);
+        if (kx.length >= 4 && km.startsWith(kx) && (!meilleur || kx.length > meilleur.k))
+          meilleur = { k: kx.length, g };
+      }
+  return meilleur ? meilleur.g : null;
+}
+
+function modeleCanon(marque, modele, gabarit) {
+  const k = clefTexte(modele);
+  if (!k) return '';
+  const m = trouverMarque(marque, gabarit);
+  const liste = m ? m.modeles : CATALOGUE.flatMap(x => x.modeles);
+  return liste.find(x => clefTexte(x) === k) || String(modele).trim();
+}
+
 /* ─────────────────────────────────────────────────────────────
    7 · EXPORT
    ───────────────────────────────────────────────────────────── */
@@ -1255,6 +1544,8 @@ const API = {
   reference, lireReference, lienWhatsApp,
   plaque, plaqueEtat, PLAQUE_EXEMPLES,
   GROUPES_LAVAGE, groupeLavage,
+  MARQUES, marques, modeles, marqueCanon, modeleCanon, trouverMarque, gabaritDe,
+  poserCatalogue, catalogue, catalogueSource, clefTexte,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
@@ -1302,6 +1593,10 @@ function creerClientDemo() {
     passages: [], passage_lignes: [], paiements: [], anomalies: [], journal: [],
     reservations: [], entreprises: [], pointages: [], absences: [],
     reglages: [{ id: 1, lat: null, lng: null, rayon_m: 150 }],
+    // Catalogue des véhicules : semé depuis le socle, comme la vraie base.
+    modeles_vehicules: OCR.MARQUES.flatMap(m => Object.keys(m.gab).flatMap(g =>
+      m.gab[g].map(mo => ({ id: 'cat-' + OCR.clefTexte(m.nom) + '-' + OCR.clefTexte(mo),
+                            marque: m.nom, modele: mo, gabarit: g, origine: 'socle' })))),
     baies: [
       { id: 'A', nom: 'Baie A', active: true, motif: null },
       { id: 'B', nom: 'Baie B', active: false, motif: 'Travaux en cours' },
@@ -1534,8 +1829,27 @@ function creerClientDemo() {
                nb_vehicules: vs.length,
                vehicule_nom: [dernier.marque, dernier.modele].filter(Boolean).join(' ') || null,
                vehicule_plaque: dernier.immatriculation || null,
-               archive_le: c.archive_le || null };
+               archive_le: c.archive_le || null,
+               a_completer: !!c.a_completer };
     });
+  };
+
+  // Mêmes colonnes que la vue v_stats_parc : une ligne par jour × marque ×
+  // modèle × taille, l'app somme sur la période affichée.
+  const statsParc = () => {
+    const g = {};
+    D.passages.filter(p => !p.annule).forEach(p => {
+      const v = D.vehicules.find(x => x.id === p.vehicule_id) || {};
+      const marque = (v.marque || '').trim() || '?';
+      const modele = (v.modele || '').trim() || '';
+      const k = [p.journee, p.gabarit, marque, modele].join('|');
+      const o = g[k] || (g[k] = { journee: p.journee, gabarit: p.gabarit, marque, modele,
+                                  passages: 0, ca: 0, minutes: 0 });
+      o.passages++; o.ca += p.montant_total || 0;
+      o.minutes += D.passage_lignes.filter(l => l.passage_id === p.id)
+                     .reduce((sm, l) => sm + (l.duree_min || 0), 0);
+    });
+    return Object.values(g);
   };
 
   let session = null;
@@ -1558,6 +1872,7 @@ function creerClientDemo() {
       if (table === 'v_temps_lavage')    return tempsLavage();
       if (table === 'v_fidelite')        return fidelite();
       if (table === 'v_clients_stats')   return clientsStats();
+      if (table === 'v_stats_parc')      return statsParc();
       if (table === 'passages')          return D.passages.map(lier);
       if (table === 'vehicules')         return D.vehicules.map(v =>
         ({ ...v, clients: D.clients.find(c => c.id === v.client_id) || null }));
@@ -1712,6 +2027,142 @@ function creerClientDemo() {
     /* ── corrections d'erreurs de comptoir (13/08) ──
        Mêmes règles et mêmes phrases que la base, pour que la démo ne mente pas
        sur ce qui est permis à qui. */
+    ocr_catalogue_poser(a) {
+      const emp = quiCorrige('complètent le catalogue');
+      const ma = String(a.p_marque || '').trim();
+      const mo = String(a.p_modele || '').trim();
+      if (!ma) throw new Error('La marque est obligatoire');
+      if (!OCR.GABARITS.some(g => g.id === a.p_gabarit)) throw new Error('Taille inconnue');
+      const k = OCR.clefTexte(ma) + '|' + OCR.clefTexte(mo);
+      const dejala = D.modeles_vehicules.find(x => OCR.clefTexte(x.marque) + '|' + OCR.clefTexte(x.modele) === k);
+      let id, cree = false;
+      if (dejala) { dejala.marque = ma; dejala.modele = mo; dejala.gabarit = a.p_gabarit; id = dejala.id; }
+      else {
+        id = uid();
+        D.modeles_vehicules.push({ id, marque: ma, modele: mo, gabarit: a.p_gabarit, origine: 'atelier' });
+        cree = true;
+      }
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Catalogue véhicules : ' + (cree ? 'ajout de ' : 'correction de ') + ma +
+              (mo ? ' ' + mo : '') + ' → ' + a.p_gabarit, entite: 'catalogue', entite_id: id });
+      return [{ id, cree }];
+    },
+    ocr_catalogue_retirer(a) {
+      const emp = quiCorrige('modifient le catalogue');
+      const l = D.modeles_vehicules.find(x => x.id === a.p_id);
+      if (!l) throw new Error('Entrée introuvable');
+      D.modeles_vehicules = D.modeles_vehicules.filter(x => x.id !== a.p_id);
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Catalogue véhicules : retrait de ' + l.marque + (l.modele ? ' ' + l.modele : ''),
+        entite: 'catalogue', entite_id: l.id });
+      return [];
+    },
+    ocr_rattacher_vehicule(a) {
+      const emp = quiCorrige('rattachent un véhicule');
+      const ve = D.vehicules.find(x => x.id === a.p_vehicule);
+      if (!ve) throw new Error('Véhicule introuvable');
+      const cible = D.clients.find(c => c.id === a.p_client);
+      if (!cible) throw new Error('Client introuvable');
+      if (ve.client_id === cible.id) return [];
+      const src = D.clients.find(c => c.id === ve.client_id);
+      if (src && !src.a_completer && emp.role === 'manager')
+        throw new Error('Ce véhicule est déjà sur la fiche de ' + src.nom +
+          ' — seule la direction peut le déplacer.');
+      ve.client_id = cible.id;
+      let n = 0;
+      if ((src && src.a_completer) || a.p_historique !== false) {
+        D.passages.forEach(p => { if (p.vehicule_id === ve.id) { p.client_id = cible.id; n++; } });
+        D.reservations.forEach(r => { if (r.vehicule_id === ve.id) r.client_id = cible.id; });
+      }
+      if (src && src.a_completer && !D.vehicules.some(v => v.client_id === src.id))
+        D.clients = D.clients.filter(c => c.id !== src.id);
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Véhicule ' + (ve.immatriculation || 'sans plaque') + ' rattaché à ' + cible.nom +
+              ' (depuis « ' + ((src && src.nom) || '?') + ' »' + (n ? ', ' + n + ' passage(s) suivis' : '') + ')',
+        entite: 'vehicule', entite_id: ve.id });
+      return [];
+    },
+    /* Créer une fiche avec CE QU'ON A, sans jamais de doublon — copie fidèle
+       de ocr_creer_client en base. */
+    ocr_creer_client(a) {
+      const emp = quiCorrige('créent une fiche client');
+      const tel = String(a.p_telephone || '').trim() || null;
+      const nom = String(a.p_nom || '').trim() || null;
+      const plaque = OCR.plaque(a.p_immat) || null;
+      if (!tel && !nom && !plaque) throw new Error('Donne au moins un nom, un numéro ou une plaque');
+      let cl = null, existant = false, rattache = false;
+      if (tel) {
+        cl = D.clients.find(c => c.telephone === tel) ||
+             D.clients.find(c => telCle(c.telephone) && telCle(c.telephone) === telCle(tel)) || null;
+        if (cl) existant = true;
+      }
+      let ve = plaque ? D.vehicules.find(v => OCR.plaque(v.immatriculation) === plaque) : null;
+      if (ve) {
+        const prop = D.clients.find(c => c.id === ve.client_id) || {};
+        if (!cl && prop.a_completer) {
+          cl = prop; existant = true; rattache = true;
+          if (nom) cl.nom = nom;
+          if (tel) { cl.telephone = tel; cl.a_completer = false; }
+          if (nom && !tel) cl.a_completer = false;
+          if (a.p_email) cl.email = cl.email || String(a.p_email).trim();
+        } else if (cl && ve.client_id !== cl.id && !prop.a_completer) {
+          throw new Error('La plaque ' + plaque + ' est déjà sur la fiche de ' + prop.nom +
+            ' — ouvre sa fiche pour la déplacer.');
+        } else if (!cl && !prop.a_completer) {
+          throw new Error('La plaque ' + plaque + ' appartient déjà à ' + prop.nom +
+            ' — ouvre sa fiche plutôt que d’en créer une deuxième.');
+        }
+      }
+      if (!cl) {
+        cl = { id: uid(), nom: nom || (plaque ? 'Véhicule ' + plaque : 'Client de passage'),
+               telephone: tel, email: String(a.p_email || '').trim() || null,
+               note: String(a.p_note || '').trim() || null, a_completer: !tel && !nom };
+        D.clients.push(cl);
+      }
+      if (ve) {
+        if (ve.client_id !== cl.id) { RPC.ocr_rattacher_vehicule({ p_vehicule: ve.id, p_client: cl.id, p_historique: true }); rattache = true; }
+        ve.marque = ve.marque || (String(a.p_marque || '').trim() || null);
+        ve.modele = ve.modele || (String(a.p_modele || '').trim() || null);
+      } else if (plaque || a.p_gabarit || String(a.p_marque || '').trim()) {
+        D.vehicules.push({ id: uid(), client_id: cl.id, gabarit: a.p_gabarit || 'berline',
+          marque: String(a.p_marque || '').trim() || null,
+          modele: String(a.p_modele || '').trim() || null, immatriculation: plaque });
+      }
+      if (!existant || rattache)
+        D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+          quoi: (existant ? 'Fiche client retrouvée : ' : 'Fiche client créée : ') + cl.nom +
+                (tel ? ' · ' + tel : '') + (plaque ? ' · ' + plaque : '') +
+                (rattache ? ' (véhicule et historique rattachés)' : ''),
+          entite: 'client', entite_id: cl.id });
+      return [{ client_id: cl.id, deja_existant: existant, vehicule_rattache: rattache }];
+    },
+    ocr_completer_fiche(a) {
+      const emp = quiCorrige('complètent une fiche');
+      const src = D.clients.find(x => x.id === a.p_client);
+      if (!src) throw new Error('Client introuvable');
+      const nom = String(a.p_nom || '').trim() || null;
+      const tel = String(a.p_telephone || '').trim() || null;
+      if (!nom && !tel) throw new Error('Donne au moins un nom ou un numéro');
+      const cible = tel ? D.clients.find(c => c.id !== src.id &&
+        (c.telephone === tel || (telCle(c.telephone) && telCle(c.telephone) === telCle(tel)))) : null;
+      if (cible) {
+        if (!src.a_completer)
+          throw new Error('Ce numéro est celui de ' + cible.nom +
+            ' — fusionner deux fiches réelles n’est pas possible ici : corrige la bonne fiche.');
+        D.vehicules.forEach(v => { if (v.client_id === src.id) v.client_id = cible.id; });
+        D.passages.forEach(p => { if (p.client_id === src.id) p.client_id = cible.id; });
+        D.reservations.forEach(r => { if (r.client_id === src.id) r.client_id = cible.id; });
+        D.clients = D.clients.filter(c => c.id !== src.id);
+        D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+          quoi: 'Fiche provisoire « ' + src.nom + ' » rattachée à ' + cible.nom, entite: 'client', entite_id: cible.id });
+        return cible.id;
+      }
+      if (nom) src.nom = nom;
+      if (tel) { src.telephone = tel; src.a_completer = false; }
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Fiche complétée : ' + src.nom + (tel ? ' · ' + tel : ''), entite: 'client', entite_id: src.id });
+      return src.id;
+    },
     ocr_modifier_client(a) {
       const emp = quiCorrige('corrigent une fiche client');
       const c = D.clients.find(x => x.id === a.p_client);
@@ -1726,6 +2177,7 @@ function creerClientDemo() {
       const avant = { nom: c.nom, tel: c.telephone };
       c.nom = String(a.p_nom).trim();
       c.telephone = tel;
+      if (tel) c.a_completer = false;
       c.email = String(a.p_email || '').trim() || null;
       c.note = String(a.p_note || '').trim() || null;
       D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
@@ -1894,13 +2346,65 @@ function creerClientDemo() {
       if (j && j.statut !== 'ouverte') throw new Error('Journée ' + jourCourant + ' clôturée : modification impossible');
       const lignes = a.p_lignes || [];
       if (!lignes.length) throw new Error('Aucune prestation sélectionnée');
-      let cl = D.clients.find(c => c.telephone && c.telephone === (a.p_telephone || '').trim());
-      if (!cl) { cl = { id: uid(), nom: a.p_client_nom || 'Client de passage', telephone: (a.p_telephone || '').trim() || null }; D.clients.push(cl); }
-      // Plaque : même règle qu'en base (ocr_plaque_cle) — on compare et on
-      // stocke la forme canonique, sinon « cb 5916 » créerait un doublon.
+      /* LA PLAQUE D'ABORD — copie fidèle de la base (13/08) :
+         1. la plaque est cherchée dans TOUS les véhicules (une plaque = un véhicule) ;
+         2. le client = le téléphone s'il est donné, sinon le propriétaire de la
+            plaque, sinon une fiche provisoire « Véhicule CB5916 » ;
+         3. si la plaque était sur une fiche provisoire et qu'on connaît enfin
+            le client, tout lui est transféré et la provisoire disparaît. */
       const plaque = OCR.plaque(a.p_immat);
-      let ve = plaque ? D.vehicules.find(v => v.client_id === cl.id && OCR.plaque(v.immatriculation) === plaque) : null;
-      if (!ve) { ve = { id: uid(), client_id: cl.id, gabarit: a.p_gabarit, marque: a.p_marque, modele: a.p_modele, immatriculation: plaque || null }; D.vehicules.push(ve); }
+      let ve = plaque ? D.vehicules.find(v => OCR.plaque(v.immatriculation) === plaque) : null;
+      const vePropr = ve ? ve.client_id : null;
+      const tel = String(a.p_telephone || '').trim();
+      const nomDonne = String(a.p_client_nom || '').trim();
+      let cl = null;
+      if (tel) {
+        cl = D.clients.find(c => c.telephone === tel) ||
+             D.clients.find(c => telCle(c.telephone) && telCle(c.telephone) === telCle(tel));
+        if (!cl) { cl = { id: uid(), nom: nomDonne || 'Client de passage', telephone: tel }; D.clients.push(cl); }
+        else if (nomDonne && (cl.a_completer || ['Client de passage', 'Client'].includes(cl.nom))) {
+          cl.nom = nomDonne; cl.a_completer = false;
+        }
+      } else if (vePropr) {
+        cl = D.clients.find(c => c.id === vePropr);
+      }
+      if (!cl) {
+        cl = { id: uid(), nom: plaque ? 'Véhicule ' + plaque : (nomDonne || 'Client de passage'),
+               telephone: null, a_completer: true };
+        D.clients.push(cl);
+      }
+      // liaison automatique d'une fiche provisoire vers la vraie fiche
+      if (ve && vePropr && vePropr !== cl.id) {
+        const prov = D.clients.find(c => c.id === vePropr);
+        if (prov && prov.a_completer) {
+          ve.client_id = cl.id;
+          D.passages.forEach(p => { if (p.client_id === vePropr) p.client_id = cl.id; });
+          D.reservations.forEach(r => { if (r.client_id === vePropr) r.client_id = cl.id; });
+          if (!D.vehicules.some(v => v.client_id === vePropr))
+            D.clients = D.clients.filter(c => c.id !== vePropr);
+          D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: 'e3', qui_nom: 'Samuel',
+            quoi: 'Fiche provisoire « ' + prov.nom + ' » rattachée à ' + cl.nom + ' (plaque ' + plaque + ')',
+            entite: 'client', entite_id: cl.id });
+        }
+      }
+      if (!ve && !plaque) {
+        // pas de plaque : on réutilise le véhicule sans plaque du même gabarit
+        ve = D.vehicules.find(v => v.client_id === cl.id && !v.immatriculation && v.gabarit === a.p_gabarit);
+      }
+      if (!ve) {
+        ve = { id: uid(), client_id: cl.id, gabarit: a.p_gabarit,
+               marque: String(a.p_marque || '').trim() || null,
+               modele: String(a.p_modele || '').trim() || null,
+               immatriculation: plaque || null };
+        D.vehicules.push(ve);
+      } else {
+        // on remplit les trous, jamais on n'écrase — et la taille se corrige
+        // seulement sur un véhicule encore anonyme (créé sur la seule plaque)
+        const anonyme = !ve.marque;
+        ve.marque = ve.marque || (String(a.p_marque || '').trim() || null);
+        ve.modele = ve.modele || (String(a.p_modele || '').trim() || null);
+        if (anonyme && ve.marque) ve.gabarit = a.p_gabarit || ve.gabarit;
+      }
       const brut = lignes.reduce((s, l) => s + l.prix, 0);
       const remise = Math.min(Math.max(0, a.p_remise || 0), brut);
       // Comme en base : remise = motif obligatoire, sauf remise partenaire exacte.
@@ -2087,7 +2591,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v34';
+const VERSION = 'v38';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -2232,7 +2736,10 @@ function modale(html) {
 // en testant la liaison Ehu Motors le 12/08).
 let retourInterne = false;
 const fermerModale = () => {
-  const m = $('#modales .voile:last-child');
+  // la dernière fenêtre empilée (jamais « :last-child » : d'autres nœuds
+  // peuvent se glisser en fin de conteneur — voir le geste retour du 13/08)
+  const ms = document.querySelectorAll('#modales .voile');
+  const m = ms.length ? ms[ms.length - 1] : null;
   if (!m) return;
   m.remove();
   if (history.state && history.state.ocrModale) { retourInterne = true; history.back(); }
@@ -2281,6 +2788,167 @@ function brancherPlaque(el, apres) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   AIDE À LA FRAPPE — MARQUES ET MODÈLES (13/08)
+   « J'aimerais que les marques et modèles les plus fréquents au Bénin soient
+     déjà enregistrés, ça facilite quand on enregistre. »
+
+   Choix technique : une liste de suggestions native (datalist), pas un menu
+   déroulant. Trois raisons — on tape la première lettre et la liste se filtre
+   toute seule ; une marque absente s'écrit quand même (jamais de blocage) ;
+   et ça reste le clavier du téléphone, sans fenêtre qui s'ouvre par-dessus.
+
+   La liste = le parc béninois (socle partagé) + ce que l'atelier a DÉJÀ
+   enregistré, pour qu'elle s'améliore d'elle-même. Et l'orthographe se remet
+   au propre à la sortie du champ : « toyota » devient « Toyota », sinon on se
+   retrouve avec trois marques pour une seule.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Le catalogue de la base est versé dans le socle : à partir de là, les
+   suggestions, l'orthographe et la taille déduite en tiennent compte partout
+   (Saisie, fiches, app client). Appelé au démarrage et après chaque ajout. */
+async function chargerCatalogue() {
+  try { OCR.poserCatalogue(await API.catalogue()); } catch (e) {}
+}
+
+let PARC = null;   // ce qui roule déjà chez nous, rangé par type de véhicule
+async function chargerParc() {
+  if (PARC) return PARC;
+  const p = { moto: { marques: [], modeles: {} }, auto: { marques: [], modeles: {} } };
+  try {
+    const { data } = await sb.from('vehicules').select('marque,modele,gabarit').limit(2000);
+    (data || []).forEach(v => {
+      // rangé par type : les marques de motos n'ont rien à faire dans la liste
+      // d'une berline, même quand elles viennent de notre propre parc.
+      const c = v.gabarit === 'moto' ? p.moto : p.auto;
+      const ma = String(v.marque || '').trim();
+      if (!ma) return;
+      if (!c.marques.includes(ma)) c.marques.push(ma);
+      const mo = String(v.modele || '').trim();
+      if (!mo) return;
+      const l = c.modeles[ma] || (c.modeles[ma] = []);
+      if (!l.includes(mo)) l.push(mo);
+    });
+  } catch (e) {}
+  PARC = p;
+  return PARC;
+}
+const parcDe = (gabarit) => (PARC ? (gabarit === 'moto' ? PARC.moto : PARC.auto)
+                                  : { marques: [], modeles: {} });
+
+function optionsListe(valeurs) {
+  return [...new Set(valeurs.filter(Boolean))].slice(0, 200)
+    .map(v => '<option value="' + esc(v) + '"></option>').join('');
+}
+
+/* Branche un couple de champs marque/modèle. `gabarit()` est une fonction :
+   changer de gabarit change les suggestions sans reconstruire l'écran. */
+/* `poserGabarit(g, source)` est fourni par l'appelant : c'est lui qui sait
+   comment changer la taille dans SON formulaire (et l'annoncer). */
+/* La ligne « ce modèle est nouveau — je l'ajoute au catalogue ? ». Elle
+   s'affiche sous les champs marque/modèle, dans le formulaire où on est. */
+function zoneApprentissage(elModele) {
+  if (!elModele) return null;
+  // Hors du <label> : un bouton posé DANS un label reçoit mal le doigt (le
+  // navigateur renvoie le clic vers le champ). Vu au test du 13/08.
+  const label = elModele.closest('label') || elModele;
+  const hote = label.parentNode;
+  let z = hote.querySelector(':scope > .appr-cata');
+  if (!z) {
+    z = document.createElement('p');
+    z.className = 'ocr-mini appr-cata';
+    z.style.margin = '6px 0 0';
+    z.style.gridColumn = '1 / -1';   // pleine largeur même dans une grille
+    hote.insertBefore(z, label.nextSibling);
+  }
+  return z;
+}
+
+function brancherMarqueModele(elMarque, elModele, gabarit, apres, poserGabarit) {
+  if (!elMarque && !elModele) return;
+  // Une seule paire de listes par couple de champs, réutilisée : l'écran de
+  // Saisie se redessine à chaque frappe, on ne veut pas empiler des listes.
+  const cle = (elMarque ? elMarque.id : 'x') + '-' + (elModele ? elModele.id : 'x');
+  const idM = 'dlm-' + cle, idD = 'dld-' + cle;
+  const trouver = (id) => {
+    let d = document.getElementById(id);
+    if (!d) { d = document.createElement('datalist'); d.id = id; document.body.appendChild(d); }
+    return d;
+  };
+  const dlM = trouver(idM), dlD = trouver(idD);
+  if (elMarque) { elMarque.setAttribute('list', idM); elMarque.setAttribute('autocomplete', 'off'); }
+  if (elModele) { elModele.setAttribute('list', idD); elModele.setAttribute('autocomplete', 'off'); }
+
+  const gab = () => (typeof gabarit === 'function' ? gabarit() : gabarit);
+
+  const majApprentissage = (ma, mo, g, inconnu) => {
+    const z = zoneApprentissage(elModele);
+    if (!z) return;
+    /* On ne réécrit la zone QUE si son état change. Sinon, un simple clic de
+       souris sur le bouton la reconstruisait avant le relâchement (le blur du
+       champ Modèle déclenche un « change » de plus) et le clic était perdu :
+       il fallait cliquer deux fois. Bug attrapé au test du 13/08 — invisible
+       au doigt, systématique à la souris (l'ordinateur de Guénolé). */
+    const etat = [ma, mo, g, inconnu ? '1' : '0'].join('|');
+    if (z.dataset.etat === etat) return;
+    z.dataset.etat = etat;
+    if (!inconnu || !ma || !mo || !peutCorrigerFiche()) { z.innerHTML = ''; return; }
+    const nomG = (OCR.gabarit(g) || {}).nom || g;
+    z.innerHTML = '<span style="color:var(--ocr-ambre)">« ' + esc(ma + ' ' + mo) +
+      ' » n’est pas encore au catalogue.</span> ' +
+      '<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-appr style="margin-top:6px">' +
+      '＋ L’ajouter comme ' + esc(nomG) + '</button>';
+    const b = z.querySelector('[data-appr]');
+    if (b) b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await API.catalogueposer(ma, mo, g);
+        await chargerCatalogue();
+        z.dataset.etat = 'ajoute';
+        z.innerHTML = '<span style="color:var(--ocr-vert)">✓ ' + esc(ma + ' ' + mo) +
+          ' ajouté au catalogue en ' + esc(nomG) + ' — il sera proposé la prochaine fois.</span>';
+        peindre();
+      } catch (ex) { toast(ex.message, true); b.disabled = false; }
+    });
+  };
+
+  const peindre = () => {
+    const parc = parcDe(gab());
+    dlM.innerHTML = optionsListe([...OCR.marques(gab()), ...parc.marques]);
+    const ma = elMarque ? elMarque.value : '';
+    dlD.innerHTML = optionsListe([...OCR.modeles(ma, gab()), ...(parc.modeles[OCR.marqueCanon(ma, gab())] || [])]);
+  };
+  peindre();
+  chargerParc().then(peindre);
+
+  /* LA TAILLE SE DÉDUIT DU MODÈLE (13/08) : « ça éviterait les questions au
+     niveau du prix, donc c'est sans surprise ». Un Land Cruiser est un grand
+     SUV, un Picanto une petite — le tarif suit tout seul. Si le modèle est
+     inconnu, on ne devine rien : mieux vaut laisser choisir que se tromper. */
+  const deduire = () => {
+    const ma = elMarque ? elMarque.value.trim() : '';
+    const mo = elModele ? elModele.value.trim() : '';
+    const g = OCR.gabaritDe(ma, mo);
+    if (g && poserGabarit && g !== gab()) poserGabarit(g, [ma, mo].filter(Boolean).join(' '));
+    // Modèle que le catalogue ne connaît pas : c'est LE moment de l'apprendre.
+    // (« des fois il y a des nouvelles marques chinoises » — Edwin, 13/08)
+    majApprentissage(ma, mo, gab(), !g);
+  };
+  if (elMarque) {
+    elMarque.addEventListener('input', peindre);
+    elMarque.addEventListener('change', () => {
+      elMarque.value = OCR.marqueCanon(elMarque.value, gab());
+      peindre(); deduire();
+      if (apres) apres();
+    });
+  }
+  if (elModele) elModele.addEventListener('change', () => {
+    elModele.value = OCR.modeleCanon(elMarque ? elMarque.value : '', elModele.value, gab());
+    deduire();
+    if (apres) apres();
+  });
+  return peindre;   // à rappeler quand le gabarit change
+}
+
 function bandeau() {
   let h = '';
   if (MODE_DEMO) h += '<div class="bandeau bandeau--demo">✦ Mode démonstration — aucune donnée réelle n’est enregistrée.</div>';
@@ -2323,7 +2991,7 @@ function memo(cle, fn) {
   MEMO.set(cle, { t: Date.now(), p });
   return p;
 }
-const memoVider = () => MEMO.clear();
+const memoVider = () => { MEMO.clear(); PARC = null; };   // le parc des véhicules aussi
 
 /* Toute écriture vide la mémoire, où qu'elle soit écrite dans l'app : on
    emballe une fois pour toutes rpc() et les mutations de table. Impossible
@@ -2413,6 +3081,57 @@ const API = {
       p_client: id, p_archive: archive, p_motif: motif || null });
     if (error) throw new Error(error.message);
   },
+  /* LE VÉHICULE COMME IDENTITÉ (13/08) — « la plaque, la marque et le modèle
+     sont les vraies identifications du véhicule ». Son historique lui
+     appartient : tous ses lavages, quel que soit celui qui a payé. */
+  /* CATALOGUE DES VÉHICULES — la liste vivante des marques et modèles, avec
+     leur taille de facturation. Lecture gardée 20 s en mémoire ; toute écriture
+     la périme (voir surveillerEcritures). */
+  catalogue() { return memo('catalogue', async () => {
+    const { data, error } = await sb.from('modeles_vehicules')
+      .select('id,marque,modele,gabarit,origine').order('marque').order('modele');
+    if (error) throw error;
+    return data || [];
+  }); },
+  async catalogueposer(marque, modele, gabarit) {
+    const { data, error } = await sb.rpc('ocr_catalogue_poser',
+      { p_marque: marque, p_modele: modele || '', p_gabarit: gabarit });
+    if (error) throw new Error(error.message);
+    const r = Array.isArray(data) ? data[0] : data;
+    return r || {};
+  },
+  async catalogueRetirer(id) {
+    const { error } = await sb.rpc('ocr_catalogue_retirer', { p_id: id });
+    if (error) throw new Error(error.message);
+  },
+  // Statistiques du parc : une ligne par jour × marque × modèle × taille.
+  statsParc(du, au) { return memo('statsparc:' + du + ':' + au, async () => {
+    const { data, error } = await sb.from('v_stats_parc').select('*').gte('journee', du).lte('journee', au);
+    if (error) throw error;
+    return data || [];
+  }); },
+  async ficheVehicule(id) {
+    const [v, ps] = await Promise.all([
+      sb.from('vehicules').select('*, clients(id,nom,telephone,a_completer)').eq('id', id).maybeSingle(),
+      sb.from('passages').select('*, passage_lignes(*), clients(id,nom,telephone)')
+        .eq('vehicule_id', id).order('journee', { ascending: false }).limit(60),
+    ]);
+    if (!v.data) throw new Error('Véhicule introuvable');
+    return { vehicule: v.data, passages: ps.data || [] };
+  },
+  async rattacherVehicule(vehId, clientId, historique) {
+    const { error } = await sb.rpc('ocr_rattacher_vehicule',
+      { p_vehicule: vehId, p_client: clientId, p_historique: historique !== false });
+    if (error) throw new Error(error.message);
+  },
+  // Compléter une fiche née d'une plaque : le serveur fusionne tout seul si le
+  // numéro appartient déjà à quelqu'un. Renvoie la fiche qui survit.
+  async completerFiche(id, nom, tel) {
+    const { data, error } = await sb.rpc('ocr_completer_fiche',
+      { p_client: id, p_nom: nom || null, p_telephone: tel || null });
+    if (error) throw new Error(error.message);
+    return Array.isArray(data) ? data[0] : data;
+  },
   async supprimerClient(id, motif) {
     const { error } = await sb.rpc('ocr_supprimer_client', { p_client: id, p_motif: motif || null });
     if (error) throw new Error(error.message);
@@ -2437,7 +3156,7 @@ const API = {
   }); },
   passages(d) { return memo('passages:' + d, async () => {
     const { data, error } = await sb.from('passages')
-      .select('*, clients(nom,telephone,entreprise_id), vehicules(marque,modele,immatriculation), passage_lignes(*)')
+      .select('*, clients(nom,telephone,entreprise_id,a_completer), vehicules(marque,modele,immatriculation), passage_lignes(*)')
       .eq('journee', d).order('heure_arrivee');
     if (error) throw error;
     return data || [];
@@ -2459,13 +3178,17 @@ const API = {
     const [n, tel, v] = await Promise.all([
       sb.from('clients').select('id,nom,telephone').ilike('nom', m).limit(20),
       sb.from('clients').select('id,nom,telephone').ilike('telephone', m).limit(20),
-      sb.from('vehicules').select('immatriculation,clients(id,nom,telephone)').ilike('immatriculation', m).limit(20),
+      sb.from('vehicules').select('id,immatriculation,marque,modele,gabarit,clients(id,nom,telephone,a_completer)')
+        .ilike('immatriculation', m).limit(20),
     ]);
     if (n.error) throw n.error;
     if (tel.error) throw tel.error;
     const vus = new Map();
     [...(n.data || []), ...(tel.data || [])].forEach(x => vus.set(x.id, x));
     (v.data || []).forEach(x => { if (x.clients && !vus.has(x.clients.id)) vus.set(x.clients.id, x.clients); });
+    // les véhicules trouvés sont gardés à part : l'écran propose leur fiche
+    // (« cette voiture, on l'a déjà lavée ? ») avant la liste des clients.
+    rech.vehTrouve = (v.data || []).slice(0, 4);
     return [...vus.values()].sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''), 'fr'));
   },
   async ficheClient(id) {
@@ -2496,6 +3219,13 @@ const API = {
       if (error) throw error;
       return data || [];
     }
+    if (mode === 'acompleter') {
+      // Les fiches nées d'une plaque, sans client : la liste des choses à finir.
+      q = q.eq('a_completer', true).order('dernier_passage', { ascending: false, nullsFirst: false }).limit(60);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    }
     if (mode === 'relance') {
       q = q.gt('passages', 0).lt('dernier_passage', d30).order('depense', { ascending: false }).limit(40);
     } else if (mode === 'meilleurs') {
@@ -2517,24 +3247,24 @@ const API = {
   },
   creerClientEntreprise: a => sb.rpc('ocr_creer_client_entreprise', a),
 
-  // Crée une fiche client (+ son véhicule) depuis la caisse. Si le numéro
-  // existe déjà, on renvoie la fiche existante : jamais de doublon.
+  /* Crée une fiche client avec CE QU'ON A — nom, numéro, e-mail, plaque : tout
+     est facultatif, il faut juste une information. Le serveur garantit le reste :
+     un numéro déjà connu ramène la fiche existante, une plaque déjà lavée
+     ramène son véhicule ET son historique. Zéro doublon, c'est la seule règle. */
   async creerClient(d) {
-    const tel = String(d.tel || '').trim();
-    const { data: existant } = await sb.from('clients').select('id,nom').eq('telephone', tel).maybeSingle();
-    if (existant) return { existant };
-    const { data: cl, error } = await sb.from('clients')
-      .insert({ nom: String(d.nom).trim(), telephone: tel, note: String(d.note || '').trim() || null })
-      .select('id').single();
-    if (error) throw error;
-    const { error: ev } = await sb.from('vehicules').insert({
-      client_id: cl.id, gabarit: d.gabarit,
-      marque: String(d.marque || '').trim() || null,
-      modele: String(d.modele || '').trim() || null,
-      immatriculation: OCR.plaque(d.immat) || null,
+    const { data, error } = await sb.rpc('ocr_creer_client', {
+      p_nom: String(d.nom || '').trim() || null,
+      p_telephone: String(d.tel || '').trim() || null,
+      p_email: String(d.email || '').trim() || null,
+      p_note: String(d.note || '').trim() || null,
+      p_gabarit: d.gabarit || null,
+      p_marque: String(d.marque || '').trim() || null,
+      p_modele: String(d.modele || '').trim() || null,
+      p_immat: OCR.plaque(d.immat) || null,
     });
-    if (ev) throw ev;
-    return { id: cl.id };
+    if (error) throw new Error(error.message);
+    const r = Array.isArray(data) ? data[0] : data;
+    return { id: r.client_id, existant: r.deja_existant, rattache: r.vehicule_rattache };
   },
 
   /* --- entreprises (prospection) --- */
@@ -2803,6 +3533,8 @@ async function demarrer() {
   // Des pointages attendaient le réseau depuis la dernière session : on les
   // envoie dès qu'on sait qui est connecté.
   viderFile();
+  // Le catalogue des marques et modèles, versé dans le socle (sans bloquer).
+  chargerCatalogue();
 }
 
 const peutCloturer = () => moi && (moi.role === 'comptable' || moi.role === 'direction');
@@ -3212,7 +3944,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) rafr
    quand l'un s'ouvre, on le dépile quand il se referme. Un seul point de
    synchronisation (appelé à la fin de chaque rendu) : impossible d'oublier
    un cas parmi les quinze endroits qui ouvrent ou ferment ces écrans. */
-const sousEcranOuvert = () => !!(rech.fiche || cliNouveau || proEdite || rdvOuvert);
+const sousEcranOuvert = () => !!(rech.fiche || rech.veh || cliNouveau || proEdite || rdvOuvert);
 let sousEcranEmpile = false;
 function majHistoriqueSousEcran() {
   const ouvert = sousEcranOuvert();
@@ -3223,7 +3955,7 @@ function majHistoriqueSousEcran() {
   }
 }
 function fermerSousEcrans() {   // le cran d'historique est dépilé au rendu suivant
-  rech.fiche = null; cliNouveau = null; proEdite = null; rdvOuvert = false;
+  rech.fiche = null; rech.veh = null; cliNouveau = null; proEdite = null; rdvOuvert = false;
 }
 
 /* Changer d'onglet en laissant UNE miette d'historique : le geste retour
@@ -3246,7 +3978,10 @@ function allerOnglet(id) {
    Sinon, le geste agit normalement (l'app passe en arrière-plan). */
 window.addEventListener('popstate', () => {
   if (retourInterne) { retourInterne = false; return; }   // c'était nous, pas un vrai geste retour
-  const m = $('#modales .voile:last-child');
+  // la dernière fenêtre empilée (jamais « :last-child » : d'autres nœuds
+  // peuvent se glisser en fin de conteneur — voir le geste retour du 13/08)
+  const ms = document.querySelectorAll('#modales .voile');
+  const m = ms.length ? ms[ms.length - 1] : null;
   if (m) { m.remove(); return; }
   // le cran vient d'être dépilé par le navigateur : on ne le redépile pas
   if (moi && sousEcranOuvert()) { sousEcranEmpile = false; fermerSousEcrans(); rendre(); return; }
@@ -3263,7 +3998,7 @@ window.addEventListener('popstate', () => {
    change sans clignoter. */
 
 // Les onglets ne dépendent que du rôle : calcul immédiat, sans réseau.
-const SOUS_DIRECTION = ['direction', 'bilan', 'cloture', 'journal', 'pointage'];
+const SOUS_DIRECTION = ['direction', 'bilan', 'cloture', 'journal', 'pointage', 'catalogue'];
 let badgeRdv = 0;   // dernier compte connu de rendez-vous en attente d'acompte
 function ongletsDuRole() {
   // Un technicien n'a que son pointage — sauf le remplaçant, le jour de
@@ -3363,6 +4098,7 @@ async function rendre(discret) {
     if (onglet === 'cloture')   await vueCloture(jVu);
     if (onglet === 'journal')   await vueJournal();
     if (onglet === 'pointage')  await vuePointage();
+    if (onglet === 'catalogue')  await vueCatalogue();
   } catch (ex) {
     // Jamais d'écran mort : même quand le chargement échoue, il y a un bouton
     // pour réessayer (et les onglets du bas restent utilisables).
@@ -3383,6 +4119,8 @@ async function rendre(discret) {
    ========================================================================== */
 const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque: '', modele: '', immat: '',
                vehTrouve: null,   // véhicule retrouvé par sa plaque, pour rattacher le client
+               parPlaque: false,  // le client a été reconnu par la plaque, pas par le téléphone
+               gabaritManuel: false, gabaritDeduit: null, gabaritDesaccord: null,   // taille : choisie, déduite, ou en désaccord
                prestation: null, options: [], equipe: [], remise: 0, motifRemise: '', manuel: 0,
                note: '', reservation: null };
 
@@ -3409,7 +4147,7 @@ function totalForm() {
 function aideImmat() {
   const et = OCR.plaqueEtat(form.immat, form.gabarit);
   if (et.vide)
-    return 'Pas obligatoire — mais saisie une fois, le véhicule se rattache tout seul au client ensuite. ' +
+    return 'La plaque suffit à démarrer : elle reconnaît le client toute seule. ' +
            'Voiture : ' + OCR.PLAQUE_EXEMPLES.voiture + ' · Moto : ' + OCR.PLAQUE_EXEMPLES.moto;
   const v = form.vehTrouve;
   if (v && v.immatriculation === et.cle && v.clients) {
@@ -3446,44 +4184,83 @@ async function vueSaisie(j) {
     <strong>Rendez-vous ${esc(form.reservation)}</strong><br>Fiche pré-remplie — le rendez-vous sera marqué honoré à l'enregistrement.</div></div>` : ''}
   <div class="deux">
     <div>
+      <!-- LA PLAQUE D'ABORD (13/08) : c'est le seul repère qui ne change pas,
+           et il est écrit sur la voiture qui est devant nous. Le nom et le
+           numéro, eux, dépendent de la bonne volonté du client au moment où
+           il est pressé. Une plaque connue remplit tout le reste toute seule. -->
       <div class="ocr-carte">
-        <div class="ocr-surtitre">1 · Client</div>
-        <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Téléphone</span>
-          <input class="ocr-saisie" id="fTel" inputmode="tel" value="${esc(telAffiche(form.tel))}">
-          <span class="ocr-aide" id="aideTel">${form.clientTrouve ? '✓ Client connu : ' + esc(form.clientTrouve.nom) : 'Sert à la fidélité et au rappel de la veille.'}</span>
-        </label>
-        <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Nom</span>
-          <input class="ocr-saisie" id="fNom" value="${esc(form.nom)}"></label>
-        ${form.clientTrouve && form.clientTrouve.entreprises && form.clientTrouve.entreprises.remise_pct > 0 ? `
-        <div class="ocr-message ocr-message--succes" style="margin-top:var(--ocr-e4)"><span>◆</span><div>
-          <strong>Employé ${esc(form.clientTrouve.entreprises.nom)}</strong><br>
-          Remise de ${form.clientTrouve.entreprises.remise_pct} % appliquée automatiquement — peu importe le véhicule
-          (moto du showroom, moto d’un client, sa voiture…).</div></div>` : ''}
-      </div>
-
-      <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
-        <div class="ocr-surtitre">2 · Véhicule</div>
-        ${form.clientTrouve && (form.vehsClient || []).length ? `
-        <p class="ocr-mini" style="margin:var(--ocr-e3) 0 8px">Ses véhicules connus — touche pour remplir, zéro doublon :</p>
+        <div class="ocr-surtitre">1 · Le véhicule</div>
+        <label class="ocr-champ" style="margin-top:var(--ocr-e4)">
+          <span class="ocr-label">Immatriculation</span>
+          <input class="ocr-saisie plaque plaque-grande" id="fImmat" value="${esc(form.immat)}"
+                 placeholder="${form.gabarit === 'moto' ? OCR.PLAQUE_EXEMPLES.moto : OCR.PLAQUE_EXEMPLES.voiture}"
+                 enterkeyhint="done">
+          <span class="ocr-aide" id="aideImmat">${aideImmat()}</span></label>
+        ${form.vehTrouve && form.vehTrouve.id ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
+          id="fHistoVeh" style="margin-bottom:var(--ocr-e3)">Historique de ce véhicule ›</button>` : ''}
+        ${form.clientTrouve && (form.vehsClient || []).length > 1 ? `
+        <p class="ocr-mini" style="margin:var(--ocr-e3) 0 8px">Ses autres véhicules :</p>
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e3)">
           ${form.vehsClient.map(v => `<button class="ocr-chip" data-vcli="${v.id}"
             aria-pressed="${form.immat && v.immatriculation === form.immat}">
             ${esc([v.marque, v.modele].filter(Boolean).join(' ') || (OCR.gabarit(v.gabarit) || {}).court || 'Véhicule')}${v.immatriculation ? ' · ' + esc(v.immatriculation) : ''}</button>`).join('')}
         </div>` : ''}
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:var(--ocr-e4) 0">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:var(--ocr-e4) 0 6px">
           ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-gab="${g.id}" aria-pressed="${form.gabarit === g.id}">${esc(g.court)}</button>`).join('')}
         </div>
+        <p class="ocr-mini" style="margin:0 0 var(--ocr-e4)">${
+          form.gabaritDesaccord ? '<span style="color:var(--ocr-ambre)">⚠ À vérifier : cette plaque est enregistrée en ' +
+            esc((OCR.gabarit(form.gabaritDesaccord.stocke) || {}).nom) + ', mais « ' + esc(form.gabaritDesaccord.quoi) +
+            ' » est un ' + esc((OCR.gabarit(form.gabaritDesaccord.deduit) || {}).nom) +
+            '. Le prix change : choisis la bonne taille avant d\'enregistrer.</span>'
+          : form.gabaritDeduit
+          ? '<span style="color:var(--ocr-vert)">✓ Taille déduite de « ' + esc(form.gabaritDeduit) +
+            ' » — ' + esc((OCR.gabarit(form.gabarit) || {}).nom) + '. Touche une autre taille si besoin.</span>'
+          : 'La taille fait le prix — elle se remplit toute seule dès que le modèle est reconnu.'}</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
-          <label class="ocr-champ"><span class="ocr-label">Marque</span>
+          <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Marque
+              <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— facultatif</span></span>
             <input class="ocr-saisie" id="fMarque" value="${esc(form.marque)}"></label>
-          <label class="ocr-champ"><span class="ocr-label">Modèle</span>
+          <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Modèle</span>
             <input class="ocr-saisie" id="fModele" value="${esc(form.modele)}"></label>
         </div>
-        <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Immatriculation
-            <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— conseillé</span></span>
-          <input class="ocr-saisie plaque" id="fImmat" value="${esc(form.immat)}"
-                 placeholder="${form.gabarit === 'moto' ? OCR.PLAQUE_EXEMPLES.moto : OCR.PLAQUE_EXEMPLES.voiture}">
-          <span class="ocr-aide" id="aideImmat">${aideImmat()}</span></label>
+      </div>
+
+      <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="ocr-surtitre">2 · Le client</div>
+          <span style="flex:1"></span>
+          ${form.clientTrouve ? '' : '<span class="ocr-mini">facultatif</span>'}
+        </div>
+        ${form.clientTrouve ? `
+        <!-- déjà identifié : on ne redemande rien, on montre et on laisse changer -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:var(--ocr-e4)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block">${esc(form.clientTrouve.nom)}</span>
+            <span class="ocr-mini">${esc(telAffiche(form.clientTrouve.telephone) || 'sans numéro')}${
+              form.parPlaque ? ' · reconnu par la plaque' : ''}</span>
+          </span>
+          <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="fAutreClient">Changer</button>
+        </div>
+        ${!form.clientTrouve.telephone ? `<p class="ocr-mini" style="margin:8px 0 0;color:var(--ocr-ambre)">
+          Fiche sans numéro — ajoute-le quand tu l'as, la fidélité pourra suivre.</p>
+        <label class="ocr-champ" style="margin:8px 0 0"><span class="ocr-label">Téléphone</span>
+          <input class="ocr-saisie" id="fTel" inputmode="tel" value="${esc(telAffiche(form.tel))}"></label>` : ''}
+        ` : `
+        <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Téléphone</span>
+          <input class="ocr-saisie" id="fTel" inputmode="tel" value="${esc(telAffiche(form.tel))}">
+          <span class="ocr-aide" id="aideTel">Sert à la fidélité et au rappel. Si tu ne l'as pas maintenant,
+            laisse vide : le lavage sera enregistré ${form.immat ? 'sur la plaque ' + esc(form.immat) : 'sans client'}
+            et tu compléteras la fiche plus tard.</span>
+        </label>
+        <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Nom
+            <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— facultatif</span></span>
+          <input class="ocr-saisie" id="fNom" value="${esc(form.nom)}"></label>`}
+        ${form.clientTrouve && form.clientTrouve.entreprises && form.clientTrouve.entreprises.remise_pct > 0 ? `
+        <div class="ocr-message ocr-message--succes" style="margin-top:var(--ocr-e4)"><span>◆</span><div>
+          <strong>Employé ${esc(form.clientTrouve.entreprises.nom)}</strong><br>
+          Remise de ${form.clientTrouve.entreprises.remise_pct} % appliquée automatiquement — peu importe le véhicule
+          (moto du showroom, moto d’un client, sa voiture…).</div></div>` : ''}
       </div>
 
     </div>
@@ -3545,20 +4322,75 @@ async function vueSaisie(j) {
 
   // liaisons
   const maj = (k, v) => { form[k] = v; vueSaisie(j); };
-  brancherTel($('#fTel'));
-  $('#fTel').addEventListener('change', async e => {
-    form.tel = telPropre(e.target.value);
-    form.clientTrouve = form.tel ? await API.clientParTelephone(form.tel) : null;
-    if (form.clientTrouve && !form.nom) form.nom = form.clientTrouve.nom;
-    form.vehsClient = form.clientTrouve ? await API.vehiculesDe(form.clientTrouve.id) : [];
+  const elTel = $('#fTel');
+  if (elTel) {
+    brancherTel(elTel);
+    elTel.addEventListener('change', async e => {
+      form.tel = telPropre(e.target.value);
+      form.clientTrouve = form.tel ? await API.clientParTelephone(form.tel) : null;
+      form.parPlaque = false;
+      if (form.clientTrouve && !form.nom) form.nom = form.clientTrouve.nom;
+      form.vehsClient = form.clientTrouve ? await API.vehiculesDe(form.clientTrouve.id) : [];
+      /* Il a commencé par le téléphone (le client parle avant de sortir la voiture).
+         Si ce client n'a qu'UN véhicule connu, c'est presque sûrement celui-là :
+         on remplit la plaque au lieu de la lui faire retaper. Deux véhicules ou
+         plus → on affiche les pastilles « Ses autres véhicules » et il choisit. */
+      const seul = form.vehsClient.length === 1 ? form.vehsClient[0] : null;
+      if (seul && !form.immat) {
+        Object.assign(form, {
+          immat: OCR.plaque(seul.immatriculation || ''),
+          marque: seul.marque || form.marque, modele: seul.modele || form.modele,
+          vehTrouve: { ...seul, clients: { id: form.clientTrouve.id, nom: form.clientTrouve.nom } },
+        });
+        if (!form.gabaritManuel && seul.gabarit) form.gabarit = seul.gabarit;
+      }
+      vueSaisie(j);
+    });
+  }
+  const elHv = $('#fHistoVeh');
+  if (elHv) elHv.addEventListener('click', () => {
+    const id = form.vehTrouve.id;
+    onglet = 'clients'; rech.veh = null; rech.fiche = null;
+    peindreOnglets(); ouvrirVehicule(id);
+  });
+  // « Changer » : ce n'est pas ce client-là (on lave la voiture d'un proche,
+  // ou la plaque a été retapée) — on repart d'un client vide.
+  const elAutre = $('#fAutreClient');
+  if (elAutre) elAutre.addEventListener('click', () => {
+    Object.assign(form, { tel: '', nom: '', clientTrouve: null, vehsClient: [], parPlaque: false });
     vueSaisie(j);
   });
   $('#vue').querySelectorAll('[data-vcli]').forEach(b => b.addEventListener('click', () => {
     const v = form.vehsClient.find(x => x.id === b.dataset.vcli);
     Object.assign(form, { gabarit: v.gabarit, marque: v.marque || '', modele: v.modele || '',
-                          immat: OCR.plaque(v.immatriculation), vehTrouve: null });
+                          immat: OCR.plaque(v.immatriculation),
+                          vehTrouve: { ...v, clients: { id: form.clientTrouve.id, nom: form.clientTrouve.nom } },
+                          gabaritManuel: false, gabaritDeduit: null, gabaritDesaccord: null });
     vueSaisie(j);
   }));
+  // suggestions marque/modèle + taille déduite du modèle
+  brancherMarqueModele($('#fMarque'), $('#fModele'), () => form.gabarit, () => {
+    form.marque = $('#fMarque').value; form.modele = $('#fModele').value;
+  }, (g, quoi) => {
+    // Samuel a choisi la taille à la main : on ne la lui reprend pas.
+    if (form.gabaritManuel) return;
+    form.marque = $('#fMarque').value; form.modele = $('#fModele').value;
+    /* Désaccord : la plaque est déjà enregistrée dans une taille, et le modèle
+       tapé en dit une autre. On ne tranche PAS en silence — le prix en dépend.
+       On garde la taille enregistrée et on demande de vérifier. */
+    const v = form.vehTrouve;
+    if (v && v.marque && v.gabarit && v.gabarit !== g) {
+      form.gabaritDesaccord = { stocke: v.gabarit, deduit: g, quoi };
+      form.gabaritDeduit = null;
+      vueSaisie(j);
+      return;
+    }
+    form.gabarit = g;
+    form.gabaritDeduit = quoi;
+    form.gabaritDesaccord = null;
+    vueSaisie(j);
+    toast('Taille : ' + (OCR.gabarit(g) || {}).nom + ' (d’après ' + quoi + ')');
+  });
   ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note', 'fMotifRemise:motifRemise'].forEach(p => {
     const [id, k] = p.split(':');
     const el = $('#' + id); if (el) el.addEventListener('input', e => { form[k] = e.target.value; });
@@ -3587,13 +4419,17 @@ async function vueSaisie(j) {
         if (!form.marque && v.marque) form.marque = v.marque;
         if (!form.modele && v.modele) form.modele = v.modele;
         // On ne remplace jamais un client déjà saisi : on le complète seulement.
-        if (v.clients && !form.tel) {
+        if (v.clients && !form.tel && !form.clientTrouve) {
           form.tel = v.clients.telephone || '';
           form.nom = v.clients.nom || '';
-          if (form.tel) {
-            form.clientTrouve = await API.clientParTelephone(form.tel).catch(() => null);
-            form.vehsClient = form.clientTrouve ? await API.vehiculesDe(form.clientTrouve.id) : [];
-          }
+          form.parPlaque = true;
+          // La fiche complète (avec la remise partenaire éventuelle) vient du
+          // téléphone ; sans téléphone (fiche provisoire), on garde l'essentiel.
+          form.clientTrouve = form.tel
+            ? await API.clientParTelephone(form.tel).catch(() => null)
+            : { id: v.clients.id, nom: v.clients.nom, telephone: null };
+          form.vehsClient = form.clientTrouve && form.clientTrouve.id
+            ? await API.vehiculesDe(form.clientTrouve.id).catch(() => []) : [];
           toast('Véhicule connu — ' + v.clients.nom);
         }
       }
@@ -3606,6 +4442,7 @@ async function vueSaisie(j) {
   });
   $('#vue').querySelectorAll('[data-gab]').forEach(b => b.addEventListener('click', () => {
     form.gabarit = b.dataset.gab;
+    form.gabaritManuel = true; form.gabaritDeduit = null; form.gabaritDesaccord = null;   // le choix de l'humain gagne
     if (form.prestation && OCR.prix(form.prestation, form.gabarit) === null &&
         OCR.prestation(form.prestation).famille !== 'devis') { /* on garde, ce sera un devis */ }
     vueSaisie(j);
@@ -3648,7 +4485,7 @@ async function enregistrer() {
   const b = $('#btnEnregistrer'); if (b) { b.disabled = true; b.textContent = 'Enregistrement…'; }
   try {
     const { data, error } = await API.enregistrer({
-      p_client_nom: form.nom || 'Client de passage',
+      p_client_nom: form.nom || null,
       p_telephone: form.tel,
       p_gabarit: form.gabarit,
       p_lignes: lignes,
@@ -3660,7 +4497,9 @@ async function enregistrer() {
     });
     if (error) throw error;
     const r = Array.isArray(data) ? data[0] : data;
-    toast(r.reference + ' enregistré · ' + OCR.fcfa(r.montant_total));
+    const sansClient = !form.tel && !(form.clientTrouve && form.clientTrouve.id);
+    toast(r.reference + ' enregistré · ' + OCR.fcfa(r.montant_total) +
+      (sansClient && form.immat ? ' — fiche « Véhicule ' + form.immat +' » à compléter' : ''));
     Object.assign(form, { tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
                           vehTrouve: null,
                           prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0,
@@ -3923,7 +4762,16 @@ function calculerAnomalies(ps) {
         detail: p.reference + ' · ' + OCR.fcfa(p.remise) + ' sur ' + OCR.fcfa(p.montant_brut) +
                 '. Seuil interne : ' + Math.round(OCR.CONFIG.seuilRemiseAlerte * 100) + ' %.',
         passage_id: p.id });
-    if (!c.telephone)
+    // Depuis le 13/08, un lavage peut démarrer avec la seule plaque : la fiche
+    // est alors « à compléter ». Ce n'est pas une faute, c'est une chose à
+    // finir — et Guénolé la voit le soir à la clôture (choix d'Edwin).
+    const plaque = (p.vehicules || {}).immatriculation;
+    if (c.a_completer)
+      out.push({ cle: 'acompleter-' + p.id, gravite: 'alerte', titre: 'Véhicule lavé sans client identifié',
+        detail: p.reference + (plaque ? ' · plaque ' + plaque : '') +
+                ' — fiche « ' + (c.nom || 'provisoire') + ' » à rattacher (Clients → À compléter).',
+        passage_id: p.id });
+    else if (!c.telephone)
       out.push({ cle: 'tel-' + p.id, gravite: 'alerte', titre: 'Client sans numéro de téléphone',
         detail: p.reference + ' · ' + (c.nom || 'client') + ' — impossible de le fidéliser.', passage_id: p.id });
   });
@@ -5233,6 +6081,7 @@ function boiteRdv(r, estAuj) {
    la marque, elle, doit rester sobre. */
 const FILTRES_CLI = [
   ['recents',     '◷ Vus récemment',   'Les derniers passages en premier'],
+  ['acompleter',  '✎ À compléter',     'Lavages enregistrés sur une plaque, sans client — à rattacher'],
   ['relance',     '↻ À relancer',      'Plus de 30 jours sans venir, les plus gros d’abord'],
   ['meilleurs',   '★ Meilleurs',       'Ceux qui dépensent le plus'],
   ['espace',      '✦ Espace actif',    'Ceux qui ont l’app avec leur code'],
@@ -5240,7 +6089,9 @@ const FILTRES_CLI = [
   ['sansvisite',  '◌ Jamais venus',    'Fiches créées mais aucun passage'],
   ['archives',    '⊘ Archivés',        'Fiches retirées des listes — rien n’est perdu'],
 ];
-const rech = { q: '', liste: null, cherche: false, fiche: null, vue: 'part', rapide: 'recents' };
+const rech = { q: '', liste: null, cherche: false, fiche: null, veh: null,
+               vehTrouve: null,   // véhicule trouvé par la recherche (plaque tapée)
+               vue: 'part', rapide: 'recents' };
 let cliNouveau = null;   // brouillon de fiche client en cours de création
 
 const dateFr = d => { const [a, m, j] = String(d || '').split('-'); return j ? j + '/' + m : (d || '—'); };
@@ -5288,6 +6139,7 @@ async function vueClients() {
   // vueClients() est parfois appelée seule (sans passer par rendre()) : on
   // resynchronise l'historique ici aussi, pour que le geste retour reste juste.
   setTimeout(majHistoriqueSousEcran, 0);
+  if (rech.veh) return vueFicheVehicule();
   if (rech.fiche) return vueFicheClient();
 
   $('#vue').innerHTML = `
@@ -5328,13 +6180,17 @@ async function vueClients() {
   brancherNouveauClient();
 
   const zone = $('#resCli');
-  const brancherFiches = () => zone.querySelectorAll('[data-cli]').forEach(b => b.addEventListener('click', async () => {
-    zone.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
-    try { rech.fiche = await API.ficheClient(b.dataset.cli); vueClients(); }
-    catch (ex) { toast(ex.message, true); peindre(); }
-  }));
+  const brancherFiches = () => {
+    zone.querySelectorAll('[data-vfiche2]').forEach(b => b.addEventListener('click', () => ouvrirVehicule(b.dataset.vfiche2)));
+    zone.querySelectorAll('[data-cli]').forEach(b => b.addEventListener('click', async () => {
+      zone.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+      try { rech.fiche = await API.ficheClient(b.dataset.cli); vueClients(); }
+      catch (ex) { toast(ex.message, true); peindre(); }
+    }));
+  };
   const VIDES = {
     recents: 'Aucun client encore. Le premier se créera tout seul à la première saisie.',
+    acompleter: 'Rien à compléter — chaque véhicule lavé a bien un client. Beau travail.',
     relance: 'Personne à relancer — tout le monde est venu dans les 30 derniers jours.',
     meilleurs: 'Aucun passage encore enregistré.',
     espace: 'Personne n’a encore activé son espace client. Invite-les à installer l’app.',
@@ -5349,7 +6205,21 @@ async function vueClients() {
         : (VIDES[rech.rapide] || 'Rien à afficher.')) + '</div>';
       return;
     }
-    zone.innerHTML = rech.liste.map(ligneClientStats).join('') +
+    const vehs = (rech.q.trim() && rech.vehTrouve || []);
+    zone.innerHTML = (vehs.length ? `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(214,32,30,.3)">
+        <div class="ocr-surtitre">Véhicule${vehs.length > 1 ? 's' : ''} trouvé${vehs.length > 1 ? 's' : ''}</div>
+        <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Touche pour voir tout l’historique de ce véhicule.</p>
+        ${vehs.map(v => `<button class="fiche ligne-cli" data-vfiche2="${v.id}" style="padding:8px 0">
+          <span class="av" style="background:var(--ocr-trace);color:var(--ocr-blanc);font-size:11px;letter-spacing:.04em">${
+            esc((v.immatriculation || '??').slice(0, 4))}</span>
+          <span class="mid">
+            <span class="nom">${esc(v.immatriculation || 'sans plaque')}</span>
+            <span class="ocr-mini det">${esc([v.marque, v.modele].filter(Boolean).join(' ') || 'marque inconnue')} · ${
+              esc(((v.clients || {}).nom) || 'à rattacher')}</span>
+          </span>
+          <span class="ch">›</span></button>`).join('')}
+      </div>` : '') +
+      rech.liste.map(ligneClientStats).join('') +
       (rech.liste.length >= 60 ? '<p class="ocr-mini" style="margin:10px 0 0;text-align:center">' +
         '60 premiers affichés — affine avec la recherche.</p>' : '');
     brancherFiches();
@@ -5381,7 +6251,7 @@ async function vueClients() {
       const t = rech.q.trim();
       const eR = $('#enteteRes');
       if (eR) eR.textContent = t ? 'Résultats pour « ' + t + ' »' : (fActif ? fActif[2] : '');
-      if (t.length < 2) { rech.liste = null; return charger(); }   // champ vidé → on revient au filtre
+      if (t.length < 2) { rech.liste = null; rech.vehTrouve = null; return charger(); }   // champ vidé → on revient au filtre
       rech.cherche = true; peindre();
       try { rech.liste = await API.chercherClients(t); }
       catch (ex) { toast(ex.message, true); rech.liste = []; }
@@ -5401,16 +6271,23 @@ function formNouveauClient() {
   const d = cliNouveau;
   return `<div class="ocr-carte" style="margin-top:var(--ocr-e4);border-color:rgba(214,32,30,.35)">
     <div class="ocr-surtitre">Nouveau client</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:var(--ocr-e4)">
-      <label class="ocr-champ"><span class="ocr-label">Nom *</span>
-        <input class="ocr-saisie" id="ncNom" value="${esc(d.nom || '')}"></label>
-      <label class="ocr-champ"><span class="ocr-label">Téléphone *</span>
+    <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">On fait avec ce que le client donne : tout est facultatif,
+      il faut juste <strong style="color:var(--ocr-blanc)">une</strong> information — un nom, un numéro ou une plaque.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Nom complet</span>
+        <input class="ocr-saisie" id="ncNom" value="${esc(d.nom || '')}" placeholder="Comme il se présente"></label>
+      <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
         <input class="ocr-saisie" id="ncTel" inputmode="tel" value="${esc(telAffiche(d.tel))}"></label>
     </div>
+    <label class="ocr-champ"><span class="ocr-label">E-mail</span>
+      <input class="ocr-saisie" id="ncMail" inputmode="email" value="${esc(d.email || '')}"
+             placeholder="Pour le reçu, si il le donne"></label>
     <div class="ocr-mini" style="margin:2px 0 8px;letter-spacing:.14em;text-transform:uppercase">Son véhicule</div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px">
       ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-ncgab="${g.id}" aria-pressed="${d.gabarit === g.id}">${esc(g.court)}</button>`).join('')}
     </div>
+    ${d.gabaritDeduit ? `<p class="ocr-mini" style="margin:0 0 var(--ocr-e4);color:var(--ocr-vert)">
+      ✓ Taille déduite de « ${esc(d.gabaritDeduit)} »</p>` : '<div style="height:var(--ocr-e3)"></div>'}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Marque</span>
         <input class="ocr-saisie" id="ncMarque" value="${esc(d.marque || '')}"></label>
@@ -5419,7 +6296,8 @@ function formNouveauClient() {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Immatriculation</span>
-        <input class="ocr-saisie" id="ncImmat" value="${esc(d.immat || '')}" placeholder="${OCR.PLAQUE_EXEMPLES.voiture}"></label>
+        <input class="ocr-saisie plaque" id="ncImmat" value="${esc(d.immat || '')}" placeholder="${OCR.PLAQUE_EXEMPLES.voiture}">
+        <span class="ocr-aide" id="ncAideImmat">${d.aideImmat || 'Si elle a déjà été lavée, son historique sera rattaché à cette fiche.'}</span></label>
       <label class="ocr-champ"><span class="ocr-label">Note</span>
         <input class="ocr-saisie" id="ncNote" value="${esc(d.note || '')}" placeholder="De passage, en vacances…"></label>
     </div>
@@ -5433,29 +6311,66 @@ function formNouveauClient() {
 function brancherNouveauClient() {
   if (!cliNouveau) return;
   const lire = () => Object.assign(cliNouveau, {
-    nom: $('#ncNom').value, tel: telPropre($('#ncTel').value), marque: $('#ncMarque').value,
-    modele: $('#ncModele').value, immat: $('#ncImmat').value, note: $('#ncNote').value,
+    nom: $('#ncNom').value, tel: telPropre($('#ncTel').value), email: $('#ncMail').value,
+    marque: $('#ncMarque').value, modele: $('#ncModele').value,
+    immat: $('#ncImmat').value, note: $('#ncNote').value,
   });
   $('#zoneCli').querySelectorAll('[data-ncgab]').forEach(b => b.addEventListener('click', () => {
-    lire(); cliNouveau.gabarit = b.dataset.ncgab; rendre();
+    lire(); cliNouveau.gabarit = b.dataset.ncgab;
+    cliNouveau.gabaritManuel = true; cliNouveau.gabaritDeduit = null;
+    rendre();
   }));
   brancherTel($('#ncTel'));
+  brancherMarqueModele($('#ncMarque'), $('#ncModele'), () => cliNouveau.gabarit, () => {
+    cliNouveau.marque = $('#ncMarque').value; cliNouveau.modele = $('#ncModele').value;
+  }, (g, quoi) => {
+    if (cliNouveau.gabaritManuel) return;
+    lire(); cliNouveau.gabarit = g; cliNouveau.gabaritDeduit = quoi;
+    rendre();
+    toast('Taille : ' + (OCR.gabarit(g) || {}).nom + ' (d’après ' + quoi + ')');
+  });
   brancherPlaque($('#ncImmat'), propre => { cliNouveau.immat = propre; });
+  /* « Quand on va dans plaque, si elle a déjà été lavée, on doit pouvoir la
+     chercher et la lier directement » (Edwin) : dès que la plaque est tapée, on
+     dit ce qu'on sait d'elle et ce qui va se passer à la création. */
+  const elNcI = $('#ncImmat');
+  if (elNcI) elNcI.addEventListener('change', async () => {
+    const aide = $('#ncAideImmat');
+    const pl = OCR.plaque(elNcI.value);
+    cliNouveau.immat = pl;
+    if (!aide) return;
+    if (!pl) { aide.innerHTML = 'Si elle a déjà été lavée, son historique sera rattaché à cette fiche.'; return; }
+    aide.innerHTML = 'Recherche…';
+    let v = null;
+    try { v = await API.vehiculeParPlaque(pl); } catch (ex) {}
+    if (!v) { aide.innerHTML = '<span style="color:var(--ocr-vert)">Plaque nouvelle — le véhicule sera créé avec la fiche.</span>'; return; }
+    const nomV = [v.marque, v.modele].filter(Boolean).join(' ');
+    const prop = v.clients || {};
+    if (prop.a_completer || !prop.nom)
+      aide.innerHTML = '<span style="color:var(--ocr-vert)">✓ ' + esc(pl) + (nomV ? ' · ' + esc(nomV) : '') +
+        ' déjà connue — son véhicule et tout son historique seront rattachés à cette fiche.</span>';
+    else
+      aide.innerHTML = '<span style="color:var(--ocr-ambre)">⚠ ' + esc(pl) + ' est déjà sur la fiche de ' +
+        esc(prop.nom) + '. Ouvre sa fiche plutôt que d\'en créer une deuxième.</span>';
+  });
   $('#ncFermer').addEventListener('click', () => { cliNouveau = null; rendre(); });
   $('#ncCreer').addEventListener('click', async e => {
     lire();
-    if (!String(cliNouveau.nom || '').trim()) return toast('Le nom est obligatoire.', true);
-    if (!String(cliNouveau.tel || '').trim()) return toast('Le téléphone est obligatoire — c’est lui qui relie tout.', true);
+    // Une seule règle : au moins une information. Certains clients ne donnent
+    // pas leur numéro — ce n'est pas une raison pour ne pas les enregistrer.
+    if (!String(cliNouveau.nom || '').trim() && !String(cliNouveau.tel || '').trim()
+        && !OCR.plaque(cliNouveau.immat))
+      return toast('Donne au moins un nom, un numéro ou une plaque.', true);
     e.target.disabled = true;
     try {
       const r = await API.creerClient(cliNouveau);
-      if (r.existant) {
-        toast('Ce numéro existe déjà : fiche de ' + r.existant.nom);
-        rech.fiche = await API.ficheClient(r.existant.id);
-      } else {
-        toast('Fiche créée ✓');
-        rech.fiche = await API.ficheClient(r.id);
-      }
+      // Le serveur a tranché : fiche créée, fiche retrouvée par le numéro, ou
+      // fiche provisoire de la plaque complétée avec son historique.
+      toast(r.rattache ? 'Véhicule et historique rattachés ✓'
+          : r.existant ? 'Cette fiche existait déjà — la voici'
+          : 'Fiche créée ✓');
+      rech.fiche = await API.ficheClient(r.id);
+      rech.liste = null;
       cliNouveau = null;
       rendre();
     } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
@@ -5533,9 +6448,10 @@ function boiteAjoutVehicule(client) {
   const v = modale(`
     <h3 class="ocr-h2">Véhicule de ${esc(client.nom || 'ce client')}</h3>
     <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Il rejoint sa fiche : historique et dépenses seront suivis véhicule par véhicule.</p>
-    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)" id="avGabs">
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px" id="avGabs">
       ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-avgab="${g.id}" aria-pressed="${gab === g.id}">${esc(g.court)}</button>`).join('')}
     </div>
+    <p class="ocr-mini" id="avDeduit" style="margin:0 0 var(--ocr-e4)"></p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Marque</span>
         <input class="ocr-saisie" id="avMarque"></label>
@@ -5551,9 +6467,23 @@ function boiteAjoutVehicule(client) {
       <div style="flex:1"></div>
       <button class="ocr-btn ocr-btn--primaire" data-ok>Ajouter</button></div>`);
   v.querySelectorAll('[data-avgab]').forEach(b => b.addEventListener('click', () => {
-    gab = b.dataset.avgab;
-    v.querySelectorAll('[data-avgab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.avgab === gab)));
+    v.__gabManuel = true;             // le choix de l'humain gagne
+    majPucesAv(b.dataset.avgab);
+    const n = v.querySelector('#avDeduit'); if (n) n.innerHTML = '';
+    if (repeindreAv) repeindreAv();   // moto ou voiture : les suggestions changent
   }));
+  const majPucesAv = (g) => {
+    gab = g;
+    v.querySelectorAll('[data-avgab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.avgab === gab)));
+  };
+  const repeindreAv = brancherMarqueModele(v.querySelector('#avMarque'), v.querySelector('#avModele'), () => gab,
+    null, (g, quoi) => {
+      if (v.__gabManuel) return;
+      majPucesAv(g);
+      const n = v.querySelector('#avDeduit');
+      if (n) n.innerHTML = '<span style="color:var(--ocr-vert)">✓ Taille déduite de « ' + esc(quoi) + ' » — ' +
+        esc((OCR.gabarit(g) || {}).nom) + '</span>';
+    });
   brancherPlaque(v.querySelector('#avImmat'));
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
   v.querySelector('[data-ok]').addEventListener('click', async e => {
@@ -5572,6 +6502,164 @@ function boiteAjoutVehicule(client) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   LA FICHE DU VÉHICULE (13/08)
+
+   « La plaque, la marque et le modèle sont vraiment les vraies identifications
+     du véhicule. J'aimerais que juste avec la plaque on puisse voir
+     l'historique du véhicule. » (Edwin)
+
+   L'historique d'un véhicule lui appartient : on voit TOUS ses lavages, même
+   ceux payés par quelqu'un d'autre (voiture d'un proche, flotte d'entreprise).
+   C'est la vue qui répond à « cette voiture, on l'a déjà lavée ? ».
+   ══════════════════════════════════════════════════════════════════════════ */
+async function ouvrirVehicule(id) {
+  try { rech.veh = await API.ficheVehicule(id); vueClients(); }
+  catch (ex) { toast(ex.message, true); }
+}
+
+function vueFicheVehicule() {
+  const { vehicule: v, passages: tous } = rech.veh;
+  const ps = tous.filter(p => !p.annule);
+  const total = ps.reduce((s, p) => s + (p.montant_total || 0), 0);
+  const proprio = v.clients || {};
+  const gab = OCR.gabarit(v.gabarit) || {};
+  const nomVeh = [v.marque, v.modele].filter(Boolean).join(' ');
+  const dernier = ps.length ? ps[0].journee : null;
+  const premier = ps.length ? ps[ps.length - 1].journee : null;
+  const nomPresta = p => (p.passage_lignes || []).filter(l => l.type === 'prestation').map(l => l.libelle).join(' + ') || '—';
+  // qui a payé : intéressant seulement si ce n'est pas toujours le propriétaire
+  const payeurs = [...new Set(ps.map(p => (p.clients || {}).nom).filter(Boolean))];
+
+  $('#vue').innerHTML = `
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnRetourVeh" style="margin-bottom:var(--ocr-e4)">‹ Retour</button>
+
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Véhicule</div>
+      <div style="font:700 26px/1.1 var(--ocr-titre);letter-spacing:.08em;margin:10px 0 4px">${
+        esc(v.immatriculation || 'Sans plaque')}</div>
+      <div style="font-weight:600">${esc(nomVeh || 'Marque et modèle inconnus')}</div>
+      <div class="ocr-mini" style="margin-top:3px">${esc(gab.nom || v.gabarit)}${
+        gab.exemple ? ' · ' + esc(gab.exemple) : ''}</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:var(--ocr-e4);
+                  padding-top:var(--ocr-e4);border-top:1px solid var(--ocr-sep);flex-wrap:wrap">
+        <span style="min-width:0;flex:1">
+          <span class="ocr-mini" style="display:block">Rattaché à</span>
+          <span style="font-weight:600">${esc(proprio.nom || 'personne')}</span>
+          ${proprio.a_completer ? ' <span class="ocr-pastille ocr-pastille--alerte">à compléter</span>' : ''}
+          <span class="ocr-mini" style="display:block">${esc(telAffiche(proprio.telephone) || 'sans numéro')}</span>
+        </span>
+        ${proprio.id ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnVersClient">Sa fiche ›</button>' : ''}
+        ${peutCorrigerFiche() ? '<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" id="btnRattacherVeh">Rattacher à un client…</button>' : ''}
+      </div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:var(--ocr-e4)">
+        ${peutCorrigerFiche() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnCorrVeh">✎ Corriger</button>' : ''}
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire ocr-btn--petit" id="btnPassageVeh">Nouveau passage</button>
+      </div>
+    </div>
+
+    <div class="tuiles" style="margin-top:var(--ocr-e4)">
+      <div class="tuile"><div class="lab">Lavages</div><div class="val">${ps.length}</div>
+        <div class="sub">${premier ? 'depuis le ' + dateFr(premier) : 'aucun encore'}</div></div>
+      <div class="tuile"><div class="lab">Total dépensé</div><div class="val">${OCR.fcfa(total)}</div>
+        <div class="sub">Ticket moyen ${OCR.fcfa(ps.length ? Math.round(total / ps.length) : 0)}</div></div>
+      <div class="tuile"><div class="lab">Dernier passage</div><div class="val" style="font-size:18px">${dernier ? dateFr(dernier) : '—'}</div>
+        <div class="sub">${dernier ? joursDepuis(dernier) + ' jour(s)' : ''}</div></div>
+      <div class="tuile"><div class="lab">Payé par</div><div class="val" style="font-size:18px">${payeurs.length || 0}</div>
+        <div class="sub">${esc(payeurs.slice(0, 2).join(', ') || '—')}</div></div>
+    </div>
+
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Historique de ce véhicule</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Tous ses lavages, même ceux payés par quelqu'un d'autre.</p>
+      ${tous.length ? tous.map(p => {
+        const par = (p.clients || {}).nom;
+        return `
+        <div style="display:flex;gap:10px;align-items:center;padding:10px 0;
+                    border-bottom:1px solid var(--ocr-sep)${p.annule ? ';opacity:.5' : ''}">
+          <span class="ocr-mini" style="width:46px;flex:none">${dateFr(p.journee)}</span>
+          <span style="min-width:0;flex:1">
+            <span style="font:600 13.5px/1.3 var(--ocr-texte);display:block${p.annule ? ';text-decoration:line-through' : ''}">${esc(nomPresta(p))}</span>
+            <span class="ocr-mini">${esc(p.reference)}${par ? ' · ' + esc(par) : ''}${p.annule ? ' · annulé' : ''}</span>
+          </span>
+          <span style="font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap${
+            p.annule ? ';text-decoration:line-through' : ''}">${OCR.fcfa(p.montant_total)}</span>
+        </div>`;
+      }).join('')
+      : '<div class="vide">Ce véhicule n’a pas encore de lavage enregistré.</div>'}
+    </div>`;
+
+  $('#btnRetourVeh').addEventListener('click', () => { rech.veh = null; vueClients(); });
+  const bvc = $('#btnVersClient');
+  if (bvc) bvc.addEventListener('click', async () => {
+    rech.veh = null;
+    try { rech.fiche = await API.ficheClient(proprio.id); vueClients(); }
+    catch (ex) { toast(ex.message, true); }
+  });
+  const bcv = $('#btnCorrVeh');
+  if (bcv) bcv.addEventListener('click', () => boiteModifierVehicule(v, { id: proprio.id, __veh: v.id }));
+  const brv = $('#btnRattacherVeh');
+  if (brv) brv.addEventListener('click', () => boiteRattacherVehicule(v, proprio));
+  $('#btnPassageVeh').addEventListener('click', () => {
+    Object.assign(form, {
+      tel: proprio.telephone || '', nom: proprio.a_completer ? '' : (proprio.nom || ''),
+      clientTrouve: proprio.id && !proprio.a_completer ? { id: proprio.id, nom: proprio.nom, telephone: proprio.telephone } : null,
+      parPlaque: true,
+      gabarit: v.gabarit || 'berline', marque: v.marque || '', modele: v.modele || '',
+      immat: OCR.plaque(v.immatriculation), vehTrouve: null,
+      prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0, note: '',
+    });
+    rech.veh = null; rech.fiche = null;
+    allerOnglet('saisie');
+  });
+}
+
+/* Rattacher un véhicule à un client : on cherche le client par son nom ou son
+   numéro, et l'historique du véhicule le suit. C'est le geste « le client a
+   créé son compte mais n'avait pas mis sa plaque ». */
+function boiteRattacherVehicule(veh, proprio) {
+  const v = modale(`
+    <h3 class="ocr-h2">Rattacher ${esc(veh.immatriculation || 'ce véhicule')}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      Actuellement sur la fiche de <strong>${esc((proprio || {}).nom || 'personne')}</strong>.
+      ${(proprio || {}).a_completer
+        ? 'C\'est une fiche provisoire : l\'historique du véhicule suivra et la fiche disparaîtra.'
+        : 'C\'est une fiche réelle : seule la direction peut déplacer le véhicule (voiture vendue, erreur d\'attribution).'}</p>
+    <label class="ocr-champ"><span class="ocr-label">Chercher le client</span>
+      <input class="ocr-saisie" id="rvQ" placeholder="Nom ou numéro…" autocomplete="off"></label>
+    <div id="rvRes" style="max-height:40vh;overflow:auto"></div>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e3)">Annuler</button>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  const zone = v.querySelector('#rvRes');
+  let minuteur;
+  v.querySelector('#rvQ').addEventListener('input', e => {
+    const q = e.target.value.trim();
+    clearTimeout(minuteur);
+    if (q.length < 2) { zone.innerHTML = ''; return; }
+    zone.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+    minuteur = setTimeout(async () => {
+      let liste = [];
+      try { liste = await API.chercherClients(q); } catch (ex) { toast(ex.message, true); }
+      liste = liste.filter(c => c.id !== (proprio || {}).id);
+      zone.innerHTML = liste.length
+        ? liste.map(c => `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-rvcli="${c.id}"
+            style="margin-bottom:7px;justify-content:flex-start;text-align:left">
+            ${esc(c.nom)}<span class="ocr-mini" style="margin-left:8px">${esc(telCourt(c.telephone) || 'sans numéro')}</span></button>`).join('')
+        : '<div class="vide">Aucun client trouvé. Crée sa fiche depuis Clients.</div>';
+      zone.querySelectorAll('[data-rvcli]').forEach(b => b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          await API.rattacherVehicule(veh.id, b.dataset.rvcli, true);
+          fermerModale(); toast('Véhicule et historique rattachés ✓');
+          rech.liste = null;
+          await ouvrirVehicule(veh.id);
+        } catch (ex) { toast(ex.message, true); b.disabled = false; }
+      }));
+    }, 320);
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    CORRIGER UNE ERREUR DE COMPTOIR (13/08)
    Un numéro mal tapé, une plaque fausse, une fiche créée deux fois : ça arrive
    dans un atelier, et il faut pouvoir réparer sans appeler quelqu'un. Ce qui
@@ -5582,6 +6670,42 @@ function boiteAjoutVehicule(client) {
 async function rafraichirFiche(id) {
   rech.fiche = await API.ficheClient(id);
   rendre();
+}
+
+/* Compléter une fiche née d'une plaque. Le serveur décide tout seul entre
+   « je remplis cette fiche » et « ce numéro est déjà celui de quelqu'un, je
+   transfère le véhicule et son historique chez lui ». L'écran ne fait que
+   raconter ce qui s'est passé. */
+function boiteCompleterFiche(c, vs) {
+  const plaque = (vs || []).map(v => v.immatriculation).filter(Boolean)[0] || '';
+  const v = modale(`
+    <h3 class="ocr-h2">Compléter la fiche</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      ${plaque ? 'Plaque <strong>' + esc(plaque) + '</strong>. ' : ''}Donne le nom, le numéro, ou les deux.
+      Si le numéro est déjà connu, tout ira sur la fiche existante.</p>
+    <label class="ocr-champ"><span class="ocr-label">Nom</span>
+      <input class="ocr-saisie" id="cfNom" placeholder="Nom du client"></label>
+    <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
+      <input class="ocr-saisie" id="cfTel" inputmode="tel"></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Rattacher</button></div>`);
+  brancherTel(v.querySelector('#cfTel'));
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const nom = v.querySelector('#cfNom').value.trim();
+    const tel = telPropre(v.querySelector('#cfTel').value);
+    if (!nom && !tel) return toast('Donne au moins un nom ou un numéro.', true);
+    e.target.disabled = true;
+    try {
+      const survivant = await API.completerFiche(c.id, nom, tel);
+      fermerModale();
+      toast(survivant && survivant !== c.id ? 'Rattaché à la fiche existante ✓' : 'Fiche complétée ✓');
+      rech.liste = null;
+      await rafraichirFiche(survivant || c.id);
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
 }
 
 function boiteModifierClient(c) {
@@ -5656,10 +6780,20 @@ function boiteModifierVehicule(veh, c) {
         esc(et.aide) + '</span>';
   };
   v.querySelectorAll('[data-mvgab]').forEach(b => b.addEventListener('click', () => {
+    v.__gabManuel = true;
     gab = b.dataset.mvgab;
     v.querySelectorAll('[data-mvgab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.mvgab === gab)));
+    if (repeindreMv) repeindreMv();
     aide();
   }));
+  const repeindreMv = brancherMarqueModele(v.querySelector('#mvMarque'), v.querySelector('#mvModele'), () => gab,
+    null, (g, quoi) => {
+      if (v.__gabManuel) return;
+      gab = g;
+      v.querySelectorAll('[data-mvgab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.mvgab === gab)));
+      aide();
+      toast('Taille : ' + (OCR.gabarit(g) || {}).nom + ' (d’après ' + quoi + ')');
+    });
   brancherPlaque(v.querySelector('#mvImmat'), aide);
   aide();
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
@@ -5673,7 +6807,7 @@ function boiteModifierVehicule(veh, c) {
         immat: OCR.plaque(v.querySelector('#mvImmat').value),
       });
       fermerModale(); toast('Véhicule corrigé ✓');
-      await rafraichirFiche(c.id);
+      if (rech.veh) await ouvrirVehicule(veh.id); else await rafraichirFiche(c.id);
     } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
   });
 }
@@ -5895,9 +7029,11 @@ function boiteNouvelEmploye(e) {
   v.querySelectorAll('[data-negab]').forEach(b => b.addEventListener('click', () => {
     gab = b.dataset.negab;
     v.querySelectorAll('[data-negab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.negab === gab)));
+    if (repeindreNe) repeindreNe();
     v.querySelector('#neImmat').placeholder = gab === 'moto' ? OCR.PLAQUE_EXEMPLES.moto : OCR.PLAQUE_EXEMPLES.voiture;
   }));
   brancherTel(v.querySelector('#neTel'));
+  const repeindreNe = brancherMarqueModele(v.querySelector('#neMarque'), v.querySelector('#neModele'), () => gab);
   brancherPlaque(v.querySelector('#neImmat'));
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
   v.querySelector('[data-ok]').addEventListener('click', async ev => {
@@ -6064,6 +7200,13 @@ function vueFicheClient() {
   $('#vue').innerHTML = `
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnRetourCli" style="margin-bottom:var(--ocr-e4)">‹ Retour</button>
 
+    ${c.a_completer ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>✎</span><div>
+      <strong>Fiche à compléter</strong><br>
+      Elle a été créée depuis la plaque${(vs[0] || {}).immatriculation ? ' ' + esc(vs[0].immatriculation) : ''} :
+      le lavage est enregistré, il ne manque que le client. Si le numéro appartient déjà à quelqu'un,
+      le véhicule et son historique iront sur sa fiche — rien en double.
+      ${peutCorrigerFiche() ? '<br><button class="ocr-btn ocr-btn--primaire ocr-btn--petit" id="btnCompleter" style="margin-top:9px">Compléter maintenant</button>' : ''}
+    </div></div>` : ''}
     ${c.archive_le ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>⊘</span><div>
       <strong>Fiche archivée</strong> le ${dateFr(String(c.archive_le).slice(0, 10))}${
         c.archive_motif ? ' — ' + esc(c.archive_motif) : ''}<br>
@@ -6124,13 +7267,14 @@ function vueFicheClient() {
       ${vs.map(v => {
         const st = parVeh[v.id] || { n: 0, total: 0 };
         return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
-          <span style="min-width:0;flex:1">
+          <button style="all:unset;cursor:pointer;min-width:0;flex:1" data-vfiche="${v.id}"
+                  title="Voir l'historique de ce véhicule">
             <span style="font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${
-              esc([v.marque, v.modele].filter(Boolean).join(' ') || 'Véhicule')}</span>
+              esc([v.marque, v.modele].filter(Boolean).join(' ') || 'Véhicule')} <span class="ocr-mini">›</span></span>
             <span class="ocr-mini" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${
               esc(v.immatriculation || 'sans plaque')} · ${
               esc(OCR.gabarit(v.gabarit) ? OCR.gabarit(v.gabarit).nom : v.gabarit)}</span>
-          </span>
+          </button>
           <span style="text-align:right;flex:none">
             <span style="font-weight:600;font-variant-numeric:tabular-nums;display:block">${OCR.fcfa(st.total)}</span>
             <span class="ocr-mini">${st.n} passage(s)</span>
@@ -6188,12 +7332,16 @@ function vueFicheClient() {
       rech.fiche = await API.ficheClient(c.id); rendre();
     } catch (ex) { toast(ex.message, true); }
   });
+  const bcp = $('#btnCompleter');
+  if (bcp) bcp.addEventListener('click', () => boiteCompleterFiche(c, vs));
   const bco = $('#btnCorrigerCli');
   if (bco) bco.addEventListener('click', () => boiteModifierClient(c));
   const bar = $('#btnArchiverCli');
   if (bar) bar.addEventListener('click', () => boiteArchiverClient(c, ps.length));
   const bsu = $('#btnSupprimerCli');
   if (bsu) bsu.addEventListener('click', () => boiteSupprimerClient(c, ps.length, vs.length));
+  $('#vue').querySelectorAll('[data-vfiche]').forEach(b => b.addEventListener('click', () =>
+    ouvrirVehicule(b.dataset.vfiche)));
   $('#vue').querySelectorAll('[data-vmod]').forEach(b => b.addEventListener('click', () =>
     boiteModifierVehicule(vs.find(v => v.id === b.dataset.vmod), c)));
   $('#vue').querySelectorAll('[data-vsup]').forEach(b => b.addEventListener('click', () =>
@@ -6207,8 +7355,13 @@ function vueFicheClient() {
     const v = vs[0] || {};
     Object.assign(form, {
       tel: c.telephone || '', nom: c.nom || '', clientTrouve: c,
+      // ses véhicules suivent : s'il en a plusieurs, la Saisie les propose en
+      // pastilles au lieu de partir d'office sur le premier de la liste.
+      vehsClient: vs || [],
       gabarit: v.gabarit || 'berline', marque: v.marque || '', modele: v.modele || '',
-      immat: OCR.plaque(v.immatriculation), vehTrouve: null,
+      immat: OCR.plaque(v.immatriculation),
+      vehTrouve: v.id ? { ...v, clients: { id: c.id, nom: c.nom } } : null,
+      gabaritManuel: false, gabaritDeduit: null, gabaritDesaccord: null,
       prestation: null, options: [], remise: 0, manuel: 0, note: '',
     });
     rech.fiche = null;
@@ -6224,6 +7377,7 @@ function vueFicheClient() {
    c'est la seule ressource qu'on ne peut pas fabriquer.
    ========================================================================== */
 let bilanJours = 7;
+let bilanMesure = 'passages';   // classement du parc : par nombre, ou par argent
 
 // Charges fixes mensuelles (loyer 150 000 + salaires 202 000 + électricité
 // 60 000 + eau 25 000 + internet 15 000 + provision équipement 40 000).
@@ -6238,10 +7392,69 @@ function ilYA(n) {
 
 async function vueBilan() {
   const du = ilYA(bilanJours), au = auj();
-  const [{ jours, mix }, ptsRH, baiesRH, temps] = await Promise.all([
+  const [{ jours, mix }, ptsRH, baiesRH, temps, parc] = await Promise.all([
     API.periode(du, au), API.pointagesPeriode(du, au), API.baies().catch(() => []),
-    API.tempsLavage(du).catch(() => []),
+    API.tempsLavage(du).catch(() => []), API.statsParc(du, au).catch(() => []),
   ]);
+
+  /* QUELS VÉHICULES DOMINENT (13/08) — « savoir quel véhicule domine, quel
+     modèle, comme ça c'est facile pour moi de comprendre » (Edwin).
+     Une seule mesure à la fois (véhicules OU chiffre d'affaires), une seule
+     teinte : ce sont des classements de grandeur, pas des catégories à
+     distinguer. La valeur est écrite au bout de chaque barre — pas besoin de
+     survoler pour lire un chiffre. */
+  const cumul = (cle) => {
+    const g = {};
+    parc.forEach(r => {
+      const k = cle(r);
+      if (k == null) return;
+      const o = g[k] || (g[k] = { cle: k, passages: 0, ca: 0, minutes: 0 });
+      o.passages += Number(r.passages) || 0;
+      o.ca += Number(r.ca) || 0;
+      o.minutes += Number(r.minutes) || 0;
+    });
+    return Object.values(g);
+  };
+  const mesure = bilanMesure;                       // 'passages' | 'ca'
+  const trier = (l) => l.sort((a, b) => b[mesure] - a[mesure] || b.ca - a.ca);
+  const parMarque = trier(cumul(r => r.marque === '?' ? 'Marque non saisie' : r.marque));
+  const parModele = trier(cumul(r => r.marque === '?' ? null
+      : r.marque + (r.modele ? ' ' + r.modele : ' (modèle non saisi)')));
+  const parTaille = trier(cumul(r => r.gabarit));
+  const totalMes = parc.reduce((sm, r) => sm + (Number(r[mesure]) || 0), 0);
+  const fmtMes = (v) => mesure === 'ca' ? OCR.fcfa(v) : v + ' véh.';
+
+  /* Une ligne de classement : nom, barre, valeur. Barre d'une seule teinte
+     (validée sur les deux fonds), bout arrondi, texte en encre — jamais la
+     couleur de la barre pour écrire. */
+  const ligneBarre = (nom, val, max, sous) => `
+    <div style="padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
+      <div style="display:flex;gap:10px;align-items:baseline">
+        <span style="min-width:0;flex:1;font:600 13.5px/1.3 var(--ocr-texte);color:var(--ocr-blanc);
+                     white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(nom)}</span>
+        <span style="font:700 13.5px/1.2 var(--ocr-texte);font-variant-numeric:tabular-nums;white-space:nowrap">${esc(fmtMes(val))}</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:5px">
+        <span style="flex:1;height:6px;border-radius:999px;background:var(--ocr-trace);overflow:hidden">
+          <span style="display:block;height:100%;width:${max > 0 ? Math.max(2, Math.round(val / max * 100)) : 0}%;
+                       background:var(--lav-rapide);border-radius:999px"></span></span>
+        <span class="ocr-mini" style="white-space:nowrap;min-width:74px;text-align:right">${sous || ''}</span>
+      </div>
+    </div>`;
+  const blocClassement = (titre, aide, liste, n, sousDe) => {
+    const top = liste.slice(0, n);
+    const max = top.length ? top[0][mesure] : 0;
+    return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div class="ocr-surtitre">${titre}</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">${aide}</p>
+      ${top.length ? top.map(o => ligneBarre(o.cle, o[mesure], max, sousDe(o))).join('')
+        : '<div class="vide">Rien à classer sur la période.</div>'}
+      ${liste.length > n ? `<p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">
+        + ${liste.length - n} autre(s), non affiché(s).</p>` : ''}
+    </div>`;
+  };
+  const partDe = (o) => totalMes > 0 ? Math.round(o[mesure] / totalMes * 100) + ' %' : '';
+  const fhDe = (o) => o.minutes > 0 ? OCR.fcfa(Math.round(o.ca / (o.minutes / 60))) + '/h' : '—';
 
   // temps réels chronométrés, regroupés par prestation + gabarit
   const parChrono = {};
@@ -6345,6 +7558,28 @@ async function vueBilan() {
     </div>` : ''}
 
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="ocr-surtitre">Quels véhicules dominent</div>
+        <span style="flex:1"></span>
+        <div style="display:flex;gap:6px">
+          <button class="ocr-chip" data-bmes="passages" aria-pressed="${mesure === 'passages'}">Véhicules</button>
+          <button class="ocr-chip" data-bmes="ca" aria-pressed="${mesure === 'ca'}">Argent</button>
+        </div>
+      </div>
+      <p class="ocr-mini" style="margin:8px 0 0">Sur ${bilanJours} jours · ${parc.reduce((sm, r) => sm + r.passages, 0)} véhicule(s) lavé(s).
+        ${parMarque.some(m => m.cle === 'Marque non saisie')
+          ? 'Les véhicules sans marque saisie sont regroupés à part — plus on saisit, plus ce classement est juste.'
+          : 'Toutes les marques sont renseignées : le classement est complet.'}</p>
+    </div>
+
+    ${blocClassement('Marques', 'Ce qui roule le plus chez nous — le classement dit où porter la communication.',
+      parMarque, 8, partDe)}
+    ${blocClassement('Modèles', 'Le détail par modèle : c\'est lui qui dicte les produits et les temps de lavage.',
+      parModele, 8, partDe)}
+    ${blocClassement('Par taille de véhicule', 'La taille fait le prix. À droite, ce que chaque taille rapporte par heure de baie — la seule ressource qu\'on ne peut pas fabriquer.',
+      parTaille.map(o => ({ ...o, cle: (OCR.gabarit(o.cle) || {}).nom || o.cle })), 5, fhDe)}
+
+    <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
       <div class="ocr-surtitre">Temps par lavage — chronométré</div>
       <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Mesuré entre « ▶ Commencer » et « ✓ Terminé », heures tamponnées
         par le serveur. Réf. = durée prévue au catalogue — la base de discussion avec l’équipe.</p>
@@ -6412,6 +7647,9 @@ async function vueBilan() {
     </div>`;
 
   brancherRetourDirection();
+  $('#vue').querySelectorAll('[data-bmes]').forEach(b => b.addEventListener('click', () => {
+    bilanMesure = b.dataset.bmes; vueBilan();
+  }));
   $('#vue').querySelectorAll('[data-per]').forEach(b => b.addEventListener('click', () => {
     bilanJours = Number(b.dataset.per);
     $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
@@ -6479,6 +7717,7 @@ async function vueDirection() {
     ['repos', '📅', 'Jours de repos', 'Planning hebdomadaire'],
     ['pointage', '◉', 'Pointage', filePointage.length
       ? filePointage.length + ' en attente d’envoi' : 'Arrivées, pauses, départs'],
+    ['catalogue', '▦', 'Marques & modèles', 'Ajouter, corriger les tailles'],
     ['journal', '📜', 'Journal d’activité', 'Qui a fait quoi, quand'],
     ['compte', '🛡', 'Mon compte', 'Mot de passe, double sécurité'],
   ];
@@ -6585,13 +7824,177 @@ async function vueDirection() {
   if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
   $('#vue').querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.dir;
-    if (id === 'bilan' || id === 'cloture' || id === 'journal' || id === 'pointage') return allerOnglet(id);
+    if (id === 'bilan' || id === 'cloture' || id === 'journal' || id === 'pointage'
+        || id === 'catalogue') return allerOnglet(id);
     if (id === 'objectifs') { const obj = await API.objectifs().catch(() => null); if (obj) boiteObjectifs(obj); return; }
     if (id === 'baies') return allerOnglet('agenda');
     if (id === 'absences') return boiteAbsences();
     if (id === 'repos') return boitePlanning();
     if (id === 'compte') return boiteCompte();
   }));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MARQUES & MODÈLES — le catalogue, modifiable par l'atelier (13/08)
+   « Des fois il y a des nouvelles marques chinoises. Il faut que le parc
+     apprenne et qu'on puisse modifier s'il y a des erreurs. »
+   Une seule règle tenue par la base : zéro doublon (index unique sur la forme
+   normalisée). Corriger une taille ici change le prix proposé partout, dans
+   les deux applications.
+   ══════════════════════════════════════════════════════════════════════════ */
+let cataQ = '', cataFiltre = 'tout';
+async function vueCatalogue() {
+  const lignes = await API.catalogue();
+  const q = OCR.clefTexte(cataQ);
+  const filtrees = lignes.filter(l =>
+    (cataFiltre === 'tout' || (cataFiltre === 'atelier' ? l.origine === 'atelier' : l.gabarit === cataFiltre)) &&
+    (!q || OCR.clefTexte(l.marque + l.modele).includes(q)));
+  /* 388 modèles d'un coup, c'est 60 000 pixels de page et un téléphone qui
+     rame pour rien. On en dessine une tranche et on le DIT — jamais de liste
+     coupée en silence : la recherche et les filtres sont juste au-dessus. */
+  const PLAFOND = 60;
+  const coupees = Math.max(0, filtrees.length - PLAFOND);
+  // triées d'abord : la tranche affichée doit être prévisible (de A à Z),
+  // pas dépendante de l'ordre où la base a répondu.
+  filtrees.sort((a, b) => a.marque.localeCompare(b.marque, 'fr') ||
+                          (a.modele || '').localeCompare(b.modele || '', 'fr'));
+  const visibles = filtrees.slice(0, PLAFOND);
+  // regroupé par marque : c'est comme ça qu'on cherche une voiture
+  const parMarque = {};
+  visibles.forEach(l => (parMarque[l.marque] || (parMarque[l.marque] = [])).push(l));
+  const marques = Object.keys(parMarque).sort((a, b) => a.localeCompare(b, 'fr'));
+  const nbAtelier = lignes.filter(l => l.origine === 'atelier').length;
+
+  $('#vue').innerHTML = `
+    ${retourDirection()}
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Marques & modèles</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">
+        ${lignes.length} modèles au catalogue, dont ${nbAtelier} ajoutés par l'atelier.
+        La <strong style="color:var(--ocr-blanc)">taille</strong> d'un modèle fait son prix :
+        la corriger ici la corrige partout, y compris dans l'application des clients.</p>
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="cataAjout">＋ Ajouter une marque ou un modèle</button>
+      <label class="ocr-champ" style="margin:var(--ocr-e4) 0 0"><span class="ocr-label">Chercher</span>
+        <input class="ocr-saisie" id="cataQ" value="${esc(cataQ)}" placeholder="Toyota, Hilux, Changan…" autocomplete="off"></label>
+      <div class="rangee-filtres">
+        ${[['tout', 'Tout'], ['atelier', 'Ajoutés ici'], ...OCR.GABARITS.map(g => [g.id, g.court])]
+          .map(([id, lab]) => `<button class="ocr-chip" data-catafiltre="${id}"
+            aria-pressed="${cataFiltre === id}">${esc(lab)}</button>`).join('')}
+      </div>
+    </div>
+
+    ${marques.length ? marques.map(ma => `
+      <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font:700 15px/1.2 var(--ocr-titre)">${esc(ma)}</div>
+          <span class="ocr-mini">${parMarque[ma].length} modèle(s)</span>
+        </div>
+        ${parMarque[ma].sort((a, b) => a.modele.localeCompare(b.modele, 'fr')).map(l => `
+          <div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+            <span style="min-width:0;flex:1">
+              <span style="font-weight:600;display:block">${esc(l.modele || '(marque seule)')}</span>
+              <span class="ocr-mini">${esc((OCR.gabarit(l.gabarit) || {}).nom || l.gabarit)}${
+                l.origine === 'atelier' ? ' · ajouté ici' : ''}</span>
+            </span>
+            <span class="actions-veh">
+              <button data-cataedit="${l.id}" title="Changer la taille" aria-label="Changer la taille">✎</button>
+              <button data-catasup="${l.id}" class="dgr" title="Retirer du catalogue" aria-label="Retirer">✕</button>
+            </span>
+          </div>`).join('')}
+      </div>`).join('')
+    : '<div class="ocr-carte vide" style="margin-top:var(--ocr-e4)">Aucun modèle ne correspond.</div>'}
+    ${coupees ? `<p class="ocr-mini" style="text-align:center;margin:var(--ocr-e4) 0 0">
+      ${filtrees.length} modèles correspondent — les ${PLAFOND} premiers sont affichés.
+      Écris le nom de la marque ou du modèle plus haut pour trouver le tien.</p>` : ''}`;
+
+  brancherRetourDirection();
+  $('#cataAjout').addEventListener('click', () => boiteCatalogue());
+  let mn;
+  $('#cataQ').addEventListener('input', e => {
+    cataQ = e.target.value;
+    clearTimeout(mn);
+    mn = setTimeout(() => { if (onglet === 'catalogue') vueCatalogue(); }, 280);
+  });
+  $('#vue').querySelectorAll('[data-catafiltre]').forEach(b => b.addEventListener('click', () => {
+    cataFiltre = b.dataset.catafiltre; vueCatalogue();
+  }));
+  $('#vue').querySelectorAll('[data-cataedit]').forEach(b => b.addEventListener('click', () =>
+    boiteCatalogue(lignes.find(l => l.id === b.dataset.cataedit))));
+  $('#vue').querySelectorAll('[data-catasup]').forEach(b => b.addEventListener('click', () =>
+    boiteCatalogueRetrait(lignes.find(l => l.id === b.dataset.catasup))));
+}
+
+function boiteCatalogue(ligne) {
+  let gab = ligne ? ligne.gabarit : 'berline';
+  const v = modale(`
+    <h3 class="ocr-h2">${ligne ? 'Corriger' : 'Ajouter au catalogue'}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">La taille choisie ici sera proposée
+      automatiquement dès qu'on saisira ce modèle — c'est elle qui fait le prix.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Marque</span>
+        <input class="ocr-saisie" id="caMa" value="${esc(ligne ? ligne.marque : '')}" ${ligne ? 'readonly' : ''}></label>
+      <label class="ocr-champ"><span class="ocr-label">Modèle</span>
+        <input class="ocr-saisie" id="caMo" value="${esc(ligne ? ligne.modele : '')}" ${ligne ? 'readonly' : ''}
+               placeholder="Laisse vide pour la marque seule"></label>
+    </div>
+    <div class="ocr-label" style="margin-bottom:8px">Taille de facturation</div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+      ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-cagab="${g.id}" aria-pressed="${gab === g.id}">${esc(g.court)}</button>`).join('')}
+    </div>
+    <p class="ocr-mini" id="caEx" style="margin:0 0 var(--ocr-e4)"></p>
+    <div style="display:flex;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>${ligne ? 'Enregistrer' : 'Ajouter'}</button></div>`);
+  const majEx = () => {
+    const g = OCR.gabarit(gab) || {};
+    const pr = OCR.prix('signature', gab);
+    v.querySelector('#caEx').innerHTML = esc(g.ex || '') +
+      (pr != null ? ' · Lavage Signature à ' + OCR.fcfa(pr) : ' · sur devis');
+  };
+  majEx();
+  v.querySelectorAll('[data-cagab]').forEach(b => b.addEventListener('click', () => {
+    gab = b.dataset.cagab;
+    v.querySelectorAll('[data-cagab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.cagab === gab)));
+    majEx();
+  }));
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const ma = v.querySelector('#caMa').value.trim();
+    if (!ma) return toast('La marque est obligatoire.', true);
+    e.target.disabled = true;
+    try {
+      const r = await API.catalogueposer(ma, v.querySelector('#caMo').value.trim(), gab);
+      await chargerCatalogue();
+      fermerModale();
+      toast(r.cree ? ma + ' ajouté au catalogue ✓' : 'Taille corrigée ✓');
+      vueCatalogue();
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
+}
+
+function boiteCatalogueRetrait(ligne) {
+  if (!ligne) return;
+  const v = modale(`
+    <h3 class="ocr-h2">Retirer du catalogue ?</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      <strong style="color:var(--ocr-blanc)">${esc(ligne.marque)} ${esc(ligne.modele)}</strong>
+      ne sera plus proposé à la saisie. Les véhicules déjà enregistrés ne changent pas —
+      c'est juste une suggestion en moins.</p>
+    <div style="display:flex;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Garder</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Retirer</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    try {
+      await API.catalogueRetirer(ligne.id);
+      await chargerCatalogue();
+      fermerModale(); toast('Retiré du catalogue');
+      vueCatalogue();
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
 }
 
 async function vueJournal() {
