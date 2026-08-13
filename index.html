@@ -449,6 +449,18 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .ligne-cli .dr{text-align:right;flex:none}
 .ligne-cli .mt{font:700 14px/1.2 var(--ocr-texte);font-variant-numeric:tabular-nums;display:block;color:var(--ocr-blanc)}
 .ligne-cli .ch{color:var(--ocr-argent-2);flex:none}
+/* Les signes des lignes clients (espace actif, partenaire, archivé) : discrets,
+   couleur de la marque, jamais des émojis (13/08). */
+.ligne-cli .sig{color:var(--ocr-rouge-texte);font-size:12px;vertical-align:1px}
+/* Corriger / retirer un véhicule : deux carrés tactiles au bout de la ligne,
+   assez grands pour le doigt (40 px) mais discrets — on ne les cherche que
+   quand on s'est trompé. */
+.actions-veh{display:flex;gap:6px;flex:none}
+.actions-veh button{width:38px;height:38px;border-radius:10px;cursor:pointer;
+  border:1px solid var(--ocr-filet);background:transparent;color:var(--ocr-argent);
+  font-size:14px;line-height:1;display:grid;place-items:center}
+.actions-veh button:hover{border-color:var(--ocr-argent-2);color:var(--ocr-blanc)}
+.actions-veh button.dgr:hover{border-color:var(--ocr-rouge);color:var(--ocr-rouge-texte)}
 @media(max-width:379px){.ligne-cli .dr{display:none}}
 
 /* ---- La bande de la semaine ---- */
@@ -1362,7 +1374,11 @@ function creerClientDemo() {
       options: [], date_prevue: jourCourant, heure_prevue: '16:30:00', duree_min: 75,
       montant_total: 8000, acompte_attendu: 8000, statut: 'en_attente_paiement', canal: 'app',
       note: 'Réservé depuis l’application — a choisi de tout payer d’avance' },
-    { id: uid(), reference: ref(), client_id: 'c4', vehicule_id: 'v4', prestation: 'signature', gabarit: 'berline',
+    // Demain : Koffi revient. (Volontairement PAS Pascal Houngbo : sa fiche
+    // sert de cas d'école « client avec historique, tout payé, rien de prévu »
+    // pour s'entraîner à corriger et supprimer une erreur — un rendez-vous à
+    // venir bloquerait la suppression, et à juste titre.)
+    { id: uid(), reference: ref(), client_id: 'c1', vehicule_id: 'v1', prestation: 'signature', gabarit: 'berline',
       options: [], date_prevue: jourPlus(1), heure_prevue: '10:00:00', duree_min: 75,
       montant_total: 8000, acompte_attendu: 1600, statut: 'confirmee', canal: 'comptoir', note: null },
   );
@@ -1488,7 +1504,8 @@ function creerClientDemo() {
                espace_actif: !!c.pin_pose_le,
                nb_vehicules: vs.length,
                vehicule_nom: [dernier.marque, dernier.modele].filter(Boolean).join(' ') || null,
-               vehicule_plaque: dernier.immatriculation || null };
+               vehicule_plaque: dernier.immatriculation || null,
+               archive_le: c.archive_le || null };
     });
   };
 
@@ -1545,6 +1562,7 @@ function creerClientDemo() {
       order(k, o) { tri = [k, !o || o.ascending !== false, o && o.nullsFirst === false]; return api; },
       limit(n) { borne = n; return api; },
       eq(k, v) { f.push(r => String(r[k]) === String(v)); return api; },
+      is(k, v) { if (v === null) f.push(r => r[k] == null); else f.push(r => r[k] === v); return api; },
       not(k, op, v) { if (op === 'is' && v === null) f.push(r => r[k] != null); return api; },
       gte(k, v) { f.push(r => String(r[k]) >= String(v)); return api; },
       lte(k, v) { f.push(r => String(r[k]) <= String(v)); return api; },
@@ -1609,6 +1627,17 @@ function creerClientDemo() {
     return api;
   }
 
+  // Qui a le droit de corriger : manager, comptable, direction — jamais un
+  // technicien. Même phrase de refus que la base, au mot près.
+  const quiCorrige = (verbe) => {
+    const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+    if (!emp) throw new Error('Accès réservé au personnel');
+    if (!['manager', 'comptable', 'direction'].includes(emp.role))
+      throw new Error('Seuls le manager et la direction ' + verbe);
+    return emp;
+  };
+  const telCle = t => String(t || '').replace(/[^0-9]/g, '').slice(-8);
+
   const RPC = {
     ocr_reinitialiser_code_client(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -1650,6 +1679,128 @@ function creerClientDemo() {
         quoi: String(a.p_nom).trim() + (existant ? ' (fiche existante) rattaché à ' : ' créé et rattaché à ') +
               ent.nom + ' — remise ' + (ent.remise_pct || 0) + ' %', entite: 'client' });
       return [{ client_id: cl.id, deja_existant: existant }];
+    },
+    /* ── corrections d'erreurs de comptoir (13/08) ──
+       Mêmes règles et mêmes phrases que la base, pour que la démo ne mente pas
+       sur ce qui est permis à qui. */
+    ocr_modifier_client(a) {
+      const emp = quiCorrige('corrigent une fiche client');
+      const c = D.clients.find(x => x.id === a.p_client);
+      if (!c) throw new Error('Client introuvable');
+      if (!String(a.p_nom || '').trim()) throw new Error('Le nom ne peut pas être vide');
+      const tel = String(a.p_telephone || '').trim() || null;
+      if (tel) {
+        const autre = D.clients.find(x => x.id !== c.id && telCle(x.telephone) === telCle(tel));
+        if (autre) throw new Error('Ce numéro est déjà sur la fiche de ' + autre.nom +
+          ' — corrige la bonne fiche plutôt que d’en créer une deuxième');
+      }
+      const avant = { nom: c.nom, tel: c.telephone };
+      c.nom = String(a.p_nom).trim();
+      c.telephone = tel;
+      c.email = String(a.p_email || '').trim() || null;
+      c.note = String(a.p_note || '').trim() || null;
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Fiche client corrigée : ' + avant.nom + (avant.nom !== c.nom ? ' → ' + c.nom : '') +
+              (String(avant.tel || '') !== String(c.telephone || '')
+                ? ' · téléphone ' + (avant.tel || '(vide)') + ' → ' + (c.telephone || '(vide)') : ''),
+        entite: 'client', entite_id: c.id });
+      return [];
+    },
+    ocr_archiver_client(a) {
+      const emp = quiCorrige('archivent une fiche client');
+      const c = D.clients.find(x => x.id === a.p_client);
+      if (!c) throw new Error('Client introuvable');
+      const motif = String(a.p_motif || '').trim() || null;
+      if (a.p_archive === false) { c.archive_le = null; c.archive_par = null; c.archive_motif = null; }
+      else { c.archive_le = new Date().toISOString(); c.archive_par = emp.id; c.archive_motif = motif; }
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: (a.p_archive === false ? 'Fiche client réactivée : ' : 'Fiche client archivée : ') + c.nom +
+              (a.p_archive !== false && motif ? ' — ' + motif : ''),
+        entite: 'client', entite_id: c.id });
+      return [];
+    },
+    ocr_supprimer_client(a) {
+      const emp = quiCorrige('suppriment une fiche client');
+      const c = D.clients.find(x => x.id === a.p_client);
+      if (!c) throw new Error('Client introuvable');
+      const ps = D.passages.filter(p => p.client_id === c.id && !p.annule);
+      const dus = ps.filter(p => p.statut_paiement !== 'paye').length;
+      const rdv = D.reservations.filter(r => r.client_id === c.id &&
+        ['en_attente_paiement', 'confirmee'].includes(r.statut)).length;
+      const vs = D.vehicules.filter(v => v.client_id === c.id);
+      const motif = String(a.p_motif || '').trim();
+      if (dus) throw new Error('Impossible : ' + dus +
+        ' passage(s) ne sont pas soldés sur cette fiche. Encaisse ou annule d’abord.');
+      if (rdv) throw new Error('Impossible : ' + rdv +
+        ' rendez-vous à venir sur cette fiche. Annule-les d’abord.');
+      if (ps.length && emp.role === 'manager')
+        throw new Error('Cette fiche a ' + ps.length +
+          ' passage(s) enregistrés — archive-la, ou demande à la direction de la supprimer.');
+      if (ps.length && motif.length < 5)
+        throw new Error('Supprimer une fiche qui a un historique demande un motif écrit');
+      // comme en base : véhicules en cascade, passages conservés et déliés
+      D.vehicules = D.vehicules.filter(v => v.client_id !== c.id);
+      D.passages.forEach(p => { if (p.client_id === c.id) { p.client_id = null; p.vehicule_id = null; } });
+      D.reservations.forEach(r => { if (r.client_id === c.id) r.client_id = null; });
+      D.clients = D.clients.filter(x => x.id !== c.id);
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Fiche client SUPPRIMÉE : ' + c.nom + (c.telephone ? ' (' + c.telephone + ')' : '') +
+              ' — ' + vs.length + ' véhicule(s) effacé(s), ' + ps.length + ' passage(s) conservés' +
+              (motif ? ' — ' + motif : ''),
+        entite: 'client', entite_id: c.id });
+      return [];
+    },
+    ocr_modifier_vehicule(a) {
+      const emp = quiCorrige('corrigent un véhicule');
+      const v = D.vehicules.find(x => x.id === a.p_vehicule);
+      if (!v) throw new Error('Véhicule introuvable');
+      if (a.p_gabarit && !OCR.GABARITS.some(g => g.id === a.p_gabarit)) throw new Error('Gabarit inconnu');
+      const plaque = OCR.plaque(a.p_immat) || null;
+      if (plaque && (plaque.length < 4 || plaque.length > 10))
+        throw new Error('Plaque invalide : entre 4 et 10 caractères (voiture CB5916, moto 2FB9408)');
+      if (plaque) {
+        const autre = D.vehicules.find(x => x.id !== v.id && OCR.plaque(x.immatriculation) === plaque);
+        if (autre) {
+          const prop = D.clients.find(c => c.id === autre.client_id);
+          throw new Error('La plaque ' + plaque + ' est déjà enregistrée sur la fiche de ' +
+            ((prop && prop.nom) || '?'));
+        }
+      }
+      const avant = [v.marque, v.modele].filter(Boolean).join(' ') || 'sans marque';
+      const avantPl = v.immatriculation;
+      v.gabarit = a.p_gabarit || v.gabarit;
+      v.marque = String(a.p_marque || '').trim() || null;
+      v.modele = String(a.p_modele || '').trim() || null;
+      v.immatriculation = plaque;
+      const prop = D.clients.find(c => c.id === v.client_id);
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Véhicule corrigé (' + ((prop && prop.nom) || '?') + ') : ' + avant +
+              (avantPl ? ' ' + avantPl : '') + ' → ' +
+              ([v.marque, v.modele].filter(Boolean).join(' ') || 'sans marque') + (plaque ? ' ' + plaque : ''),
+        entite: 'vehicule', entite_id: v.id });
+      return [];
+    },
+    ocr_supprimer_vehicule(a) {
+      const emp = quiCorrige('suppriment un véhicule');
+      const v = D.vehicules.find(x => x.id === a.p_vehicule);
+      if (!v) throw new Error('Véhicule introuvable');
+      const ps = D.passages.filter(p => p.vehicule_id === v.id && !p.annule);
+      if (ps.length && emp.role === 'manager')
+        throw new Error('Ce véhicule a ' + ps.length + ' passage(s) — demande à la direction.');
+      if (D.reservations.some(r => r.vehicule_id === v.id &&
+          ['en_attente_paiement', 'confirmee'].includes(r.statut)))
+        throw new Error('Ce véhicule a un rendez-vous à venir. Annule-le d’abord.');
+      D.vehicules = D.vehicules.filter(x => x.id !== v.id);
+      D.passages.forEach(p => { if (p.vehicule_id === v.id) p.vehicule_id = null; });
+      const prop = D.clients.find(c => c.id === v.client_id);
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Véhicule supprimé (' + ((prop && prop.nom) || '?') + ') : ' +
+              ([v.marque, v.modele].filter(Boolean).join(' ') || 'sans marque') +
+              (v.immatriculation ? ' ' + v.immatriculation : '') +
+              ' — ' + ps.length + ' passage(s) conservés' +
+              (String(a.p_motif || '').trim() ? ' — ' + String(a.p_motif).trim() : ''),
+        entite: 'vehicule', entite_id: v.client_id });
+      return [];
     },
     ocr_lier_employe(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -1907,7 +2058,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v32';
+const VERSION = 'v33';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -2149,6 +2300,38 @@ const API = {
     return (data && data[0]) || null;
   },
   ajouterVehicule: v => sb.from('vehicules').insert(v),
+
+  /* --- corrections (erreurs de comptoir) ---
+     Corriger ou retirer une fiche passe TOUJOURS par ces fonctions : elles
+     vérifient le rôle, refusent ce qui toucherait à de l'argent (passage non
+     soldé, rendez-vous à venir) et écrivent au journal. Depuis le 13/08, la
+     base n'accepte plus aucune modification ni suppression directe de client
+     ou de véhicule — même en bricolant la console du navigateur. */
+  async modifierClient(id, d) {
+    const { error } = await sb.rpc('ocr_modifier_client', {
+      p_client: id, p_nom: d.nom, p_telephone: d.tel || null,
+      p_email: d.email || null, p_note: d.note || null });
+    if (error) throw new Error(error.message);
+  },
+  async archiverClient(id, archive, motif) {
+    const { error } = await sb.rpc('ocr_archiver_client', {
+      p_client: id, p_archive: archive, p_motif: motif || null });
+    if (error) throw new Error(error.message);
+  },
+  async supprimerClient(id, motif) {
+    const { error } = await sb.rpc('ocr_supprimer_client', { p_client: id, p_motif: motif || null });
+    if (error) throw new Error(error.message);
+  },
+  async modifierVehicule(id, v) {
+    const { error } = await sb.rpc('ocr_modifier_vehicule', {
+      p_vehicule: id, p_gabarit: v.gabarit || null,
+      p_marque: v.marque || null, p_modele: v.modele || null, p_immat: v.immat || null });
+    if (error) throw new Error(error.message);
+  },
+  async supprimerVehicule(id, motif) {
+    const { error } = await sb.rpc('ocr_supprimer_vehicule', { p_vehicule: id, p_motif: motif || null });
+    if (error) throw new Error(error.message);
+  },
   async journee(d) {
     const { data } = await sb.from('journees').select('*').eq('date', d).maybeSingle();
     return data || { date: d, statut: 'ouverte' };
@@ -2194,7 +2377,7 @@ const API = {
     const [cl, veh, pass, fid] = await Promise.all([
       // colonnes explicites : l'empreinte du code client n'a rien à faire ici
       sb.from('clients')
-        .select('id,nom,telephone,email,est_pro,societe,note,cree_le,entreprise_id,pin_pose_le,entreprises!clients_entreprise_id_fkey(nom,remise_pct)')
+        .select('id,nom,telephone,email,est_pro,societe,note,cree_le,entreprise_id,pin_pose_le,archive_le,archive_motif,entreprises!clients_entreprise_id_fkey(nom,remise_pct)')
         .eq('id', id).maybeSingle(),
       sb.from('vehicules').select('*').eq('client_id', id),
       sb.from('passages').select('*, passage_lignes(*), vehicules(marque,modele,immatriculation)')
@@ -2209,6 +2392,15 @@ const API = {
   async listeClients(mode) {
     let q = sb.from('v_clients_stats').select('*');
     const d30 = decaleJour(auj(), -30);
+    // Une fiche archivée disparaît de toutes les listes sauf la sienne : c'est
+    // tout l'intérêt de l'archivage (elle ne pollue plus, rien n'est perdu).
+    q = mode === 'archives' ? q.not('archive_le', 'is', null) : q.is('archive_le', null);
+    if (mode === 'archives') {
+      q = q.order('archive_le', { ascending: false }).limit(60);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    }
     if (mode === 'relance') {
       q = q.gt('passages', 0).lt('dernier_passage', d30).order('depense', { ascending: false }).limit(40);
     } else if (mode === 'meilleurs') {
@@ -2989,7 +3181,7 @@ async function rendre(discret) {
         { id: 'saisie',  ic: '＋', l: 'Saisie' },
         { id: 'journee', ic: '▤',  l: 'Journée' },
         { id: 'agenda',  ic: '◷',  l: 'Agenda' },
-        { id: 'clients', ic: '☺',  l: 'Clients' },
+        { id: 'clients', ic: '☰',  l: 'Clients' },
       ];
   // Le manager pointe pour lui ET pour ceux qui ont oublié : son onglet
   // Pointage est le même que celui des techniciens, avec l'équipe en dessous.
@@ -3136,7 +3328,7 @@ async function vueSaisie(j) {
         <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Nom</span>
           <input class="ocr-saisie" id="fNom" value="${esc(form.nom)}"></label>
         ${form.clientTrouve && form.clientTrouve.entreprises && form.clientTrouve.entreprises.remise_pct > 0 ? `
-        <div class="ocr-message ocr-message--succes" style="margin-top:var(--ocr-e4)"><span>🤝</span><div>
+        <div class="ocr-message ocr-message--succes" style="margin-top:var(--ocr-e4)"><span>◆</span><div>
           <strong>Employé ${esc(form.clientTrouve.entreprises.nom)}</strong><br>
           Remise de ${form.clientTrouve.entreprises.remise_pct} % appliquée automatiquement — peu importe le véhicule
           (moto du showroom, moto d’un client, sa voiture…).</div></div>` : ''}
@@ -4908,13 +5100,18 @@ function boiteRdv(r, estAuj) {
 /* La liste s'affiche d'entrée — obliger à taper un nom pour voir ses propres
    clients n'a aucun sens quand on en a quelques centaines. Par défaut : les
    derniers venus en premier. Les filtres remplacent la recherche à l'aveugle. */
+/* Pas d'émojis sur l'écran Clients (demande d'Edwin, 13/08) : des signes
+   typographiques, dans la même famille que les icônes des onglets. Un émoji
+   change de dessin sur chaque téléphone et fait « application grand public » ;
+   la marque, elle, doit rester sobre. */
 const FILTRES_CLI = [
-  ['recents',     '🕘 Vus récemment',   'Les derniers passages en premier'],
-  ['relance',     '📣 À relancer',      'Plus de 30 jours sans venir, les plus gros d’abord'],
-  ['meilleurs',   '★ Meilleurs',        'Ceux qui dépensent le plus'],
-  ['espace',      '📱 Espace actif',    'Ceux qui ont l’app avec leur code'],
-  ['partenaires', '🤝 Partenaires',     'Employés Ehu Motors et autres entreprises liées'],
-  ['sansvisite',  '◌ Jamais venus',     'Fiches créées mais aucun passage'],
+  ['recents',     '◷ Vus récemment',   'Les derniers passages en premier'],
+  ['relance',     '↻ À relancer',      'Plus de 30 jours sans venir, les plus gros d’abord'],
+  ['meilleurs',   '★ Meilleurs',       'Ceux qui dépensent le plus'],
+  ['espace',      '✦ Espace actif',    'Ceux qui ont l’app avec leur code'],
+  ['partenaires', '◆ Partenaires',     'Employés Ehu Motors et autres entreprises liées'],
+  ['sansvisite',  '◌ Jamais venus',    'Fiches créées mais aucun passage'],
+  ['archives',    '⊘ Archivés',        'Fiches retirées des listes — rien n’est perdu'],
 ];
 const rech = { q: '', liste: null, cherche: false, fiche: null, vue: 'part', rapide: 'recents' };
 let cliNouveau = null;   // brouillon de fiche client en cours de création
@@ -4944,9 +5141,11 @@ function ligneClientStats(c) {
     <button class="fiche ligne-cli" data-cli="${c.client_id || c.id}">
       <span class="av" style="background:${coul}">${esc(ini)}</span>
       <span class="mid">
-        <span class="nom">${esc(nom)}${c.espace_actif ? ' <span title="Espace client actif">📱</span>' : ''}${
-          c.entreprise_remise_pct > 0 ? ' <span title="' + esc(c.entreprise_nom || '') + ' −' +
-            c.entreprise_remise_pct + ' %">🤝</span>' : ''}</span>
+        <span class="nom">${esc(nom)}${c.espace_actif
+          ? ' <span class="sig" title="Espace client actif">✦</span>' : ''}${
+          c.entreprise_remise_pct > 0 ? ' <span class="sig" title="' + esc(c.entreprise_nom || '') + ' −' +
+            c.entreprise_remise_pct + ' %">◆</span>' : ''}${
+          c.archive_le ? ' <span class="sig" title="Fiche archivée">⊘</span>' : ''}</span>
         <span class="ocr-mini det">${esc(telCourt(c.telephone) || 'pas de numéro')}${veh ? ' · ' + esc(veh) : ''}${
           c.nb_vehicules > 1 ? ' +' + (c.nb_vehicules - 1) : ''}</span>
       </span>
@@ -4981,7 +5180,7 @@ async function vueClients() {
   $('#zoneCli').innerHTML = `
     <div class="ocr-carte">
       <div style="position:relative">
-        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--ocr-argent-2);pointer-events:none">🔍</span>
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--ocr-argent-2);pointer-events:none">⌕</span>
         <input class="ocr-saisie" id="qCli" value="${esc(rech.q)}" placeholder="Nom, numéro ou plaque…"
                autocomplete="off" enterkeyhint="search" style="padding-left:42px">
       </div>
@@ -5009,11 +5208,11 @@ async function vueClients() {
   }));
   const VIDES = {
     recents: 'Aucun client encore. Le premier se créera tout seul à la première saisie.',
-    relance: 'Personne à relancer — tout le monde est venu dans les 30 derniers jours. 👍',
+    relance: 'Personne à relancer — tout le monde est venu dans les 30 derniers jours.',
     meilleurs: 'Aucun passage encore enregistré.',
     espace: 'Personne n’a encore activé son espace client. Invite-les à installer l’app.',
     partenaires: 'Aucun employé rattaché à une entreprise. Onglet Entreprises pour en ajouter.',
-    sansvisite: 'Toutes les fiches ont au moins un passage. 👍',
+    sansvisite: 'Toutes les fiches ont au moins un passage.',
   };
   const peindre = () => {
     if (rech.cherche) { zone.innerHTML = '<div class="vide"><span class="tourne"></span></div>'; return; }
@@ -5172,7 +5371,7 @@ async function boiteLierEntreprise(client) {
   try { liste = await API.entreprises(); } catch (ex) { return toast(ex.message, true); }
   const partenaires = liste.filter(e => e.remise_pct > 0 || e.id === client.entreprise_id);
   const v = modale(`
-    <h3 class="ocr-h2">🤝 ${esc(client.nom || 'Ce client')}</h3>
+    <h3 class="ocr-h2">◆ ${esc(client.nom || 'Ce client')}</h3>
     <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Employé d'une entreprise partenaire ?
       La remise s'appliquera automatiquement à chaque passage — moto du showroom, moto d'un client,
       sa propre voiture, peu importe. Tout est tracé au journal.</p>
@@ -5245,6 +5444,202 @@ function boiteAjoutVehicule(client) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   CORRIGER UNE ERREUR DE COMPTOIR (13/08)
+   Un numéro mal tapé, une plaque fausse, une fiche créée deux fois : ça arrive
+   dans un atelier, et il faut pouvoir réparer sans appeler quelqu'un. Ce qui
+   ne s'efface jamais, en revanche, c'est l'argent : la base refuse de
+   supprimer une fiche qui a un passage non soldé ou un rendez-vous à venir,
+   et garde les passages même quand la fiche part.
+   ══════════════════════════════════════════════════════════════════════════ */
+async function rafraichirFiche(id) {
+  rech.fiche = await API.ficheClient(id);
+  rendre();
+}
+
+function boiteModifierClient(c) {
+  const v = modale(`
+    <h3 class="ocr-h2">Corriger la fiche</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Le numéro est la clé du client : fidélité, carnets,
+      espace client. S'il appartient déjà à quelqu'un d'autre, la base refusera — corrige alors la bonne fiche.</p>
+    <label class="ocr-champ"><span class="ocr-label">Nom</span>
+      <input class="ocr-saisie" id="mcNom" value="${esc(c.nom || '')}"></label>
+    <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
+      <input class="ocr-saisie" id="mcTel" inputmode="tel" value="${esc(telAffiche(c.telephone))}"></label>
+    <div style="display:grid;grid-template-columns:1fr;gap:0">
+      <label class="ocr-champ"><span class="ocr-label">E-mail
+          <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— facultatif</span></span>
+        <input class="ocr-saisie" id="mcMail" inputmode="email" value="${esc(c.email || '')}"></label>
+      <label class="ocr-champ"><span class="ocr-label">Note interne</span>
+        <input class="ocr-saisie" id="mcNote" value="${esc(c.note || '')}"></label>
+    </div>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Enregistrer</button></div>`);
+  brancherTel(v.querySelector('#mcTel'));
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const nom = v.querySelector('#mcNom').value.trim();
+    if (!nom) return toast('Le nom ne peut pas être vide.', true);
+    e.target.disabled = true;
+    try {
+      await API.modifierClient(c.id, {
+        nom, tel: telPropre(v.querySelector('#mcTel').value),
+        email: v.querySelector('#mcMail').value.trim(),
+        note: v.querySelector('#mcNote').value.trim(),
+      });
+      fermerModale(); toast('Fiche corrigée ✓');
+      await rafraichirFiche(c.id);
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
+}
+
+function boiteModifierVehicule(veh, c) {
+  if (!veh) return;
+  let gab = veh.gabarit;
+  const v = modale(`
+    <h3 class="ocr-h2">Corriger le véhicule</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">La plaque est rangée en majuscules sans espace :
+      c'est elle qui reconnaît un habitué à son arrivée. Une même plaque ne peut pas être sur deux fiches.</p>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+      ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-mvgab="${g.id}" aria-pressed="${gab === g.id}">${esc(g.court)}</button>`).join('')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Marque</span>
+        <input class="ocr-saisie" id="mvMarque" value="${esc(veh.marque || '')}"></label>
+      <label class="ocr-champ"><span class="ocr-label">Modèle</span>
+        <input class="ocr-saisie" id="mvModele" value="${esc(veh.modele || '')}"></label>
+    </div>
+    <label class="ocr-champ"><span class="ocr-label">Immatriculation</span>
+      <input class="ocr-saisie" id="mvImmat" value="${esc(veh.immatriculation || '')}" placeholder="${OCR.PLAQUE_EXEMPLES.voiture}">
+      <span class="ocr-aide" id="mvAide">Voiture : ${OCR.PLAQUE_EXEMPLES.voiture} · Moto : ${OCR.PLAQUE_EXEMPLES.moto}</span></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Enregistrer</button></div>`);
+  // Même esprit que sous le champ de la Saisie : ça guide, ça ne bloque pas.
+  const aide = () => {
+    const el = v.querySelector('#mvAide');
+    const et = OCR.plaqueEtat(v.querySelector('#mvImmat').value, gab);
+    el.innerHTML = et.vide
+      ? 'Voiture : ' + OCR.PLAQUE_EXEMPLES.voiture + ' · Moto : ' + OCR.PLAQUE_EXEMPLES.moto
+      // et.aide porte déjà son ✓ quand tout va bien : ne pas en ajouter un second
+      : '<span style="color:var(--ocr-' + (et.ok && et.accord ? 'vert' : 'ambre') + ')">' +
+        esc(et.aide) + '</span>';
+  };
+  v.querySelectorAll('[data-mvgab]').forEach(b => b.addEventListener('click', () => {
+    gab = b.dataset.mvgab;
+    v.querySelectorAll('[data-mvgab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.mvgab === gab)));
+    aide();
+  }));
+  brancherPlaque(v.querySelector('#mvImmat'), aide);
+  aide();
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    try {
+      await API.modifierVehicule(veh.id, {
+        gabarit: gab,
+        marque: v.querySelector('#mvMarque').value.trim(),
+        modele: v.querySelector('#mvModele').value.trim(),
+        immat: OCR.plaque(v.querySelector('#mvImmat').value),
+      });
+      fermerModale(); toast('Véhicule corrigé ✓');
+      await rafraichirFiche(c.id);
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
+}
+
+function boiteSupprimerVehicule(veh, c, nbPassages) {
+  if (!veh) return;
+  const nom = [veh.marque, veh.modele].filter(Boolean).join(' ') || 'ce véhicule';
+  const v = modale(`
+    <h3 class="ocr-h2">Retirer ${esc(nom)} ?</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      ${esc(veh.immatriculation || 'sans plaque')} · ${nbPassages} passage(s).
+      ${nbPassages ? 'Les passages restent au bilan, ils perdront juste le véhicule.'
+                   : 'Aucun passage : rien d\'autre ne bouge.'}</p>
+    ${nbPassages ? `<label class="ocr-champ"><span class="ocr-label">Motif</span>
+      <input class="ocr-saisie" id="svMotif" placeholder="Doublon, plaque saisie par erreur…"></label>` : ''}
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Retirer</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    const m = v.querySelector('#svMotif');
+    try {
+      await API.supprimerVehicule(veh.id, m ? m.value.trim() : null);
+      fermerModale(); toast('Véhicule retiré ✓');
+      await rafraichirFiche(c.id);
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
+}
+
+function boiteArchiverClient(c, nbPassages) {
+  const v = modale(`
+    <h3 class="ocr-h2">Archiver ${esc(c.nom || 'cette fiche')} ?</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Elle sort des listes et des recherches rapides.
+      ${nbPassages ? 'Ses ' + nbPassages + ' passage(s) et son historique restent intacts.' : ''}
+      Tu pourras la remettre à tout moment (filtre « Archivés »).</p>
+    <label class="ocr-champ"><span class="ocr-label">Raison
+        <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— facultatif</span></span>
+      <input class="ocr-saisie" id="acMotif" placeholder="Doublon, fiche de test, client parti…"></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Archiver</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    try {
+      await API.archiverClient(c.id, true, v.querySelector('#acMotif').value.trim());
+      fermerModale(); toast('Fiche archivée ✓');
+      rech.fiche = null; rech.liste = null; rendre();
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
+}
+
+function boiteSupprimerClient(c, nbPassages, nbVeh) {
+  const grave = nbPassages > 0;
+  const v = modale(`
+    <h3 class="ocr-h2" style="color:var(--ocr-rouge-texte)">Supprimer ${esc(c.nom || 'cette fiche')} ?</h3>
+    <div class="ocr-message ocr-message--${grave ? 'alerte' : 'succes'}" style="margin:10px 0 var(--ocr-e4)">
+      <span>${grave ? '⚠' : '✓'}</span><div>
+      ${grave
+        ? '<strong>Cette fiche a ' + nbPassages + ' passage(s).</strong><br>Les passages, la caisse et les bilans ' +
+          'ne bougent pas — ils resteront enregistrés sans nom de client. La fiche, ses ' + nbVeh +
+          ' véhicule(s), sa fidélité et son espace client, eux, disparaissent définitivement.' +
+          (peutCloturer() ? '' : '<br><strong>Seule la direction peut le faire.</strong> Archive-la plutôt.')
+        : '<strong>Aucun passage enregistré.</strong><br>C\'est bien une fiche créée par erreur : ' +
+          'sa suppression n\'a aucune conséquence sur la caisse.'}
+      </div></div>
+    ${grave ? `<label class="ocr-champ"><span class="ocr-label">Motif (obligatoire)</span>
+      <input class="ocr-saisie" id="scMotif" placeholder="Doublon de la fiche de …"></label>` : ''}
+    <p class="ocr-mini" style="margin:0 0 var(--ocr-e3)">Inscrit au journal, avec ton nom.</p>
+    <div style="display:flex;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      ${grave ? '<button class="ocr-btn ocr-btn--secondaire" data-archiver>⊘ Archiver plutôt</button>' : ''}
+      <button class="ocr-btn ocr-btn--primaire" data-ok
+        style="background:var(--ocr-rouge);border-color:var(--ocr-rouge)">Supprimer</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  const ba = v.querySelector('[data-archiver]');
+  if (ba) ba.addEventListener('click', () => { fermerModale(); boiteArchiverClient(c, nbPassages); });
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const m = v.querySelector('#scMotif');
+    if (grave && (!m || m.value.trim().length < 5)) return toast('Écris le motif — il part au journal.', true);
+    e.target.disabled = true;
+    try {
+      await API.supprimerClient(c.id, m ? m.value.trim() : null);
+      fermerModale(); toast('Fiche supprimée');
+      rech.fiche = null; rech.liste = null; rendre();
+    } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
+  });
+}
+
 /* ---------- entreprises : le carnet de prospection ---------- */
 const STATUTS_PRO = [
   ['prospect', 'À contacter', 'neutre'],
@@ -5297,7 +5692,7 @@ async function vueEntreprises(el) {
         <div class="ligne1">
           <strong style="font:600 15px/1.2 var(--ocr-texte)">${esc(e.nom)}</strong>
           <span class="ocr-pastille ocr-pastille--${ton}">${lab}</span>
-          ${e.remise_pct > 0 ? `<span class="ocr-pastille ocr-pastille--marque">🤝 employés −${e.remise_pct} %</span>` : ''}
+          ${e.remise_pct > 0 ? `<span class="ocr-pastille ocr-pastille--marque">◆ employés −${e.remise_pct} %</span>` : ''}
           ${e.flotte_estimee ? `<span class="ocr-mini">~${e.flotte_estimee} véhicules</span>` : ''}
         </div>
         ${employesDe(e.id).length ? `<div class="ocr-mini" style="margin-top:4px">
@@ -5344,7 +5739,7 @@ function boiteNouvelEmploye(e) {
   let gab = 'berline';
   const v = modale(`
     <h3 class="ocr-h2">＋ Employé — ${esc(e.nom)}</h3>
-    <div class="ocr-message ocr-message--succes" style="margin:10px 0 var(--ocr-e4)"><span>🤝</span><div>
+    <div class="ocr-message ocr-message--succes" style="margin:10px 0 var(--ocr-e4)"><span>◆</span><div>
       Il sera rattaché à ${esc(e.nom)} dès sa création : sa remise de
       <strong>${e.remise_pct || 0} %</strong> s'appliquera toute seule à chaque passage,
       quel que soit le véhicule qu'il amène.</div></div>
@@ -5403,7 +5798,7 @@ function boiteNouvelEmploye(e) {
 /* La remise employés d'une entreprise partenaire — direction/comptable. */
 function boiteRemisePartenaire(e) {
   const v = modale(`
-    <h3 class="ocr-h2">🤝 Remise employés — ${esc(e.nom)}</h3>
+    <h3 class="ocr-h2">◆ Remise employés — ${esc(e.nom)}</h3>
     <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Appliquée automatiquement à chaque passage
       des clients liés à cette entreprise. 0 = pas de remise. Changement tracé au journal.</p>
     <label class="ocr-champ"><span class="ocr-label">Pourcentage (0 à 100)</span>
@@ -5496,6 +5891,11 @@ function brancherFormEntreprise(el) {
   });
 }
 
+/* Qui peut corriger une erreur de comptoir : le manager (Samuel, et Abel quand
+   il le remplace), la comptabilité et la direction. Un technicien, non — la
+   base le refuse aussi, ce n'est pas qu'une affaire de bouton caché. */
+const peutCorrigerFiche = () => ['manager', 'comptable', 'direction'].includes(roleEffectif());
+
 function vueFicheClient() {
   const { client: c, vehicules: vs, passages: tous, fidelite: f } = rech.fiche;
   const ps = tous.filter(p => !p.annule);    // les annulés restent visibles mais ne comptent pas
@@ -5510,12 +5910,12 @@ function vueFicheClient() {
   // segments : lisibles d'un coup d'œil, calculés — jamais stockés
   const badges = [];
   if (c.entreprises && c.entreprises.remise_pct > 0)
-    badges.push(['🤝 ' + c.entreprises.nom + ' · −' + c.entreprises.remise_pct + ' %', 'marque']);
-  if (c.pin_pose_le) badges.push(['📱 Espace client actif', 'succes']);
+    badges.push(['◆ ' + c.entreprises.nom + ' · −' + c.entreprises.remise_pct + ' %', 'marque']);
+  if (c.pin_pose_le) badges.push(['✦ Espace client actif', 'succes']);
   if (depense >= 50000) badges.push(['★ VIP', 'marque']);
   else if (ps.length >= 5) badges.push(['Fidèle', 'succes']);
   if (jd != null && jd > 30) badges.push(['À relancer · ' + jd + ' j', 'erreur']);
-  if (reste === 0 && ps.length) badges.push(['🎁 Lavage offert dû', 'succes']);
+  if (reste === 0 && ps.length) badges.push(['★ Lavage offert dû', 'succes']);
 
   // message de relance : personnalisé, avec la carotte de la fidélité
   const resteTxt = reste > 0 && reste <= 3 ? ' Il ne vous manque que ' + String(reste).replace('.5', '½') +
@@ -5537,6 +5937,13 @@ function vueFicheClient() {
   $('#vue').innerHTML = `
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnRetourCli" style="margin-bottom:var(--ocr-e4)">‹ Retour</button>
 
+    ${c.archive_le ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>⊘</span><div>
+      <strong>Fiche archivée</strong> le ${dateFr(String(c.archive_le).slice(0, 10))}${
+        c.archive_motif ? ' — ' + esc(c.archive_motif) : ''}<br>
+      Elle n'apparaît plus dans les listes, mais rien n'est perdu : son historique est intact.
+      ${peutCorrigerFiche() ? '<br><button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" id="btnDesarchiver" style="margin-top:8px">Remettre dans les listes</button>' : ''}
+    </div></div>` : ''}
+
     <div class="ocr-carte">
       <div style="display:flex;align-items:flex-start;gap:var(--ocr-e3);flex-wrap:wrap">
         <div style="min-width:0">
@@ -5548,12 +5955,13 @@ function vueFicheClient() {
         <div style="flex:1;min-width:12px"></div>
         <div style="display:flex;gap:8px;flex:0 1 auto;flex-wrap:wrap">
           ${wa && jd != null && jd > 30 ? `<a class="ocr-btn ocr-btn--secondaire ocr-btn--petit" target="_blank" rel="noopener"
-              href="https://wa.me/${wa}?text=${encodeURIComponent(msgRelance)}">📣 Relancer</a>`
+              href="https://wa.me/${wa}?text=${encodeURIComponent(msgRelance)}">Relancer sur WhatsApp</a>`
             : wa ? `<a class="ocr-btn ocr-btn--fantome ocr-btn--petit" target="_blank" rel="noopener"
               href="https://wa.me/${wa}">WhatsApp</a>` : ''}
-          ${peutCloturer() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnLierEnt">🤝 Partenaire…</button>' : ''}
+          ${peutCloturer() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnLierEnt">◆ Partenaire…</button>' : ''}
           ${c.pin_pose_le && ['direction', 'comptable', 'manager'].includes(roleEffectif())
-            ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnResetCode">📱 Code oublié…</button>' : ''}
+            ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnResetCode">Code oublié…</button>' : ''}
+          ${peutCorrigerFiche() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnCorrigerCli">✎ Corriger</button>' : ''}
           <button class="ocr-btn ocr-btn--primaire ocr-btn--petit" id="btnNouveauPassage">Nouveau passage</button>
         </div>
       </div>
@@ -5565,7 +5973,7 @@ function vueFicheClient() {
       <div class="tuile"><div class="lab">Total dépensé</div><div class="val">${OCR.fcfa(depense)}</div>
         <div class="sub">Ticket moyen ${OCR.fcfa(ps.length ? Math.round(depense / ps.length) : 0)}</div></div>
       <div class="tuile"><div class="lab">Fidélité</div><div class="val">${tampons.toFixed(1).replace('.0', '')} / ${seuil}</div>
-        <div class="sub">${reste === 0 ? '🎁 Lavage offert à donner' : reste.toFixed(1).replace('.0', '') + ' avant le cadeau'}</div></div>
+        <div class="sub">${reste === 0 ? '★ Lavage offert à donner' : reste.toFixed(1).replace('.0', '') + ' avant le cadeau'}</div></div>
       <div class="tuile"><div class="lab">Véhicules</div><div class="val">${vs.length}</div>
         <div class="sub">${esc(vs.map(v => v.immatriculation).filter(Boolean).join(' · ') || '—')}</div></div>
     </div>
@@ -5588,17 +5996,22 @@ function vueFicheClient() {
       ${!vs.length ? '<p class="ocr-mini" style="margin:10px 0 0">Aucun véhicule enregistré — ajoute le sien pour que tout se relie.</p>' : ''}
       ${vs.map(v => {
         const st = parVeh[v.id] || { n: 0, total: 0 };
-        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap">
-          <span style="min-width:0">
-            <span style="font-weight:600;display:block">${esc([v.marque, v.modele].filter(Boolean).join(' ') || 'Véhicule')}
-              <span class="ocr-mini" style="font-weight:400">· ${esc(v.immatriculation || 'sans plaque')}</span></span>
-            <span class="ocr-mini">${esc(OCR.gabarit(v.gabarit) ? OCR.gabarit(v.gabarit).nom : v.gabarit)}</span>
+        return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${
+              esc([v.marque, v.modele].filter(Boolean).join(' ') || 'Véhicule')}</span>
+            <span class="ocr-mini" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${
+              esc(v.immatriculation || 'sans plaque')} · ${
+              esc(OCR.gabarit(v.gabarit) ? OCR.gabarit(v.gabarit).nom : v.gabarit)}</span>
           </span>
-          <span style="flex:1"></span>
-          <span style="text-align:right">
+          <span style="text-align:right;flex:none">
             <span style="font-weight:600;font-variant-numeric:tabular-nums;display:block">${OCR.fcfa(st.total)}</span>
             <span class="ocr-mini">${st.n} passage(s)</span>
           </span>
+          ${peutCorrigerFiche() ? `<span class="actions-veh">
+            <button data-vmod="${v.id}" title="Corriger ce véhicule" aria-label="Corriger ce véhicule">✎</button>
+            <button data-vsup="${v.id}" class="dgr" title="Retirer ce véhicule" aria-label="Retirer ce véhicule">✕</button>
+          </span>` : ''}
         </div>`;
       }).join('')}
     </div>
@@ -5614,16 +6027,50 @@ function vueFicheClient() {
           <span class="ocr-mini" style="width:46px;flex:none">${dateFr(p.journee)}</span>
           <span style="min-width:0;flex:1">
             <span style="font:600 13.5px/1.3 var(--ocr-texte);display:block${p.annule ? ';text-decoration:line-through' : ''}">${esc(nomPresta(p))}</span>
-            <span class="ocr-mini">${esc(p.reference)}${vehLabel ? ' · 🚗 ' + esc(vehLabel) : ''}${p.annule ? ' · annulé' : ''}</span>
+            <span class="ocr-mini">${esc(p.reference)}${vehLabel ? ' · ' + esc(vehLabel) : ''}${p.annule ? ' · annulé' : ''}</span>
           </span>
           <span style="font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap${
             p.annule ? ';text-decoration:line-through' : ''}">${OCR.fcfa(p.montant_total)}</span>
         </div>`;
       }).join('')
       : '<div class="vide">Aucun passage enregistré.</div>'}
-    </div>`;
+    </div>
+
+    ${peutCorrigerFiche() && !c.archive_le ? `
+    <div class="ocr-carte" style="margin-top:var(--ocr-e4);border-color:rgba(214,40,40,.28)">
+      <div class="ocr-surtitre">Cette fiche est une erreur ?</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">
+        ${ps.length
+          ? 'Elle a ' + ps.length + ' passage(s) : l\'archiver la retire des listes sans toucher à l\'historique. ' +
+            (peutCloturer() ? 'La supprimer efface la fiche — les passages et l\'argent restent au bilan.'
+                            : 'La supprimer demande la direction.')
+          : 'Aucun passage enregistré : elle peut être supprimée sans conséquence.'}
+      </p>
+      <div style="display:flex;gap:9px;flex-wrap:wrap">
+        <button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" id="btnArchiverCli">⊘ Archiver</button>
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnSupprimerCli"
+          style="color:var(--ocr-rouge-texte)">Supprimer la fiche…</button>
+      </div>
+    </div>` : ''}`;
 
   $('#btnAjoutVeh').addEventListener('click', () => boiteAjoutVehicule(c));
+  const bda = $('#btnDesarchiver');
+  if (bda) bda.addEventListener('click', async () => {
+    try { await API.archiverClient(c.id, false);
+      toast('Fiche remise dans les listes ✓');
+      rech.fiche = await API.ficheClient(c.id); rendre();
+    } catch (ex) { toast(ex.message, true); }
+  });
+  const bco = $('#btnCorrigerCli');
+  if (bco) bco.addEventListener('click', () => boiteModifierClient(c));
+  const bar = $('#btnArchiverCli');
+  if (bar) bar.addEventListener('click', () => boiteArchiverClient(c, ps.length));
+  const bsu = $('#btnSupprimerCli');
+  if (bsu) bsu.addEventListener('click', () => boiteSupprimerClient(c, ps.length, vs.length));
+  $('#vue').querySelectorAll('[data-vmod]').forEach(b => b.addEventListener('click', () =>
+    boiteModifierVehicule(vs.find(v => v.id === b.dataset.vmod), c)));
+  $('#vue').querySelectorAll('[data-vsup]').forEach(b => b.addEventListener('click', () =>
+    boiteSupprimerVehicule(vs.find(v => v.id === b.dataset.vsup), c, (parVeh[b.dataset.vsup] || {}).n || 0)));
   const ble = $('#btnLierEnt');
   if (ble) ble.addEventListener('click', () => boiteLierEntreprise(c));
   const brc = $('#btnResetCode');
