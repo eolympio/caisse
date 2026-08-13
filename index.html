@@ -1529,6 +1529,98 @@ function modeleCanon(marque, modele, gabarit) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   6 bis · RELIRE CE QUI A ÉTÉ ÉCRIT À LA MAIN (13/08)
+   Pour reprendre l'ancien cahier, il faut accepter que « Grand SUV »,
+   « grand suv », « 4x4 » et « pick up » désignent la même taille, et que
+   « Deep cleaning », « deep », « nettoyage profond » désignent la même
+   prestation. On ne demande pas au patron de parler comme la base.
+   ───────────────────────────────────────────────────────────── */
+const ALIAS_GABARIT = {
+  petite:      ['petite', 'petite berline', 'citadine', 'small', 'p'],
+  berline:     ['berline', 'berline suv compact', 'suv compact', 'suv', 'compact', 'b'],
+  grandsuv:    ['grand suv', 'grandsuv', 'gros suv', '4x4', 'pick up', 'pickup', 'pick-up', 'gs'],
+  camionnette: ['camionnette', 'camion', 'fourgon', 'van', 'minibus', 'bus', 'c'],
+  moto:        ['moto', 'motos', 'deux roues', '2 roues', 'scooter', 'm'],
+};
+function trouverGabarit(texte) {
+  const k = clefTexte(texte);
+  if (!k) return null;
+  for (const g of GABARITS) if (clefTexte(g.id) === k || clefTexte(g.court) === k || clefTexte(g.nom) === k) return g.id;
+  for (const [id, alias] of Object.entries(ALIAS_GABARIT))
+    if (alias.some(a => clefTexte(a) === k)) return id;
+  // en dernier ressort : le nom du gabarit contient ce qui est écrit
+  for (const g of GABARITS) if (clefTexte(g.nom).includes(k) && k.length >= 4) return g.id;
+  return null;
+}
+
+const ALIAS_PRESTATION = {
+  express:           ['express', 'lavage express', 'simple', 'basique', 'rapide'],
+  signature:         ['signature', 'lavage signature', 'complet', 'standard'],
+  deep:              ['deep', 'deep cleaning', 'deepcleaning', 'nettoyage profond', 'profond'],
+  interieur:         ['interieur', 'pack interieur', 'interieur seul', 'inside'],
+  exterieur:         ['exterieur', 'pack exterieur', 'exterieur seul'],
+  'moto-express':    ['moto express', 'lavage express moto', 'express moto'],
+  'moto-signature':  ['moto signature', 'lavage signature moto', 'signature moto'],
+  moteur:            ['moteur', 'lavage moteur'],
+  polissage:         ['polish', 'polissage', 'lustrage', 'correction'],
+  ceramique:         ['ceramique', 'protection ceramique', 'ceramic'],
+};
+function trouverPrestation(texte, gabarit) {
+  const k = clefTexte(texte);
+  if (!k) return null;
+  let id = null;
+  const p = PRESTATIONS.find(x => clefTexte(x.id) === k || clefTexte(x.nom) === k);
+  if (p) id = p.id;
+  if (!id) for (const [cle, alias] of Object.entries(ALIAS_PRESTATION))
+    if (alias.some(a => clefTexte(a) === k)) { id = cle; break; }
+  if (!id) id = PRESTATIONS.map(x => x.id).find(x => k.startsWith(clefTexte(x))) || null;
+  if (!id) return null;
+  // « Express » sur une moto, c'est le tarif moto — et l'inverse est vrai aussi :
+  // c'est la taille qui décide de quelle grille on parle.
+  if (gabarit === 'moto' && (id === 'express' || id === 'signature')) return 'moto-' + id;
+  if (gabarit && gabarit !== 'moto' && id.startsWith('moto-')) return id.slice(5);
+  return id;
+}
+
+/* Le mode de paiement tel qu'il est écrit sur la fiche papier :
+   « KKIAPAY », « MTN », « momo », « espèces », « cash », « carnet ». */
+const ALIAS_PAIEMENT = {
+  kkiapay: ['kkiapay', 'kkia', 'momo', 'mtn', 'mtn momo', 'moov', 'moov money', 'celtiis',
+            'mobile money', 'mobilemoney', 'mm', 'en ligne'],
+  especes: ['especes', 'espece', 'cash', 'liquide', 'main', 'en main', 'comptant'],
+  carnet:  ['carnet', 'abonnement', 'privilege'],
+};
+function trouverPaiement(texte) {
+  const k = clefTexte(texte);
+  if (!k) return null;
+  for (const [id, alias] of Object.entries(ALIAS_PAIEMENT))
+    if (alias.some(a => clefTexte(a) === k)) return id;
+  for (const [id, alias] of Object.entries(ALIAS_PAIEMENT))
+    if (alias.some(a => k.includes(clefTexte(a)) && clefTexte(a).length >= 4)) return id;
+  return null;
+}
+
+/* Une date écrite à la main : 13/08/2026, 13-08-26, 2026-08-13, 13.08.26 */
+function lireDate(texte) {
+  const t = String(texte || '').trim();
+  if (!t) return null;
+  let m = t.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  m = t.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (m) {
+    const an = m[3].length === 2 ? '20' + m[3] : m[3];
+    return `${an}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/* Un montant écrit à la main : « 8 000 », « 8000 F », « 8.000 », « 8 000 FCFA » */
+function lireMontant(texte) {
+  const n = String(texte == null ? '' : texte).replace(/[^\d]/g, '');
+  return n === '' ? null : parseInt(n, 10);
+}
+
+/* ─────────────────────────────────────────────────────────────
    7 · EXPORT
    ───────────────────────────────────────────────────────────── */
 const API = {
@@ -1546,6 +1638,7 @@ const API = {
   GROUPES_LAVAGE, groupeLavage,
   MARQUES, marques, modeles, marqueCanon, modeleCanon, trouverMarque, gabaritDe,
   poserCatalogue, catalogue, catalogueSource, clefTexte,
+  trouverGabarit, trouverPrestation, trouverPaiement, lireDate, lireMontant,
 };
 
 if (typeof module !== 'undefined' && module.exports) module.exports = API;
@@ -1756,7 +1849,7 @@ function creerClientDemo() {
     if (!ps.length) return null;
     const S = f => ps.filter(f).reduce((s, p) => s + p.montant_total, 0);
     return {
-      date: d, vehicules: ps.length,
+      date: d, vehicules: ps.reduce((s, p) => s + (p.quantite || 1), 0),
       ca: ps.reduce((s, p) => s + p.montant_total, 0),
       remises: ps.reduce((s, p) => s + p.remise, 0),
       encaisse: S(p => p.statut_paiement !== 'impaye'),
@@ -1775,7 +1868,8 @@ function creerClientDemo() {
       if (!p || p.annule) return;
       const k = p.journee + '|' + l.code;
       const o = g[k] || (g[k] = { journee: p.journee, prestation: l.code, nombre: 0, ca: 0, minutes_baie: 0 });
-      o.nombre++; o.ca += l.prix; o.minutes_baie += (l.duree_min || 0) + 15;
+      const q = p.quantite || 1;
+      o.nombre += q; o.ca += l.prix * q; o.minutes_baie += ((l.duree_min || 0) + 15) * q;
     });
     return Object.values(g).map(o => ({ ...o,
       f_par_heure_baie: o.minutes_baie > 0 ? Math.round(o.ca / (o.minutes_baie / 60)) : null }));
@@ -1783,18 +1877,57 @@ function creerClientDemo() {
   const tempsLavage = () => {
     const g = {};
     const m = t => { const [h, mi] = String(t).split(':').map(Number); return h * 60 + mi; };
-    D.passages.filter(p => !p.annule && p.heure_debut && p.heure_fin).forEach(p => {
+    D.passages.filter(p => !p.annule && !p.hors_mesure && p.heure_debut && p.heure_fin).forEach(p => {
       const l = D.passage_lignes.find(x => x.passage_id === p.id && x.type === 'prestation');
       if (!l) return;
-      const min = m(p.heure_fin) - m(p.heure_debut);
+      // un lot de 3 motos en 45 min, c'est 15 min PAR moto
+      const q = p.quantite || 1;
+      const min = (m(p.heure_fin) - m(p.heure_debut)) / q;
       if (min <= 0) return;
       const k = p.journee + '|' + l.code + '|' + p.gabarit;
       const o = g[k] || (g[k] = { journee: p.journee, prestation: l.code, gabarit: p.gabarit, nombre: 0, somme: 0, minutes_max: 0 });
-      o.nombre++; o.somme += min; o.minutes_max = Math.max(o.minutes_max, min);
+      o.nombre += q; o.somme += min * q; o.minutes_max = Math.max(o.minutes_max, Math.round(min));
     });
     return Object.values(g).map(o => ({ journee: o.journee, prestation: o.prestation, gabarit: o.gabarit,
       nombre: o.nombre, minutes_moyennes: Math.round(o.somme / o.nombre), minutes_max: o.minutes_max }));
   };
+  /* Les lavages qui manquent aux moyennes, et pourquoi (13/08). */
+  const lavagesSansMesure = () => D.passages
+    .filter(p => !p.annule && (p.hors_mesure ||
+      (p.statut_atelier === 'livre' && (!p.heure_debut || !p.heure_fin))))
+    .map(p => {
+      const l = D.passage_lignes.find(x => x.passage_id === p.id && x.type === 'prestation') || {};
+      const v = D.vehicules.find(x => x.id === p.vehicule_id) || {};
+      const me = D.employes.find(e => e.id === p.mesure_par);
+      const se = D.employes.find(e => e.id === p.saisi_par);
+      return { id: p.id, reference: p.reference, journee: p.journee, gabarit: p.gabarit,
+        montant_total: p.montant_total, origine: p.origine || 'caisse',
+        hors_mesure: !!p.hors_mesure, mesure_motif: p.mesure_motif || null,
+        sans_chrono_motif: p.sans_chrono_motif || null, mesure_le: p.mesure_le || null,
+        import_lot: p.import_lot || null, heure_debut: p.heure_debut || null,
+        heure_fin: p.heure_fin || null, statut_atelier: p.statut_atelier,
+        decide_par: (me && me.nom) || '', saisi_par_nom: (se && se.nom) || '',
+        prestation: l.code || null, prestation_nom: l.libelle || null,
+        immatriculation: v.immatriculation || null, marque: v.marque || null, modele: v.modele || null,
+        raison: p.hors_mesure ? (p.origine === 'import' ? 'import' : 'ecarte') : 'sans_chrono' };
+    });
+
+  const lavagesChronometres = () => {
+    const m = t => { const [h, mi] = String(t).split(':').map(Number); return h * 60 + mi; };
+    return D.passages
+      .filter(p => !p.annule && !p.hors_mesure && p.heure_debut && p.heure_fin &&
+                   m(p.heure_fin) > m(p.heure_debut))
+      .map(p => {
+        const l = D.passage_lignes.find(x => x.passage_id === p.id && x.type === 'prestation') || {};
+        const v = D.vehicules.find(x => x.id === p.vehicule_id) || {};
+        return { id: p.id, reference: p.reference, journee: p.journee, gabarit: p.gabarit,
+          montant_total: p.montant_total, heure_debut: p.heure_debut, heure_fin: p.heure_fin,
+          minutes: m(p.heure_fin) - m(p.heure_debut),
+          prestation: l.code || null, prestation_nom: l.libelle || null, reference_min: l.duree_min || null,
+          immatriculation: v.immatriculation || null, marque: v.marque || null, modele: v.modele || null };
+      });
+  };
+
   const fidelite = () => {
     const g = {};
     D.passages.filter(p => p.statut_atelier === 'livre' && !p.annule).forEach(p => {
@@ -1838,16 +1971,37 @@ function creerClientDemo() {
   // modèle × taille, l'app somme sur la période affichée.
   const statsParc = () => {
     const g = {};
-    D.passages.filter(p => !p.annule).forEach(p => {
+    // le parc d'un concessionnaire partenaire est du STOCK, pas de la clientèle :
+    // mélangé, il écraserait les classements de marques et de tailles (13/08).
+    D.passages.filter(p => !p.annule && !p.parc_partenaire).forEach(p => {
       const v = D.vehicules.find(x => x.id === p.vehicule_id) || {};
       const marque = (v.marque || '').trim() || '?';
       const modele = (v.modele || '').trim() || '';
+      const q = p.quantite || 1;
       const k = [p.journee, p.gabarit, marque, modele].join('|');
       const o = g[k] || (g[k] = { journee: p.journee, gabarit: p.gabarit, marque, modele,
                                   passages: 0, ca: 0, minutes: 0 });
-      o.passages++; o.ca += p.montant_total || 0;
+      o.passages += q; o.ca += p.montant_total || 0;
       o.minutes += D.passage_lignes.filter(l => l.passage_id === p.id)
-                     .reduce((sm, l) => sm + (l.duree_min || 0), 0);
+                     .reduce((sm, l) => sm + (l.duree_min || 0), 0) * q;
+    });
+    return Object.values(g);
+  };
+
+  /* Qui est venu du parc partenaire, avec combien de véhicules (13/08). */
+  const parcPartenaire = () => {
+    const g = {};
+    D.passages.filter(p => !p.annule && p.parc_partenaire).forEach(p => {
+      const c = D.clients.find(x => x.id === p.client_id); if (!c) return;
+      const e = D.entreprises.find(x => x.id === c.entreprise_id); if (!e) return;
+      const l = D.passage_lignes.find(x => x.passage_id === p.id && x.type === 'prestation') || {};
+      const k = [p.journee, e.id, c.id, p.gabarit, l.code].join('|');
+      const o = g[k] || (g[k] = { journee: p.journee, entreprise_id: e.id, entreprise: e.nom,
+        remise_pct: e.remise_pct, employe_id: c.id, employe: c.nom, telephone: c.telephone,
+        gabarit: p.gabarit, prestation: l.code || null, prestation_nom: l.libelle || null,
+        vehicules: 0, passages: 0, ca: 0, remise: 0 });
+      o.vehicules += p.quantite || 1; o.passages++;
+      o.ca += p.montant_total || 0; o.remise += p.remise || 0;
     });
     return Object.values(g);
   };
@@ -1873,6 +2027,9 @@ function creerClientDemo() {
       if (table === 'v_fidelite')        return fidelite();
       if (table === 'v_clients_stats')   return clientsStats();
       if (table === 'v_stats_parc')      return statsParc();
+      if (table === 'v_lavages_sans_mesure')  return lavagesSansMesure();
+      if (table === 'v_lavages_chronometres') return lavagesChronometres();
+      if (table === 'v_parc_partenaire')      return parcPartenaire();
       if (table === 'passages')          return D.passages.map(lier);
       if (table === 'vehicules')         return D.vehicules.map(v =>
         ({ ...v, clients: D.clients.find(c => c.id === v.client_id) || null }));
@@ -2324,10 +2481,90 @@ function creerClientDemo() {
         p.statut_atelier = 'en_cours'; p.heure_debut = p.heure_debut || h;
       } else if (a.p_vers === 'pret' && p.statut_atelier === 'en_cours') {
         p.statut_atelier = 'pret'; p.heure_fin = p.heure_fin || h;
+      } else if (a.p_vers === 'livre' && p.statut_atelier === 'attente') {
+        // le chrono n'a jamais tourné : on livre avec un motif, sans inventer d'heures
+        if (!String(a.p_motif || '').trim()) throw new Error('MOTIF_REQUIS : le chrono n\'a pas été lancé, il faut dire pourquoi');
+        p.statut_atelier = 'livre'; p.heure_livraison = h; p.sans_chrono_motif = String(a.p_motif).trim();
+        D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+          quoi: 'Lavage ' + p.reference + ' livré sans chrono — ' + p.sans_chrono_motif, entite: 'passage', entite_id: p.id });
       } else if (a.p_vers === 'livre' && ['pret', 'en_cours'].includes(p.statut_atelier)) {
         p.statut_atelier = 'livre'; p.heure_fin = p.heure_fin || h; p.heure_livraison = h;
       } else throw new Error('Enchaînement impossible : ' + p.statut_atelier + ' → ' + a.p_vers);
       return [];
+    },
+    ocr_mesure_passage(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seule la direction peut sortir un lavage des mesures');
+      const p = D.passages.find(x => x.id === a.p_passage);
+      if (!p) throw new Error('Lavage introuvable');
+      if (a.p_hors && !String(a.p_motif || '').trim()) throw new Error('Le motif est obligatoire');
+      p.hors_mesure = !!a.p_hors;
+      p.mesure_motif = a.p_hors ? String(a.p_motif).trim() : null;
+      p.mesure_par = emp.id; p.mesure_le = new Date().toISOString();
+      D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: a.p_hors ? 'Lavage ' + p.reference + ' sorti des mesures de temps — ' + p.mesure_motif
+                       : 'Lavage ' + p.reference + ' remis dans les mesures de temps',
+        entite: 'passage', entite_id: p.id });
+      return [];
+    },
+    ocr_importer_lavages(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seule la direction peut importer des lavages');
+      const lignes = a.p_lignes || [];
+      if (!Array.isArray(lignes) || !lignes.length) throw new Error('Aucune ligne à importer');
+      const d = new Date();
+      const lot = a.p_lot || ('IMP-' + d.toLocaleDateString('en-CA').slice(2).replace(/-/g, '') + '-' +
+                              d.toTimeString().slice(0, 8).replace(/:/g, ''));
+      if (D.passages.some(p => p.import_lot === lot)) throw new Error('Ce lot a déjà été importé');
+      let n = 0;
+      lignes.forEach(l => {
+        if (!l.date) throw new Error('Ligne sans date');
+        if (!D.journees.find(j => j.date === l.date))
+          D.journees.push({ date: l.date, statut: 'fermee', note: 'Journée reprise de l\'ancien cahier (import ' + lot + ')' });
+        let veh = null;
+        const immat = String(l.immatriculation || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase() || null;
+        if (immat) veh = D.vehicules.find(v => v.immatriculation === immat) || null;
+        if (!veh && (immat || String(l.marque || '').trim())) {
+          veh = { id: uid(), client_id: null, immatriculation: immat,
+                  marque: l.marque || null, modele: l.modele || null, gabarit: l.gabarit };
+          D.vehicules.push(veh);
+        }
+        const p = { id: uid(), reference: 'IMP-' + (1000 + D.passages.length + n),
+          client_id: null, vehicule_id: veh ? veh.id : null, journee: l.date, gabarit: l.gabarit,
+          heure_arrivee: (l.heure || '12:00') + ':00', heure_debut: null, heure_fin: null,
+          montant_brut: l.montant, remise: 0, montant_total: l.montant,
+          statut_atelier: 'livre', statut_paiement: 'paye',
+          mode_paiement: ['kkiapay', 'especes', 'carnet'].includes(l.paiement) ? l.paiement : 'historique',
+          equipe: [], note: l.note || null, saisi_par: emp.id, annule: false,
+          hors_mesure: true, mesure_motif: 'Lavage repris de l\'ancien cahier — aucun chrono',
+          mesure_par: emp.id, mesure_le: new Date().toISOString(),
+          origine: 'import', import_lot: lot };
+        D.passages.push(p);
+        D.passage_lignes.push({ id: uid(), passage_id: p.id, type: 'prestation', code: l.code,
+          libelle: l.libelle, prix: l.montant, duree_min: l.duree || null });
+        n++;
+      });
+      D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: n + ' lavage(s) repris de l\'ancien cahier — lot ' + lot, entite: 'import' });
+      return [{ nb_importes: n, nb_lignes: lignes.length, lot_ref: lot }];
+    },
+    ocr_annuler_import(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seule la direction peut annuler un import');
+      let n = 0;
+      D.passages.filter(p => p.import_lot === a.p_lot && p.origine === 'import' && !p.annule).forEach(p => {
+        p.annule = true; p.annule_motif = 'Import annulé (' + a.p_lot + ')';
+        p.annule_par = emp.id; p.annule_le = new Date().toISOString(); n++;
+      });
+      D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Import ' + a.p_lot + ' annulé — ' + n + ' lavage(s)', entite: 'import' });
+      return n;
     },
     ocr_changer_photo(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -2342,6 +2579,7 @@ function creerClientDemo() {
       return [];
     },
     ocr_enregistrer_passage(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       const j = D.journees.find(x => x.date === jourCourant);
       if (j && j.statut !== 'ouverte') throw new Error('Journée ' + jourCourant + ' clôturée : modification impossible');
       const lignes = a.p_lignes || [];
@@ -2387,17 +2625,20 @@ function creerClientDemo() {
             entite: 'client', entite_id: cl.id });
         }
       }
-      if (!ve && !plaque) {
+      /* Parc d'un partenaire SANS plaque : ces véhicules sont au concessionnaire
+         et seront vendus — on ne leur fabrique AUCUNE fiche au nom de l'employé. */
+      const parc = !!a.p_parc && !plaque;
+      if (!ve && !plaque && !parc) {
         // pas de plaque : on réutilise le véhicule sans plaque du même gabarit
         ve = D.vehicules.find(v => v.client_id === cl.id && !v.immatriculation && v.gabarit === a.p_gabarit);
       }
-      if (!ve) {
+      if (!ve && !parc) {
         ve = { id: uid(), client_id: cl.id, gabarit: a.p_gabarit,
                marque: String(a.p_marque || '').trim() || null,
                modele: String(a.p_modele || '').trim() || null,
                immatriculation: plaque || null };
         D.vehicules.push(ve);
-      } else {
+      } else if (ve) {
         // on remplit les trous, jamais on n'écrase — et la taille se corrige
         // seulement sur un véhicule encore anonyme (créé sur la seule plaque)
         const anonyme = !ve.marque;
@@ -2405,7 +2646,9 @@ function creerClientDemo() {
         ve.modele = ve.modele || (String(a.p_modele || '').trim() || null);
         if (anonyme && ve.marque) ve.gabarit = a.p_gabarit || ve.gabarit;
       }
-      const brut = lignes.reduce((s, l) => s + l.prix, 0);
+      // les lignes portent le prix D'UN véhicule ; le brut suit la quantité
+      const q = Math.max(1, Math.min(50, Number(a.p_quantite) || 1));
+      const brut = lignes.reduce((s, l) => s + l.prix, 0) * q;
       const remise = Math.min(Math.max(0, a.p_remise || 0), brut);
       // Comme en base : remise = motif obligatoire, sauf remise partenaire exacte.
       if (remise > 0) {
@@ -2415,11 +2658,14 @@ function creerClientDemo() {
           throw new Error('Une remise doit être justifiée — indique le motif');
       }
       const id = uid(), r = ref();
-      D.passages.push({ id, reference: r, journee: jourCourant, client_id: cl.id, vehicule_id: ve.id,
+      D.passages.push({ id, reference: r, journee: jourCourant, client_id: cl.id,
+        vehicule_id: parc || !ve ? null : ve.id,
         gabarit: a.p_gabarit, heure_arrivee: new Date().toTimeString().slice(0, 8),
         heure_debut: null, heure_fin: null,
         montant_brut: brut, remise, montant_total: brut - remise,
-        statut_atelier: 'attente', statut_paiement: 'impaye', mode_paiement: null, equipe: a.p_equipe || [] });
+        statut_atelier: 'attente', statut_paiement: 'impaye', mode_paiement: null,
+        equipe: a.p_equipe || [], saisi_par: emp ? emp.id : null,
+        quantite: q, parc_partenaire: parc });
       lignes.forEach(l => D.passage_lignes.push({ id: uid(), passage_id: id, ...l }));
       if (a.p_reservation) {
         const resa = D.reservations.find(x => x.reference === String(a.p_reservation).toUpperCase().trim());
@@ -2562,6 +2808,9 @@ function creerClientDemo() {
       updateUser() { return Promise.resolve({ data: {}, error: null }); },
     },
     from: requete,
+    // les données de la démonstration, pour que les tests puissent vérifier
+    // ce qui a VRAIMENT été écrit (jamais utilisé par l'application elle-même)
+    __D: D,
     rpc(nom, args) {
       try { return Promise.resolve({ data: RPC[nom](args || {}), error: null }); }
       catch (ex) { return Promise.resolve({ data: null, error: { message: ex.message } }); }
@@ -2591,7 +2840,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v38';
+const VERSION = 'v41';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -2709,6 +2958,7 @@ let jourVu = auj();                          // jour affiché dans Journée et C
 
 const decaleJour = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toLocaleDateString('en-CA'); };
 const jourLong = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const jourBref = d => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
 
 /* ---------- petites briques d'interface ---------- */
 function toast(msg, erreur) {
@@ -3410,7 +3660,32 @@ const API = {
   cloturer:    a => sb.rpc('ocr_cloturer_journee', a),
   annuler:     a => sb.rpc('ocr_annuler_passage', a),
   // L'heure de début/fin est tamponnée PAR LE SERVEUR : le chrono est incontestable.
-  avancer: (id, statut) => sb.rpc('ocr_avancer_passage', { p_passage: id, p_vers: statut }),
+  // Le motif ne sert que dans un cas : livrer un véhicule dont le chrono n'a
+  // jamais été lancé. On ne fabrique alors AUCUNE heure — un lavage sans
+  // chrono n'a pas de temps, il est juste signalé à la direction.
+  avancer: (id, statut, motif) => sb.rpc('ocr_avancer_passage',
+    { p_passage: id, p_vers: statut, p_motif: motif || null }),
+  // Sortir / remettre un lavage dans les mesures de temps — direction seule.
+  mesurePassage: (id, hors, motif) => sb.rpc('ocr_mesure_passage',
+    { p_passage: id, p_hors: hors, p_motif: motif || null }),
+  importerLavages: (lignes, lot) => sb.rpc('ocr_importer_lavages',
+    { p_lignes: lignes, p_lot: lot || null }),
+  annulerImport: lot => sb.rpc('ocr_annuler_import', { p_lot: lot }),
+  async lavagesSansMesure(du) {
+    const { data } = await sb.from('v_lavages_sans_mesure').select('*')
+      .gte('journee', du).order('journee', { ascending: false });
+    return data || [];
+  },
+  /* Qui est venu du parc d'un partenaire, avec combien de véhicules (13/08). */
+  async parcPartenaire(du) {
+    const { data } = await sb.from('v_parc_partenaire').select('*').gte('journee', du);
+    return data || [];
+  },
+  async lavagesChronometres(du) {
+    const { data } = await sb.from('v_lavages_chronometres').select('*')
+      .gte('journee', du).order('journee', { ascending: false });
+    return data || [];
+  },
   async tempsLavage(du) {
     const { data } = await sb.from('v_temps_lavage').select('*').gte('journee', du);
     return data || [];
@@ -3998,7 +4273,7 @@ window.addEventListener('popstate', () => {
    change sans clignoter. */
 
 // Les onglets ne dépendent que du rôle : calcul immédiat, sans réseau.
-const SOUS_DIRECTION = ['direction', 'bilan', 'cloture', 'journal', 'pointage', 'catalogue'];
+const SOUS_DIRECTION = ['direction', 'bilan', 'cloture', 'journal', 'pointage', 'catalogue', 'temps', 'import'];
 let badgeRdv = 0;   // dernier compte connu de rendez-vous en attente d'acompte
 function ongletsDuRole() {
   // Un technicien n'a que son pointage — sauf le remplaçant, le jour de
@@ -4099,6 +4374,8 @@ async function rendre(discret) {
     if (onglet === 'journal')   await vueJournal();
     if (onglet === 'pointage')  await vuePointage();
     if (onglet === 'catalogue')  await vueCatalogue();
+    if (onglet === 'temps')      await vueControleTemps();
+    if (onglet === 'import')     await vueImport();
   } catch (ex) {
     // Jamais d'écran mort : même quand le chargement échoue, il y a un bouton
     // pour réessayer (et les onglets du bas restent utilisables).
@@ -4122,8 +4399,29 @@ const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque:
                parPlaque: false,  // le client a été reconnu par la plaque, pas par le téléphone
                gabaritManuel: false, gabaritDeduit: null, gabaritDesaccord: null,   // taille : choisie, déduite, ou en désaccord
                prestation: null, options: [], equipe: [], remise: 0, motifRemise: '', manuel: 0,
+               quantite: 1,       // plusieurs véhicules identiques (parc Ehu Motors)
                note: '', reservation: null };
 
+/* « 3 motos », « 3 véhicules » — le mot juste, au pluriel quand il le faut. */
+function lotTexte(q, gabarit) {
+  if (!q || q <= 1) return '';
+  return q + (gabarit === 'moto' ? ' motos' : ' véhicules');
+}
+
+/* L'entreprise partenaire du client reconnu — vraie dès qu'on sait QUI est là,
+   sans attendre qu'une prestation soit choisie (T.partenaire, lui, dépend du
+   montant : il sert à afficher la remise, pas à reconnaître la personne). */
+function partenaireDe(c) {
+  const e = c && c.entreprises;
+  return e && e.remise_pct > 0 ? e : null;
+}
+
+/* Combien de véhicules identiques dans ce passage. Une plaque = un véhicule :
+   dès qu'une plaque est saisie, la quantité retombe à 1. */
+function quantiteForm() {
+  if (OCR.plaque(form.immat)) return 1;
+  return Math.max(1, Math.min(50, Number(form.quantite) || 1));
+}
 function totalForm() {
   let cat = 0, devis = 0;
   if (form.prestation) {
@@ -4131,13 +4429,15 @@ function totalForm() {
     if (p == null) devis++; else cat += p;
     form.options.forEach(o => { const op = OCR.option(o); if (op) cat += op.prix; });
   }
-  const brut = cat + Math.max(0, Number(form.manuel) || 0);
+  const unite = cat + Math.max(0, Number(form.manuel) || 0);   // le prix d'UN véhicule
+  const q = quantiteForm();
+  const brut = unite * q;
   // Employé d'une entreprise partenaire (Ehu Motors…) : la remise suit la
   // PERSONNE, quel que soit le véhicule. Le champ Remise peut la remplacer.
   const ent = form.clientTrouve && form.clientTrouve.entreprises;
   const auto = ent && ent.remise_pct > 0 ? Math.round(brut * ent.remise_pct / 100) : 0;
   const remise = Math.min(Number(form.remise) > 0 ? Number(form.remise) : auto, brut);
-  return { brut, remise, total: brut - remise, devis,
+  return { unite, q, brut, remise, total: brut - remise, devis,
            partenaire: auto > 0 && !(Number(form.remise) > 0) ? ent : null };
 }
 
@@ -4196,8 +4496,32 @@ async function vueSaisie(j) {
                  placeholder="${form.gabarit === 'moto' ? OCR.PLAQUE_EXEMPLES.moto : OCR.PLAQUE_EXEMPLES.voiture}"
                  enterkeyhint="done">
           <span class="ocr-aide" id="aideImmat">${aideImmat()}</span></label>
+        ${/* LE PARC D'UN PARTENAIRE (13/08) — « pas besoin de mettre la plaque,
+             sinon ça peut porter à confusion si ils viennent laver une moto
+             qu'ils vont mettre en circulation plus tard à un client » (Edwin).
+             Ces motos appartiennent au concessionnaire et seront vendues :
+             leur créer une fiche véhicule au nom de l'employé serait faux. */''}
+        ${(() => { const P = partenaireDe(form.clientTrouve); return P && !OCR.plaque(form.immat) ? `
+        <div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e3)"><span>◆</span><div>
+          <strong>Véhicules du parc ${esc(P.nom)}</strong> — pas de plaque à saisir : ces véhicules
+          appartiennent au concessionnaire et peuvent partir chez un client demain.
+          Si c'est le véhicule <strong>personnel</strong> de ${esc((form.clientTrouve || {}).nom || 'l’employé')},
+          tape sa plaque : la remise ${P.remise_pct} % s'applique quand même.</div></div>` : ''; })()}
         ${form.vehTrouve && form.vehTrouve.id ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
           id="fHistoVeh" style="margin-bottom:var(--ocr-e3)">Historique de ce véhicule ›</button>` : ''}
+        ${/* Plusieurs véhicules identiques d'un coup : un seul enregistrement,
+             un seul chrono, un seul encaissement — mais N véhicules comptés. */''}
+        ${!OCR.plaque(form.immat) ? `
+        <p class="ocr-mini" style="margin:var(--ocr-e3) 0 7px">Combien de véhicules ${
+          partenaireDe(form.clientTrouve) ? '<strong style="color:var(--ocr-blanc)">du parc</strong> ' : ''}identiques ?</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:var(--ocr-e3)">
+          ${[1, 2, 3, 4, 5].map(n => `<button class="ocr-chip" data-qte="${n}"
+            aria-pressed="${T.q === n}">${n}</button>`).join('')}
+          <input class="ocr-saisie" id="fQte" type="number" min="1" max="50" inputmode="numeric"
+                 value="${T.q}" style="width:74px;padding:9px 10px;text-align:center">
+        </div>
+        ${T.q > 1 ? `<p class="ocr-mini" style="margin:0 0 var(--ocr-e3);color:var(--ocr-vert)">
+          ✓ ${T.q} véhicules sur un seul enregistrement — un chrono, un encaissement.</p>` : ''}` : ''}
         ${form.clientTrouve && (form.vehsClient || []).length > 1 ? `
         <p class="ocr-mini" style="margin:var(--ocr-e3) 0 8px">Ses autres véhicules :</p>
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e3)">
@@ -4311,7 +4635,8 @@ async function vueSaisie(j) {
         <div>
           <div class="ocr-mini">Total à encaisser</div>
           <div style="font:700 22px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(T.total)}</div>
-          ${T.remise ? `<div class="ocr-mini">Brut ${OCR.fcfa(T.brut)} − remise ${OCR.fcfa(T.remise)}${
+          ${T.q > 1 ? `<div class="ocr-mini">${T.q} × ${OCR.fcfa(T.unite)} = ${OCR.fcfa(T.brut)}</div>` : ''}
+          ${T.remise ? `<div class="ocr-mini">${T.q > 1 ? '' : 'Brut ' + OCR.fcfa(T.brut) + ' '}− remise ${OCR.fcfa(T.remise)}${
             T.partenaire ? ' · ' + esc(T.partenaire.nom) + ' ' + T.partenaire.remise_pct + ' %' : ''}</div>` : ''}
         </div>
         <div style="flex:1"></div>
@@ -4335,7 +4660,8 @@ async function vueSaisie(j) {
          Si ce client n'a qu'UN véhicule connu, c'est presque sûrement celui-là :
          on remplit la plaque au lieu de la lui faire retaper. Deux véhicules ou
          plus → on affiche les pastilles « Ses autres véhicules » et il choisit. */
-      const seul = form.vehsClient.length === 1 ? form.vehsClient[0] : null;
+      const seul = form.vehsClient.length === 1 && !partenaireDe(form.clientTrouve)
+                 ? form.vehsClient[0] : null;
       if (seul && !form.immat) {
         Object.assign(form, {
           immat: OCR.plaque(seul.immatriculation || ''),
@@ -4358,6 +4684,14 @@ async function vueSaisie(j) {
   const elAutre = $('#fAutreClient');
   if (elAutre) elAutre.addEventListener('click', () => {
     Object.assign(form, { tel: '', nom: '', clientTrouve: null, vehsClient: [], parPlaque: false });
+    vueSaisie(j);
+  });
+  $('#vue').querySelectorAll('[data-qte]').forEach(b => b.addEventListener('click', () => {
+    form.quantite = Number(b.dataset.qte); vueSaisie(j);
+  }));
+  const elQ = $('#fQte');
+  if (elQ) elQ.addEventListener('change', e => {
+    form.quantite = Math.max(1, Math.min(50, Number(e.target.value) || 1));
     vueSaisie(j);
   });
   $('#vue').querySelectorAll('[data-vcli]').forEach(b => b.addEventListener('click', () => {
@@ -4494,13 +4828,16 @@ async function enregistrer() {
       p_marque: form.marque, p_modele: form.modele, p_immat: OCR.plaque(form.immat) || null,
       p_equipe: form.equipe, p_note: form.note,
       p_reservation: form.reservation,
+      p_quantite: T.q,
+      // parc du partenaire : des motos d'Ehu, pas le véhicule de l'employé
+      p_parc: !!(partenaireDe(form.clientTrouve) && !OCR.plaque(form.immat)),
     });
     if (error) throw error;
     const r = Array.isArray(data) ? data[0] : data;
     const sansClient = !form.tel && !(form.clientTrouve && form.clientTrouve.id);
-    toast(r.reference + ' enregistré · ' + OCR.fcfa(r.montant_total) +
+    toast(r.reference + ' enregistré · ' + (T.q > 1 ? T.q + ' véhicules · ' : '') + OCR.fcfa(r.montant_total) +
       (sansClient && form.immat ? ' — fiche « Véhicule ' + form.immat +' » à compléter' : ''));
-    Object.assign(form, { tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
+    Object.assign(form, { quantite: 1, tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
                           vehTrouve: null,
                           prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0,
                           note: '', reservation: null });
@@ -4625,6 +4962,8 @@ async function vueJournee(j) {
     if (error) toast(error.message, true); else toast('Statut mis à jour');
     rendre();
   }));
+  $('#vue').querySelectorAll('[data-sanschrono]').forEach(b =>
+    b.addEventListener('click', () => boiteSansChrono(b.dataset.sanschrono, b.dataset.ref)));
   $('#vue').querySelectorAll('[data-encaisser]').forEach(b =>
     b.addEventListener('click', () => boiteEncaissement(b.dataset.encaisser, Number(b.dataset.montant))));
   $('#vue').querySelectorAll('[data-annuler]').forEach(b =>
@@ -4655,17 +4994,28 @@ function ficheePassage(p, verrou) {
     <div class="ligne1">
       <span style="font:600 14.5px/1.2 var(--ocr-texte)">${esc(c.nom || 'Client de passage')}</span>
       <span class="ocr-pastille ocr-pastille--${et[1]}">${et[0]}</span>
+      ${p.quantite > 1 ? `<span class="ocr-pastille ocr-pastille--marque">${lotTexte(p.quantite, p.gabarit)}</span>` : ''}
       <span class="ocr-pastille ocr-pastille--${paye ? 'succes' : 'erreur'}">${
         p.statut_paiement === 'carnet' ? 'Carnet' : paye ? 'Payé · ' + (p.mode_paiement === 'kkiapay' ? 'KKiapay' : 'Espèces') : 'Non payé'}</span>
       <span style="margin-left:auto;font:700 16px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(p.montant_total)}</span>
     </div>
     <div class="ocr-mini" style="margin-top:4px">${heureCourte(p.heure_arrivee)} · ${esc(p.reference)}${
-      v.marque ? ' · ' + esc(v.marque + ' ' + (v.modele || '')) : ''}${v.immatriculation ? ' · ' + esc(v.immatriculation) : ''}</div>
+      v.marque ? ' · ' + esc(v.marque + ' ' + (v.modele || '')) : ''}${v.immatriculation ? ' · ' + esc(v.immatriculation) : ''}${
+      p.parc_partenaire ? ' · parc partenaire' : ''}</div>
     <div class="ocr-petit" style="margin-top:5px">${esc(presta)}${opts ? ' <span class="ocr-mini">+ ' + esc(opts) + '</span>' : ''}</div>
     ${(() => { const lc = ligneChrono(p); return lc ? '<div style="margin-top:5px">' + lc + '</div>' : ''; })()}
+    ${p.hors_mesure ? `<div class="ocr-mini" style="margin-top:5px;color:var(--ocr-argent-2)">
+      ⊘ Hors mesure de temps${p.mesure_motif ? ' — ' + esc(p.mesure_motif) : ''}</div>` : ''}
+    ${!p.hors_mesure && p.sans_chrono_motif ? `<div class="ocr-mini" style="margin-top:5px;color:var(--ocr-ambre)">
+      ⏱ Livré sans chrono — ${esc(p.sans_chrono_motif)}</div>` : ''}
     ${verrou ? '' : `<div class="actions">
       ${p.statut_atelier === 'attente' ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
         data-avance="${p.id}" data-vers="en_cours">▶ Commencer</button>` : ''}
+      ${/* La voiture est partie sans qu'on ait appuyé sur ▶ : avant, l'app
+            restait bloquée sur « à démarrer » et le lavage ne pouvait pas être
+            livré. Maintenant on peut, avec un motif — et sans inventer d'heures. */''}
+      ${p.statut_atelier === 'attente' ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
+        data-sanschrono="${p.id}" data-ref="${esc(p.reference)}">Livré sans chrono…</button>` : ''}
       ${p.statut_atelier === 'en_cours' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
         data-avance="${p.id}" data-vers="pret">✓ Lavage terminé</button>` : ''}
       ${p.statut_atelier === 'pret' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
@@ -6911,17 +7261,30 @@ const STATUTS_PRO = [
   ['perdu', 'Sans suite', 'erreur'],
 ];
 let proEdite = null;   // null, ou le brouillon en cours d'édition
+let proJours = 30;     // période du récapitulatif « qui est venu »
 
 async function vueEntreprises(el) {
   el.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
-  let liste, lies = [];
+  let liste, lies = [], parc = [];
   try {
     liste = await API.entreprises();
     const { data } = await sb.from('clients').select('id,nom,entreprise_id').not('entreprise_id', 'is', null);
     lies = data || [];
+    parc = await API.parcPartenaire(ilYA(proJours)).catch(() => []);
   }
   catch (ex) { el.innerHTML = '<div class="ocr-message ocr-message--erreur"><span>⛔</span><div>' + esc(ex.message) + '</div></div>'; return; }
   const employesDe = id => lies.filter(c => c.entreprise_id === id);
+  /* « Je veux savoir quel employé est venu et le nombre de motos » (Edwin, 13/08).
+     On regroupe par employé : véhicules d'abord, l'argent ensuite. */
+  const venusDe = (id) => {
+    const g = {};
+    parc.filter(r => r.entreprise_id === id).forEach(r => {
+      const o = g[r.employe_id] || (g[r.employe_id] = { nom: r.employe, veh: 0, ca: 0, remise: 0, moto: 0, autres: 0 });
+      o.veh += r.vehicules || 0; o.ca += r.ca || 0; o.remise += r.remise || 0;
+      if (r.gabarit === 'moto') o.moto += r.vehicules || 0; else o.autres += r.vehicules || 0;
+    });
+    return Object.values(g).sort((a, b) => b.veh - a.veh);
+  };
 
   const nb = s => liste.filter(e => e.statut === s).length;
   const enCours = liste.filter(e => !['client', 'perdu'].includes(e.statut)).length;
@@ -6958,6 +7321,25 @@ async function vueEntreprises(el) {
         </div>
         ${employesDe(e.id).length ? `<div class="ocr-mini" style="margin-top:4px">
           ${employesDe(e.id).length} employé(s) lié(s) : ${esc(employesDe(e.id).map(c => c.nom).join(', '))}</div>` : ''}
+        ${(() => {
+          const v = venusDe(e.id);
+          if (!v.length) return '';
+          const tot = v.reduce((a, x) => ({ veh: a.veh + x.veh, ca: a.ca + x.ca, remise: a.remise + x.remise }),
+                               { veh: 0, ca: 0, remise: 0 });
+          return `<div style="margin-top:var(--ocr-e3);padding-top:var(--ocr-e3);border-top:1px solid var(--ocr-sep)">
+            <div class="ocr-mini" style="margin-bottom:7px">
+              <strong style="color:var(--ocr-blanc)">Qui est venu · ${proJours} derniers jours</strong>
+              — ${tot.veh} véhicule(s), ${OCR.fcfa(tot.ca)} encaissable, ${OCR.fcfa(tot.remise)} de remise accordée</div>
+            ${v.map(x => `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0">
+              <span style="min-width:0;flex:1;font-weight:600;font-size:13.5px">${esc(x.nom)}</span>
+              <span class="ocr-mini">${x.moto ? x.moto + ' moto(s)' : ''}${x.moto && x.autres ? ' · ' : ''}${
+                x.autres ? x.autres + ' véhicule(s)' : ''}</span>
+              <span style="font-weight:700;font-variant-numeric:tabular-nums;font-size:13.5px">${OCR.fcfa(x.ca)}</span>
+            </div>`).join('')}
+            <p class="ocr-mini" style="margin:7px 0 0">Ces véhicules sont du parc ${esc(e.nom)} : ils comptent
+              dans le chiffre d'affaires, pas dans « Quels véhicules dominent ».</p>
+          </div>`;
+        })()}
         ${e.contact_nom ? `<div class="ocr-mini" style="margin-top:4px">${esc(e.contact_nom)}${e.contact_role ? ' · ' + esc(e.contact_role) : ''}${e.telephone ? ' · ' + esc(e.telephone) : ''}</div>` : ''}
         ${e.prochaine_action ? `<div class="ocr-petit" style="margin-top:5px;${retard ? 'color:var(--ocr-erreur)' : ''}">
           ${retard ? '⚠ ' : '→ '}${esc(e.prochaine_action)}${e.prochaine_le ? ' · ' + dateFr(e.prochaine_le) : ''}</div>` : ''}
@@ -7392,10 +7774,16 @@ function ilYA(n) {
 
 async function vueBilan() {
   const du = ilYA(bilanJours), au = auj();
-  const [{ jours, mix }, ptsRH, baiesRH, temps, parc] = await Promise.all([
+  const [{ jours, mix }, ptsRH, baiesRH, temps, parc, hors, partenaires] = await Promise.all([
     API.periode(du, au), API.pointagesPeriode(du, au), API.baies().catch(() => []),
     API.tempsLavage(du).catch(() => []), API.statsParc(du, au).catch(() => []),
+    API.lavagesSansMesure(du).catch(() => []),
+    API.parcPartenaire(du).catch(() => []),
   ]);
+  // Combien de lavages ne comptent pas dans les moyennes de temps, et pourquoi.
+  const ecartes = hors.length;
+  // … et combien de véhicules du parc d'un partenaire sont tenus hors des classements.
+  const vehParc = partenaires.reduce((sm, r) => sm + (r.vehicules || 0), 0);
 
   /* QUELS VÉHICULES DOMINENT (13/08) — « savoir quel véhicule domine, quel
      modèle, comme ça c'est facile pour moi de comprendre » (Edwin).
@@ -7566,10 +7954,13 @@ async function vueBilan() {
           <button class="ocr-chip" data-bmes="ca" aria-pressed="${mesure === 'ca'}">Argent</button>
         </div>
       </div>
-      <p class="ocr-mini" style="margin:8px 0 0">Sur ${bilanJours} jours · ${parc.reduce((sm, r) => sm + r.passages, 0)} véhicule(s) lavé(s).
+      <p class="ocr-mini" style="margin:8px 0 0">Sur ${bilanJours} jours · ${parc.reduce((sm, r) => sm + r.passages, 0)} véhicule(s) de la clientèle.
         ${parMarque.some(m => m.cle === 'Marque non saisie')
           ? 'Les véhicules sans marque saisie sont regroupés à part — plus on saisit, plus ce classement est juste.'
-          : 'Toutes les marques sont renseignées : le classement est complet.'}</p>
+          : 'Toutes les marques sont renseignées : le classement est complet.'}
+        ${vehParc ? `<br><span style="color:var(--ocr-argent-2)">${vehParc} véhicule(s) du parc d’un partenaire
+          ne sont pas comptés ici : c’est du stock de concessionnaire, pas ta clientèle. Ils restent dans le
+          chiffre d’affaires et sur la fiche de l’entreprise.</span>` : ''}</p>
     </div>
 
     ${blocClassement('Marques', 'Ce qui roule le plus chez nous — le classement dit où porter la communication.',
@@ -7600,6 +7991,13 @@ async function vueBilan() {
         </div>`;
       }).join('')
       : '<div class="vide">Pas encore de lavage chronométré — les temps apparaissent dès que l’équipe tape « ▶ Commencer » puis « ✓ Terminé ».</div>'}
+      ${/* Une moyenne sans son dénominateur ment. On dit toujours sur combien
+            de lavages elle est calculée, et combien en ont été écartés. */''}
+      <p class="ocr-mini" style="margin:var(--ocr-e4) 0 0">
+        Calculé sur <strong style="color:var(--ocr-blanc)">${lignesChrono.reduce((a, l) => a + l.n, 0)} lavage(s)
+        chronométré(s)</strong>${ecartes ? ' · ' + ecartes + ' écarté(s) des mesures' : ''}.
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="bilVersTemps"
+          style="margin-left:6px">Contrôle des temps ›</button></p>
     </div>
 
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
@@ -7647,6 +8045,8 @@ async function vueBilan() {
     </div>`;
 
   brancherRetourDirection();
+  const bvt = $('#bilVersTemps');
+  if (bvt) bvt.addEventListener('click', () => allerOnglet('temps'));
   $('#vue').querySelectorAll('[data-bmes]').forEach(b => b.addEventListener('click', () => {
     bilanMesure = b.dataset.bmes; vueBilan();
   }));
@@ -7655,6 +8055,467 @@ async function vueBilan() {
     $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
     vueBilan();
   }));
+}
+
+/* ==========================================================================
+   LE CHRONO N'A PAS ÉTÉ LANCÉ — et la voiture est partie (13/08)
+   Avant, l'app refusait : le lavage restait « à démarrer » pour toujours.
+   Un outil qui refuse d'enregistrer ce qui s'est vraiment passé finit par
+   être contourné. Donc on enregistre — mais on écrit pourquoi, et la
+   direction le voit dans Contrôle des temps.
+   ========================================================================== */
+const MOTIFS_SANS_CHRONO = [
+  'Chrono oublié au démarrage',
+  'Lavage commencé avant la saisie',
+  'Téléphone déchargé / pas de réseau',
+  'Client pressé, véhicule repris tout de suite',
+];
+function boiteSansChrono(id, ref) {
+  const v = modale(`
+    <h3 class="ocr-h2">Livrer sans chrono</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      Les boutons ▶ et ✓ n’ont pas été appuyés : <strong>ce lavage n'aura pas de temps</strong>.
+      Il compte normalement dans le chiffre d’affaires, mais il sera absent des moyennes
+      et signalé à la direction. Dis en une ligne ce qui s’est passé.</p>
+    <div class="rangee-filtres" style="margin-bottom:var(--ocr-e3)">
+      ${MOTIFS_SANS_CHRONO.map((m, i) => `<button class="ocr-chip" data-msc="${i}">${esc(m)}</button>`).join('')}
+    </div>
+    <label class="ocr-champ"><span class="ocr-label">Motif (obligatoire)</span>
+      <input class="ocr-saisie" id="mscTexte" placeholder="Ce qui s'est passé"></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Livrer ${esc(ref || '')}</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelectorAll('[data-msc]').forEach(b => b.addEventListener('click', () => {
+    v.querySelector('#mscTexte').value = MOTIFS_SANS_CHRONO[Number(b.dataset.msc)];
+    v.querySelectorAll('[data-msc]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  }));
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const motif = v.querySelector('#mscTexte').value.trim();
+    if (!motif) return toast('Le motif est obligatoire.', true);
+    e.target.disabled = true;
+    const { error } = await API.avancer(id, 'livre', motif);
+    if (error) { e.target.disabled = false; return toast(error.message, true); }
+    fermerModale();
+    toast('Livré — signalé sans chrono');
+    rendre();
+  });
+}
+
+/* ==========================================================================
+   CONTRÔLE DES TEMPS (13/08)
+   « Si le lavage a été effectué et qu'on n'a pas lancé le timing, un admin
+     devrait être capable de voir ce qu'on fait. »
+   Un lavage peut manquer aux moyennes pour trois raisons, et elles ne se
+   valent pas : le chrono n'a pas tourné (accident de parcours), la direction
+   l'a écarté (premier essai, formation), ou c'est un lavage repris de
+   l'ancien cahier. On les affiche séparément, avec qui et pourquoi.
+   ========================================================================== */
+const MOTIFS_HORS_MESURE = [
+  'Premier lavage de ce type — on apprend encore',
+  'Formation d’un technicien',
+  'Interruption longue (client, pluie, coupure d’eau)',
+  'Temps manifestement faux',
+];
+let tempsJours = 30;
+
+async function vueControleTemps() {
+  const du = ilYA(tempsJours);
+  const [sans, chrono] = await Promise.all([
+    API.lavagesSansMesure(du).catch(() => []),
+    API.lavagesChronometres(du).catch(() => []),
+  ]);
+  const nomV = r => [r.marque, r.modele].filter(Boolean).join(' ') || r.immatriculation || r.reference;
+  const grp = c => sans.filter(x => x.raison === c);
+  const sansChrono = grp('sans_chrono'), ecartes = grp('ecarte'), importes = grp('import');
+
+  const ligne = (r, actions) => `
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
+      <span style="min-width:0;flex:1">
+        <span style="font-weight:600;display:block">${esc(nomV(r))}
+          <span class="ocr-mini" style="font-weight:400">· ${esc(r.prestation_nom || r.prestation || '')}</span></span>
+        <span class="ocr-mini">${jourBref(r.journee)} · ${esc(r.reference)} · ${OCR.fcfa(r.montant_total)}${
+          r.minutes != null ? ' · ' + r.minutes + ' min' +
+            (r.reference_min ? ' (prévu ' + r.reference_min + ')' : '') : ''}</span>
+        ${r.mesure_motif || r.sans_chrono_motif ? `<span class="ocr-mini" style="display:block;color:var(--ocr-argent-2)">${
+          esc(r.mesure_motif || r.sans_chrono_motif)}${r.decide_par ? ' — ' + esc(r.decide_par) : ''}</span>` : ''}
+      </span>
+      ${actions || ''}
+    </div>`;
+
+  $('#vue').innerHTML = `
+    ${retourDirection()}
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Contrôle des temps</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">
+        Les moyennes du Bilan ne comptent que les lavages <strong style="color:var(--ocr-blanc)">chronométrés
+        de bout en bout</strong>. Tout ce qui en est absent est ici, avec la raison et le nom de celui qui a décidé.</p>
+      <div class="rangee-filtres">
+        ${[[7, '7 jours'], [30, '30 jours'], [90, '90 jours']].map(([n, lab]) =>
+          `<button class="ocr-chip" data-tper="${n}" aria-pressed="${tempsJours === n}">${lab}</button>`).join('')}
+      </div>
+    </div>
+
+    <div class="tuiles" style="margin-top:var(--ocr-e4)">
+      <div class="tuile"><div class="lab">Mesurés</div><div class="val">${chrono.length}</div>
+        <div class="sub">lavages chronométrés</div></div>
+      <div class="tuile"><div class="lab">Sans chrono</div>
+        <div class="val" style="${sansChrono.length ? 'color:var(--ocr-ambre)' : ''}">${sansChrono.length}</div>
+        <div class="sub">${sansChrono.length ? 'les boutons n’ont pas été appuyés' : 'aucun'}</div></div>
+      <div class="tuile"><div class="lab">Écartés</div><div class="val">${ecartes.length}</div>
+        <div class="sub">décidés par la direction</div></div>
+      <div class="tuile"><div class="lab">Repris du cahier</div><div class="val">${importes.length}</div>
+        <div class="sub">import historique</div></div>
+    </div>
+
+    ${sansChrono.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4);border-color:rgba(245,166,35,.42)">
+      <div class="ocr-surtitre">Lavages sans chrono</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Le lavage a bien eu lieu et il est facturé,
+        mais personne n’a appuyé sur ▶ ou ✓. Rien à corriger ici : c’est la liste dont on part pour
+        rappeler le geste à l'équipe.</p>
+      ${sansChrono.map(r => ligne(r, `<span class="ocr-mini" style="white-space:nowrap;color:var(--ocr-ambre)">
+        ${esc(r.saisi_par_nom || '')}</span>`)).join('')}
+    </div>` : ''}
+
+    ${ecartes.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      <div class="ocr-surtitre">Sortis des mesures par la direction</div>
+      ${ecartes.map(r => ligne(r, `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
+        data-remesure="${r.id}" style="white-space:nowrap">Remettre</button>`)).join('')}
+    </div>` : ''}
+
+    <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      <div class="ocr-surtitre">Lavages chronométrés · ${chrono.length}</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Ceux-là font les moyennes. Si l'un d'eux ne
+        représente pas la réalité — un premier essai, une formation — sors-le : le prix reste, le temps disparaît.</p>
+      ${chrono.length ? chrono.map(r => ligne(r, `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
+        data-horsmesure="${r.id}" style="white-space:nowrap">⊘ Sortir…</button>`)).join('')
+      : '<p class="ocr-petit" style="margin:10px 0 0">Aucun lavage chronométré sur la période.</p>'}
+    </div>
+
+    ${importes.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      <div class="ocr-surtitre">Repris de l’ancien cahier · ${importes.length}</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Ils comptent dans le chiffre d’affaires et dans
+        les types de véhicules. Ils n’ont jamais eu de chrono, donc ils ne peuvent pas compter dans les temps.</p>
+      ${importes.slice(0, 30).map(r => ligne(r, `<span class="ocr-mini" style="white-space:nowrap">${
+        esc(r.import_lot || '')}</span>`)).join('')}
+      ${importes.length > 30 ? `<p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">
+        ${importes.length} au total — les 30 plus récents sont affichés.</p>` : ''}
+    </div>` : ''}`;
+
+  brancherRetourDirection();
+  $('#vue').querySelectorAll('[data-tper]').forEach(b => b.addEventListener('click', () => {
+    tempsJours = Number(b.dataset.tper); vueControleTemps();
+  }));
+  $('#vue').querySelectorAll('[data-horsmesure]').forEach(b =>
+    b.addEventListener('click', () => boiteHorsMesure(b.dataset.horsmesure)));
+  $('#vue').querySelectorAll('[data-remesure]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { error } = await API.mesurePassage(b.dataset.remesure, false, null);
+    if (error) { b.disabled = false; return toast(error.message, true); }
+    memoVider(); toast('Remis dans les mesures'); vueControleTemps();
+  }));
+}
+
+function boiteHorsMesure(id) {
+  const v = modale(`
+    <h3 class="ocr-h2">Sortir ce lavage des mesures</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      Son temps ne comptera plus dans les moyennes ni dans les écarts par rapport au catalogue.
+      <strong>Le chiffre d’affaires, lui, ne bouge pas</strong> — le lavage a été vendu, il reste vendu.
+      C’est réversible et c’est écrit au journal à ton nom.</p>
+    <div class="rangee-filtres" style="margin-bottom:var(--ocr-e3)">
+      ${MOTIFS_HORS_MESURE.map((m, i) => `<button class="ocr-chip" data-mhm="${i}">${esc(m)}</button>`).join('')}
+    </div>
+    <label class="ocr-champ"><span class="ocr-label">Motif (obligatoire)</span>
+      <input class="ocr-saisie" id="mhmTexte" placeholder="Pourquoi ce temps ne veut rien dire"></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Sortir des mesures</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelectorAll('[data-mhm]').forEach(b => b.addEventListener('click', () => {
+    v.querySelector('#mhmTexte').value = MOTIFS_HORS_MESURE[Number(b.dataset.mhm)];
+    v.querySelectorAll('[data-mhm]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  }));
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const motif = v.querySelector('#mhmTexte').value.trim();
+    if (!motif) return toast('Le motif est obligatoire.', true);
+    e.target.disabled = true;
+    const { error } = await API.mesurePassage(id, true, motif);
+    if (error) { e.target.disabled = false; return toast(error.message, true); }
+    memoVider(); fermerModale(); toast('Sorti des mesures'); vueControleTemps();
+  });
+}
+
+/* ==========================================================================
+   REPRENDRE L'ANCIEN CAHIER (13/08)
+   « Je vais bientôt importer les lavages faits depuis un mois. Il y a eu des
+     lavages où on n'avait pas mis l'immatriculation, c'était juste le type de
+     véhicule et le type de lavage. »
+   Donc : DATE + TAILLE + PRESTATION suffisent. Le montant se calcule tout
+   seul depuis la grille si la case est vide. Ces lavages comptent dans le
+   chiffre d'affaires et dans les types de véhicules, jamais dans les temps
+   (ils n'ont jamais eu de chrono) et jamais dans la caisse du jour.
+   ========================================================================== */
+/* L'ORDRE EST CELUI DE LA FICHE PAPIER « Recette journalière » — c'est elle
+   qu'on recopie, il ne faut pas obliger à réorganiser des colonnes. Les
+   en-têtes sont reconnus par leur nom quand ils sont là ; sans en-tête, on
+   suppose cet ordre-là, et on le DIT à l'écran. */
+const COLONNES_IMPORT = [
+  ['date',           ['date', 'jour', 'quand']],
+  ['prestation',     ['prestation', 'lavage', 'type de lavage', 'type de service', 'service',
+                      'formule', 'description', 'type de service description']],
+  ['immatriculation',['immatriculation', 'plaque', 'immat', 'n plaque', 'no plaque', 'numero de plaque']],
+  ['gabarit',        ['taille', 'gabarit', 'type', 'type de vehicule', 'vehicule', 'categorie']],
+  ['montant',        ['montant', 'prix', 'ca', 'somme', 'total', 'paye', 'montant fcfa']],
+  ['paiement',       ['paiement', 'mode', 'mode de paiement', 'moyen', 'paye par', 'reglement']],
+  ['fiche',          ['fiche', 'n fiche', 'no fiche', 'numero de fiche', 'piece', 'n piece']],
+  ['note',           ['note', 'remarque', 'observation', 'commentaire', 'observations']],
+  ['marque',         ['marque']],
+  ['modele',         ['modele', 'model']],
+];
+let importTexte = '';
+
+/* Découpe un tableau collé depuis Excel (tabulations) ou un CSV (; ou ,). */
+function decouperTableau(texte) {
+  const lignes = String(texte || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (!lignes.length) return [];
+  const sep = lignes[0].includes('\t') ? '\t' : (lignes[0].split(';').length > lignes[0].split(',').length ? ';' : ',');
+  return lignes.map(l => l.split(sep).map(c => c.trim().replace(/^"|"$/g, '')));
+}
+
+/* Reconnaît l'en-tête s'il y en a un ; sinon suppose l'ordre du modèle. */
+function analyserImport(texte) {
+  const brut = decouperTableau(texte);
+  if (!brut.length) return { lignes: [], erreurs: [], total: 0 };
+  const cles = brut[0].map(c => OCR.clefTexte(c));
+  const trouve = c => cles.findIndex(k => k && COLONNES_IMPORT.find(x => x[0] === c)[1].some(a => OCR.clefTexte(a) === k));
+  const entete = COLONNES_IMPORT.filter(([c]) => trouve(c) >= 0).length >= 3;
+  const idx = {};
+  COLONNES_IMPORT.forEach(([c], i) => { idx[c] = entete ? trouve(c) : i; });
+  const corps = entete ? brut.slice(1) : brut;
+
+  const lignes = [], erreurs = [];
+  corps.forEach((cel, n) => {
+    const val = c => (idx[c] >= 0 && cel[idx[c]] != null ? cel[idx[c]] : '');
+    const num = n + (entete ? 2 : 1);
+    const date = OCR.lireDate(val('date'));
+    const gab  = OCR.trouverGabarit(val('gabarit'));
+    const code = OCR.trouverPrestation(val('prestation'), gab);
+    const pb   = OCR.lireMontant(val('montant'));
+    const mal = [];
+    if (!date) mal.push('date illisible (« ' + (val('date') || 'vide') + ' »)');
+    if (!gab)  mal.push('taille inconnue (« ' + (val('gabarit') || 'vide') + ' »)');
+    if (!code) mal.push('prestation inconnue (« ' + (val('prestation') || 'vide') + ' »)');
+    if (date && date > auj()) mal.push('date dans le futur');
+    let montant = pb;
+    if (montant == null && gab && code) montant = OCR.prix(code, gab);
+    if (montant == null && !mal.length) mal.push('montant absent, et cette prestation est sur devis');
+    if (mal.length) { erreurs.push({ num, quoi: mal.join(' · '), brut: cel.join(' | ') }); return; }
+    const pr = OCR.prestation(code) || {};
+    // « RAS » dans la colonne Observation de la fiche papier ne veut rien dire :
+    // on ne le recopie pas comme une note.
+    const obs = /^(ras|r\.a\.s\.?|néant|neant|-)$/i.test(val('note').trim()) ? '' : val('note').trim();
+    const fic = val('fiche').trim();
+    lignes.push({
+      date, gabarit: gab, code, libelle: pr.nom || code, montant,
+      duree: OCR.duree(code, gab) || null,
+      marque: val('marque') ? OCR.marqueCanon(val('marque'), gab) : '',
+      modele: val('modele'),
+      // « / » sur la fiche papier = pas de plaque, ce n'est pas une plaque
+      immatriculation: /^[\/\-–—.]*$/.test(val('immatriculation').trim()) ? '' : val('immatriculation'),
+      paiement: OCR.trouverPaiement(val('paiement')) || null,
+      fiche: fic,
+      note: [fic ? 'Fiche ' + fic : '', obs].filter(Boolean).join(' · '),
+    });
+  });
+  return { lignes, erreurs, total: lignes.reduce((a, l) => a + l.montant, 0), entete };
+}
+
+const MODELE_IMPORT = 'date;taille;prestation;montant;marque;modele;immatriculation;paiement;fiche;note\n' +
+  '26/06/2026;Moto;Express;1000;;;;KKiapay;005;\n' +
+  '26/06/2026;Moto;Express;1000;;;;KKiapay;005;\n' +
+  '05/07/2026;Berline;Signature;8000;Toyota;RAV4;CB5916;Espèces;012;\n' +
+  '06/07/2026;Grand SUV;Deep cleaning;45000;;;;KKiapay;013;\n';
+
+async function vueImport() {
+  const a = analyserImport(importTexte);
+  const lots = await API.lavagesSansMesure(ilYA(400)).catch(() => []);
+  const parLot = {};
+  lots.filter(l => l.import_lot).forEach(l => {
+    const o = parLot[l.import_lot] || (parLot[l.import_lot] = { n: 0, ca: 0, du: l.journee, au: l.journee });
+    o.n++; o.ca += l.montant_total || 0;
+    if (l.journee < o.du) o.du = l.journee;
+    if (l.journee > o.au) o.au = l.journee;
+  });
+  const nomsLots = Object.keys(parLot).sort().reverse();
+
+  $('#vue').innerHTML = `
+    ${retourDirection()}
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Reprendre d’anciens lavages</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">
+        Colle ici le tableau de ton fichier Excel (sélectionne les cellules, copie, colle) ou le contenu d’un CSV.
+        <strong style="color:var(--ocr-blanc)">Trois colonnes suffisent : la date, la taille du véhicule et le
+        type de lavage.</strong> Le montant se calcule tout seul s’il manque. Marque, modèle et plaque sont un plus,
+        pas une obligation.</p>
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="impModele">⤓ Récupérer un tableau modèle</button>
+      <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Le tableau</span>
+        <textarea class="ocr-saisie" id="impTexte" rows="7" spellcheck="false"
+          style="font:13px/1.5 ui-monospace,monospace;resize:vertical"
+          placeholder="date;taille;prestation;montant&#10;05/07/2026;Berline;Signature;8000">${esc(importTexte)}</textarea></label>
+      <p class="ocr-mini">Tailles acceptées : Petite · Berline · Grand SUV · Camionnette · Moto.
+        Lavages : Express · Signature · Deep cleaning · Pack Intérieur · Pack Extérieur · Moteur · Polissage · Céramique.
+        Paiement : KKiapay · Espèces · Carnet. Les colonnes suivent la fiche papier —
+        un « / » dans la colonne plaque veut dire « pas de plaque », et « RAS » en observation n'est pas recopié.</p>
+    </div>
+
+    ${importTexte.trim() ? `
+    <div class="tuiles" style="margin-top:var(--ocr-e4)">
+      <div class="tuile"><div class="lab">Lignes lues</div><div class="val">${a.lignes.length}</div>
+        <div class="sub">prêtes à importer</div></div>
+      <div class="tuile"><div class="lab">À corriger</div>
+        <div class="val" style="${a.erreurs.length ? 'color:var(--ocr-erreur)' : ''}">${a.erreurs.length}</div>
+        <div class="sub">${a.erreurs.length ? 'ces lignes seront ignorées' : 'rien à corriger'}</div></div>
+      <div class="tuile"><div class="lab">Chiffre d’affaires</div><div class="val">${OCR.fcfa(a.total)}</div>
+        <div class="sub">ajouté à l’historique</div></div>
+    </div>
+    ${!a.entete && a.lignes.length ? `<div class="ocr-message" style="margin-top:var(--ocr-e4)"><span>ⓘ</span><div>
+      <strong>Pas de ligne d’en-tête reconnue.</strong> Les colonnes sont donc lues dans l’ordre de la
+      fiche papier : date · prestation · plaque · taille · montant · paiement · n° fiche · observation.
+      Vérifie l’aperçu ci-dessous — ou colle aussi la ligne de titres, l’app s’en sert.</div></div>` : ''}
+
+    ${a.erreurs.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4);border-color:rgba(214,64,64,.45)">
+      <div class="ocr-surtitre">Lignes à corriger</div>
+      ${a.erreurs.slice(0, 12).map(e => `<div style="padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
+        <div class="ocr-petit"><strong>Ligne ${e.num}</strong> — ${esc(e.quoi)}</div>
+        <div class="ocr-mini">${esc(e.brut)}</div></div>`).join('')}
+      ${a.erreurs.length > 12 ? `<p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">
+        ${a.erreurs.length} lignes en tout — les 12 premières sont montrées.</p>` : ''}
+    </div>` : ''}
+
+    ${a.lignes.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      ${/* Le cahier porte un TOTAL JOURNALIER écrit à la main et signé. C'est
+            LUI qu'il faut recouper, journée par journée, avant d'importer :
+            un total global juste peut cacher deux erreurs qui s'annulent. */''}
+      <div class="ocr-surtitre">Total par journée — à comparer avec le cahier</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Chaque ligne doit correspondre au
+        « TOTAL JOURNALIER » écrit et signé sur la fiche de ce jour-là.</p>
+      ${(() => {
+        const j = {};
+        a.lignes.forEach(l => { const o = j[l.date] || (j[l.date] = { n: 0, ca: 0, fiches: new Set() });
+          o.n++; o.ca += l.montant; if (l.fiche) o.fiches.add(l.fiche); });
+        return Object.keys(j).sort().map(d => `
+          <div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--ocr-sep)">
+            <span style="min-width:0;flex:1"><span style="font-weight:600">${jourBref(d)}</span>
+              <span class="ocr-mini"> · ${j[d].n} lavage(s)${j[d].fiches.size
+                ? ' · fiche' + (j[d].fiches.size > 1 ? 's ' : ' ') + [...j[d].fiches].join(', ') : ''}</span></span>
+            <span style="font-weight:700;font-variant-numeric:tabular-nums">${OCR.fcfa(j[d].ca)}</span>
+          </div>`).join('');
+      })()}
+    </div>
+
+    <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      <div class="ocr-surtitre">Aperçu · ${a.lignes.length} lavage(s)</div>
+      ${a.lignes.slice(0, 15).map(l => `
+        <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600">${esc(l.libelle)}</span>
+            <span class="ocr-mini" style="display:block">${jourBref(l.date)} · ${
+              esc((OCR.gabarit(l.gabarit) || {}).nom)}${l.marque ? ' · ' + esc(l.marque + ' ' + (l.modele || '')) : ''}${
+              l.immatriculation ? ' · ' + esc(OCR.plaque(l.immatriculation)) : ''}${
+              l.paiement ? ' · ' + (l.paiement === 'kkiapay' ? 'KKiapay' : l.paiement === 'especes' ? 'Espèces' : 'Carnet') : ''}${
+              l.fiche ? ' · fiche ' + esc(l.fiche) : ''}</span>
+          </span>
+          <span style="font-weight:700;font-variant-numeric:tabular-nums">${OCR.fcfa(l.montant)}</span>
+        </div>`).join('')}
+      ${a.lignes.length > 15 ? `<p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">
+        … et ${a.lignes.length - 15} autres.</p>` : ''}
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="impGo" style="margin-top:var(--ocr-e4)">
+        Importer ${a.lignes.length} lavage(s) · ${OCR.fcfa(a.total)}</button>
+      <p class="ocr-mini" style="margin:8px 0 0">Ils apparaîtront dans le Bilan et dans « Quels véhicules dominent ».
+        Ils resteront hors des temps et hors de la caisse. Un import s’annule en bloc.</p>
+    </div>` : ''}` : ''}
+
+    ${nomsLots.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      <div class="ocr-surtitre">Imports déjà faits</div>
+      ${nomsLots.map(nom => `
+        <div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600">${esc(nom)}</span>
+            <span class="ocr-mini" style="display:block">${parLot[nom].n} lavage(s) · ${
+              OCR.fcfa(parLot[nom].ca)} · du ${jourBref(parLot[nom].du)} au ${jourBref(parLot[nom].au)}</span></span>
+          <button class="ocr-btn ocr-btn--fantome ocr-btn--petit dgr" data-annulot="${esc(nom)}"
+            style="white-space:nowrap">Annuler…</button>
+        </div>`).join('')}
+    </div>` : ''}`;
+
+  brancherRetourDirection();
+  let mn;
+  $('#impTexte').addEventListener('input', e => {
+    importTexte = e.target.value;
+    clearTimeout(mn);
+    mn = setTimeout(() => { if (onglet === 'import') { const y = window.scrollY; vueImport().then(() => window.scrollTo(0, y)); } }, 400);
+  });
+  $('#impModele').addEventListener('click', () => {
+    const b = new Blob(['﻿' + MODELE_IMPORT], { type: 'text/csv;charset=utf-8' });
+    const u = URL.createObjectURL(b);
+    const a2 = document.createElement('a');
+    a2.href = u; a2.download = 'ocr-lavages-a-importer.csv';
+    document.body.appendChild(a2); a2.click(); a2.remove();
+    setTimeout(() => URL.revokeObjectURL(u), 2000);
+  });
+  const go = $('#impGo');
+  if (go) go.addEventListener('click', () => boiteImport(a));
+  $('#vue').querySelectorAll('[data-annulot]').forEach(b =>
+    b.addEventListener('click', () => boiteAnnulerImport(b.dataset.annulot, parLot[b.dataset.annulot])));
+}
+
+function boiteImport(a) {
+  const jours = [...new Set(a.lignes.map(l => l.date))].sort();
+  const v = modale(`
+    <h3 class="ocr-h2">Importer ${a.lignes.length} lavage(s)</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      Du <strong>${jourBref(jours[0])}</strong> au <strong>${jourBref(jours[jours.length - 1])}</strong> ·
+      ${OCR.fcfa(a.total)} de chiffre d’affaires sur ${jours.length} journée(s).</p>
+    <div class="ocr-message"><span>ⓘ</span><div>
+      Ces lavages <strong>comptent dans le chiffre d’affaires et dans les statistiques de véhicules</strong>.
+      Ils ne comptent pas dans les temps (ils n'ont pas de chrono) ni dans la caisse du jour.
+      Si tu te trompes, l’import s’annule en un geste.</div></div>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e4)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Importer</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true; e.target.textContent = 'Import en cours…';
+    const { data, error } = await API.importerLavages(a.lignes, null);
+    if (error) { e.target.disabled = false; e.target.textContent = 'Importer'; return toast(error.message, true); }
+    const r = Array.isArray(data) ? data[0] : data;
+    memoVider(); fermerModale(); importTexte = '';
+    toast((r && r.nb_importes ? r.nb_importes : a.lignes.length) + ' lavage(s) repris · lot ' + ((r && r.lot_ref) || ''));
+    vueImport();
+  });
+}
+
+function boiteAnnulerImport(lot, info) {
+  const v = modale(`
+    <h3 class="ocr-h2">Annuler l’import ${esc(lot)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      Les ${info ? info.n : ''} lavage(s) de ce lot (${info ? OCR.fcfa(info.ca) : ''}) sortiront du chiffre d’affaires
+      et des statistiques. Rien n’est supprimé : ils restent en base, marqués annulés, avec ton nom.</p>
+    <div style="display:flex;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Garder</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Annuler l’import</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    const { error } = await API.annulerImport(lot);
+    if (error) { e.target.disabled = false; return toast(error.message, true); }
+    memoVider(); fermerModale(); toast('Import annulé'); vueImport();
+  });
 }
 
 /* ==========================================================================
@@ -7718,6 +8579,8 @@ async function vueDirection() {
     ['pointage', '◉', 'Pointage', filePointage.length
       ? filePointage.length + ' en attente d’envoi' : 'Arrivées, pauses, départs'],
     ['catalogue', '▦', 'Marques & modèles', 'Ajouter, corriger les tailles'],
+    ['temps', '⏱', 'Contrôle des temps', 'Lavages sans chrono, lavages écartés'],
+    ['import', '⤒', 'Reprendre d’anciens lavages', 'L’ancien cahier, en une fois'],
     ['journal', '📜', 'Journal d’activité', 'Qui a fait quoi, quand'],
     ['compte', '🛡', 'Mon compte', 'Mot de passe, double sécurité'],
   ];
@@ -7824,8 +8687,8 @@ async function vueDirection() {
   if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
   $('#vue').querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.dir;
-    if (id === 'bilan' || id === 'cloture' || id === 'journal' || id === 'pointage'
-        || id === 'catalogue') return allerOnglet(id);
+    if (['bilan', 'cloture', 'journal', 'pointage', 'catalogue', 'temps', 'import'].includes(id))
+      return allerOnglet(id);
     if (id === 'objectifs') { const obj = await API.objectifs().catch(() => null); if (obj) boiteObjectifs(obj); return; }
     if (id === 'baies') return allerOnglet('agenda');
     if (id === 'absences') return boiteAbsences();
