@@ -2443,12 +2443,19 @@ function creerClientDemo() {
     ocr_lier_employe(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp) throw new Error('Accès réservé au personnel');
-      if (!['direction', 'comptable'].includes(emp.role))
-        throw new Error('Seuls la direction et le comptable lient un client à une entreprise partenaire');
+      // Samuel peut LIER (Edwin, 13/08) ; délier reste à la direction
+      if (!a.p_entreprise && !['direction', 'comptable'].includes(emp.role))
+        throw new Error('Seules la direction et la comptabilité peuvent délier un employé partenaire');
+      if (a.p_entreprise && !['direction', 'comptable', 'manager'].includes(emp.role))
+        throw new Error('Accès réservé au manager et à la direction');
       const c = D.clients.find(x => x.id === a.p_client);
       if (!c) throw new Error('Client introuvable');
       const e = a.p_entreprise ? D.entreprises.find(x => x.id === a.p_entreprise) : null;
       if (a.p_entreprise && !e) throw new Error('Entreprise introuvable');
+      // déplacer un employé d'une entreprise à une autre reste à la direction
+      if (a.p_entreprise && c.entreprise_id && c.entreprise_id !== a.p_entreprise
+          && !['direction', 'comptable'].includes(emp.role))
+        throw new Error('Ce client est déjà lié à une autre entreprise — seule la direction peut le déplacer');
       c.entreprise_id = e ? e.id : null;
       D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
         quoi: c.nom + (e ? ' lié à ' + e.nom + ' (employé partenaire)' : ' délié de son entreprise partenaire'),
@@ -2840,7 +2847,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v41';
+const VERSION = 'v42';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -4501,27 +4508,8 @@ async function vueSaisie(j) {
              qu'ils vont mettre en circulation plus tard à un client » (Edwin).
              Ces motos appartiennent au concessionnaire et seront vendues :
              leur créer une fiche véhicule au nom de l'employé serait faux. */''}
-        ${(() => { const P = partenaireDe(form.clientTrouve); return P && !OCR.plaque(form.immat) ? `
-        <div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e3)"><span>◆</span><div>
-          <strong>Véhicules du parc ${esc(P.nom)}</strong> — pas de plaque à saisir : ces véhicules
-          appartiennent au concessionnaire et peuvent partir chez un client demain.
-          Si c'est le véhicule <strong>personnel</strong> de ${esc((form.clientTrouve || {}).nom || 'l’employé')},
-          tape sa plaque : la remise ${P.remise_pct} % s'applique quand même.</div></div>` : ''; })()}
         ${form.vehTrouve && form.vehTrouve.id ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
           id="fHistoVeh" style="margin-bottom:var(--ocr-e3)">Historique de ce véhicule ›</button>` : ''}
-        ${/* Plusieurs véhicules identiques d'un coup : un seul enregistrement,
-             un seul chrono, un seul encaissement — mais N véhicules comptés. */''}
-        ${!OCR.plaque(form.immat) ? `
-        <p class="ocr-mini" style="margin:var(--ocr-e3) 0 7px">Combien de véhicules ${
-          partenaireDe(form.clientTrouve) ? '<strong style="color:var(--ocr-blanc)">du parc</strong> ' : ''}identiques ?</p>
-        <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:var(--ocr-e3)">
-          ${[1, 2, 3, 4, 5].map(n => `<button class="ocr-chip" data-qte="${n}"
-            aria-pressed="${T.q === n}">${n}</button>`).join('')}
-          <input class="ocr-saisie" id="fQte" type="number" min="1" max="50" inputmode="numeric"
-                 value="${T.q}" style="width:74px;padding:9px 10px;text-align:center">
-        </div>
-        ${T.q > 1 ? `<p class="ocr-mini" style="margin:0 0 var(--ocr-e3);color:var(--ocr-vert)">
-          ✓ ${T.q} véhicules sur un seul enregistrement — un chrono, un encaissement.</p>` : ''}` : ''}
         ${form.clientTrouve && (form.vehsClient || []).length > 1 ? `
         <p class="ocr-mini" style="margin:var(--ocr-e3) 0 8px">Ses autres véhicules :</p>
         <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e3)">
@@ -4580,11 +4568,33 @@ async function vueSaisie(j) {
         <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Nom
             <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— facultatif</span></span>
           <input class="ocr-saisie" id="fNom" value="${esc(form.nom)}"></label>`}
-        ${form.clientTrouve && form.clientTrouve.entreprises && form.clientTrouve.entreprises.remise_pct > 0 ? `
+        ${(() => {
+          const P = partenaireDe(form.clientTrouve);
+          if (!P) return '';
+          const sansPlaque = !OCR.plaque(form.immat);
+          /* LE NOMBRE DE VÉHICULES VIT ICI, PAS DANS « LE VÉHICULE » (13/08) :
+             la plaque et le téléphone identifient un client, une quantité non.
+             Elle n'a de sens que pour le parc d'un partenaire — elle n'apparaît
+             donc que là, et seulement tant qu'aucune plaque n'est saisie. */
+          return `
         <div class="ocr-message ocr-message--succes" style="margin-top:var(--ocr-e4)"><span>◆</span><div>
-          <strong>Employé ${esc(form.clientTrouve.entreprises.nom)}</strong><br>
-          Remise de ${form.clientTrouve.entreprises.remise_pct} % appliquée automatiquement — peu importe le véhicule
-          (moto du showroom, moto d’un client, sa voiture…).</div></div>` : ''}
+          <strong>Employé ${esc(P.nom)}</strong><br>
+          Remise de ${P.remise_pct} % appliquée automatiquement — peu importe le véhicule.
+          ${sansPlaque ? `<div style="margin-top:10px">
+            <div class="ocr-mini" style="margin-bottom:7px;color:var(--ocr-texte)">
+              Combien de véhicules du parc ${esc(P.nom)} ?</div>
+            <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center">
+              ${[1, 2, 3, 4, 5].map(n => `<button class="ocr-chip" data-qte="${n}"
+                aria-pressed="${T.q === n}">${n}</button>`).join('')}
+              <input class="ocr-saisie" id="fQte" type="number" min="1" max="50" inputmode="numeric"
+                     value="${T.q}" style="width:70px;padding:8px 9px;text-align:center">
+            </div>
+            <div class="ocr-mini" style="margin-top:8px">${T.q > 1
+              ? '✓ ' + T.q + ' véhicules sur un seul enregistrement — un chrono, un encaissement.'
+              : 'Pas de plaque pour le parc : ces véhicules sont au concessionnaire et peuvent partir chez un client. Pour son véhicule personnel, tape sa plaque plus haut.'}</div>
+          </div>` : `<div class="ocr-mini" style="margin-top:8px">Véhicule personnel — la remise s’applique quand même.</div>`}
+        </div></div>`;
+        })()}
       </div>
 
     </div>
@@ -7265,12 +7275,22 @@ let proJours = 30;     // période du récapitulatif « qui est venu »
 
 async function vueEntreprises(el) {
   el.innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+  /* TROIS REQUÊTES EN FILE INDIENNE, C'ÉTAIT LONG (Edwin, 13/08 : « ça prend
+     énormément de temps avant d'arriver »). Maintenant :
+       · les DEUX requêtes nécessaires à la liste partent EN PARALLÈLE ;
+       · elles sont mises en cache (20 s) comme le reste de l'app, donc un
+         aller-retour Clients ↔ Entreprises est instantané ;
+       · le récapitulatif « Qui est venu » (le plus lourd : 30 jours de
+         passages) ne retarde plus rien — il se remplit après coup. */
   let liste, lies = [], parc = [];
   try {
-    liste = await API.entreprises();
-    const { data } = await sb.from('clients').select('id,nom,entreprise_id').not('entreprise_id', 'is', null);
-    lies = data || [];
-    parc = await API.parcPartenaire(ilYA(proJours)).catch(() => []);
+    [liste, lies] = await Promise.all([
+      memo('entreprises', () => API.entreprises()),
+      memo('clients-lies', async () => {
+        const { data } = await sb.from('clients').select('id,nom,entreprise_id').not('entreprise_id', 'is', null);
+        return data || [];
+      }),
+    ]);
   }
   catch (ex) { el.innerHTML = '<div class="ocr-message ocr-message--erreur"><span>⛔</span><div>' + esc(ex.message) + '</div></div>'; return; }
   const employesDe = id => lies.filter(c => c.entreprise_id === id);
@@ -7321,25 +7341,9 @@ async function vueEntreprises(el) {
         </div>
         ${employesDe(e.id).length ? `<div class="ocr-mini" style="margin-top:4px">
           ${employesDe(e.id).length} employé(s) lié(s) : ${esc(employesDe(e.id).map(c => c.nom).join(', '))}</div>` : ''}
-        ${(() => {
-          const v = venusDe(e.id);
-          if (!v.length) return '';
-          const tot = v.reduce((a, x) => ({ veh: a.veh + x.veh, ca: a.ca + x.ca, remise: a.remise + x.remise }),
-                               { veh: 0, ca: 0, remise: 0 });
-          return `<div style="margin-top:var(--ocr-e3);padding-top:var(--ocr-e3);border-top:1px solid var(--ocr-sep)">
-            <div class="ocr-mini" style="margin-bottom:7px">
-              <strong style="color:var(--ocr-blanc)">Qui est venu · ${proJours} derniers jours</strong>
-              — ${tot.veh} véhicule(s), ${OCR.fcfa(tot.ca)} encaissable, ${OCR.fcfa(tot.remise)} de remise accordée</div>
-            ${v.map(x => `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0">
-              <span style="min-width:0;flex:1;font-weight:600;font-size:13.5px">${esc(x.nom)}</span>
-              <span class="ocr-mini">${x.moto ? x.moto + ' moto(s)' : ''}${x.moto && x.autres ? ' · ' : ''}${
-                x.autres ? x.autres + ' véhicule(s)' : ''}</span>
-              <span style="font-weight:700;font-variant-numeric:tabular-nums;font-size:13.5px">${OCR.fcfa(x.ca)}</span>
-            </div>`).join('')}
-            <p class="ocr-mini" style="margin:7px 0 0">Ces véhicules sont du parc ${esc(e.nom)} : ils comptent
-              dans le chiffre d'affaires, pas dans « Quels véhicules dominent ».</p>
-          </div>`;
-        })()}
+        ${e.remise_pct > 0 && peutCorrigerFiche() ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
+          data-ajoutemp="${e.id}" style="margin-top:var(--ocr-e3)">＋ Ajouter un employé</button>` : ''}
+        ${e.remise_pct > 0 ? `<div data-venus="${e.id}"></div>` : ''}
         ${e.contact_nom ? `<div class="ocr-mini" style="margin-top:4px">${esc(e.contact_nom)}${e.contact_role ? ' · ' + esc(e.contact_role) : ''}${e.telephone ? ' · ' + esc(e.telephone) : ''}</div>` : ''}
         ${e.prochaine_action ? `<div class="ocr-petit" style="margin-top:5px;${retard ? 'color:var(--ocr-erreur)' : ''}">
           ${retard ? '⚠ ' : '→ '}${esc(e.prochaine_action)}${e.prochaine_le ? ' · ' + dateFr(e.prochaine_le) : ''}</div>` : ''}
@@ -7357,11 +7361,40 @@ async function vueEntreprises(el) {
       </div>`;
     }).join('') : '<div class="ocr-carte vide">Aucune entreprise pour l’instant.<br>Commence par celles qui ont une flotte : cliniques, hôtels, sociétés de location…</div>'}`;
 
+  /* Le récapitulatif « Qui est venu » arrive quand il arrive : la liste des
+     entreprises est déjà là et cliquable. Si l'écran a changé entre-temps,
+     on ne peint rien (les emplacements n'existent plus). */
+  memo('parc-' + proJours, () => API.parcPartenaire(ilYA(proJours))).then(rows => {
+    parc = rows || [];
+    el.querySelectorAll('[data-venus]').forEach(z => {
+      const e = liste.find(x => x.id === z.dataset.venus);
+      const v = venusDe(z.dataset.venus);
+      if (!e || !v.length) return;
+      const tot = v.reduce((a, x) => ({ veh: a.veh + x.veh, ca: a.ca + x.ca, remise: a.remise + x.remise }),
+                           { veh: 0, ca: 0, remise: 0 });
+      z.innerHTML = `<div style="margin-top:var(--ocr-e3);padding-top:var(--ocr-e3);border-top:1px solid var(--ocr-sep)">
+        <div class="ocr-mini" style="margin-bottom:7px">
+          <strong style="color:var(--ocr-blanc)">Qui est venu · ${proJours} derniers jours</strong>
+          — ${tot.veh} véhicule(s), ${OCR.fcfa(tot.ca)} encaissable, ${OCR.fcfa(tot.remise)} de remise accordée</div>
+        ${v.map(x => `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0">
+          <span style="min-width:0;flex:1;font-weight:600;font-size:13.5px">${esc(x.nom)}</span>
+          <span class="ocr-mini">${x.moto ? x.moto + ' moto(s)' : ''}${x.moto && x.autres ? ' · ' : ''}${
+            x.autres ? x.autres + ' véhicule(s)' : ''}</span>
+          <span style="font-weight:700;font-variant-numeric:tabular-nums;font-size:13.5px">${OCR.fcfa(x.ca)}</span>
+        </div>`).join('')}
+        <p class="ocr-mini" style="margin:7px 0 0">Ces véhicules sont du parc ${esc(e.nom)} : ils comptent
+          dans le chiffre d’affaires, pas dans « Quels véhicules dominent ».</p>
+      </div>`;
+    });
+  }).catch(() => {});
+
   const bn = $('#proNouveau');
   if (bn) bn.addEventListener('click', () => {
     proEdite = { statut: 'prospect' };
     rendre();
   });
+  el.querySelectorAll('[data-ajoutemp]').forEach(b => b.addEventListener('click', () =>
+    boiteAjoutEmploye(liste.find(x => x.id === b.dataset.ajoutemp))));
   el.querySelectorAll('[data-promod]').forEach(b => b.addEventListener('click', () => {
     proEdite = { ...liste.find(x => x.id === b.dataset.promod) };
     rendre();
@@ -7441,6 +7474,74 @@ function boiteNouvelEmploye(e) {
 }
 
 /* La remise employés d'une entreprise partenaire — direction/comptable. */
+/* ENRÔLER UN EMPLOYÉ PARTENAIRE, DEPUIS LA FICHE DE L'ENTREPRISE (13/08)
+   « Il faut que Samuel ait les droits pour ajouter les employés Ehu Motors,
+     là je ne le vois pas chez lui. » — le geste existait, mais il était caché
+   sur la fiche du client et réservé à la direction. Il est maintenant là où on
+   le cherche : sur l'entreprise, et ouvert au manager. */
+function boiteAjoutEmploye(e) {
+  if (!e) return;
+  let res = [], q = '';
+  const v = modale(`
+    <h3 class="ocr-h2">Ajouter un employé — ${esc(e.nom)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Cherche-le par son nom ou son numéro.
+      S'il n'existe pas encore, tu le crées ici : il aura la remise ${e.remise_pct} % à chaque passage,
+      sur n'importe quel véhicule.</p>
+    <label class="ocr-champ"><span class="ocr-label">Nom ou numéro</span>
+      <input class="ocr-saisie" id="aeQ" placeholder="Rodrigue, 01 44 66…" autocomplete="off"></label>
+    <div id="aeRes"></div>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+
+  const lier = async (id, nom) => {
+    const { error } = await API.lierEmploye(id, e.id);
+    if (error) return toast(error.message, true);
+    memoVider();
+    fermerModale();
+    toast(nom + ' — employé ' + e.nom + ' ✓ remise ' + e.remise_pct + ' % automatique');
+    rendre();
+  };
+  const peindre = () => {
+    const z = v.querySelector('#aeRes');
+    const t = q.trim();
+    if (t.length < 2) { z.innerHTML = ''; return; }
+    z.innerHTML = `
+      ${res.length ? res.map(c => `<button class="presta" data-aecli="${c.id}">
+        <span class="coche">${c.entreprise_id === e.id ? '✓' : ''}</span>
+        <span style="min-width:0"><span class="nm">${esc(c.nom)}</span>
+          <span class="du">${esc(telAffiche(c.telephone) || 'sans numéro')}${
+            c.entreprise_id === e.id ? ' · déjà employé' : ''}</span></span></button>`).join('')
+      : '<p class="ocr-mini" style="margin:var(--ocr-e3) 0">Personne à ce nom pour l’instant.</p>'}
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="aeCreer" style="margin-top:var(--ocr-e3)">
+        ＋ Créer « ${esc(t)} » et le lier</button>
+      <p class="ocr-mini" style="margin:7px 0 0">Un numéro de téléphone est vivement conseillé : c’est lui
+        qui le reconnaîtra au comptoir.</p>`;
+    z.querySelectorAll('[data-aecli]').forEach(b => b.addEventListener('click', () => {
+      const c = res.find(x => x.id === b.dataset.aecli);
+      if (c.entreprise_id === e.id) return toast('Déjà employé ' + e.nom);
+      lier(c.id, c.nom);
+    }));
+    z.querySelector('#aeCreer').addEventListener('click', async ev => {
+      ev.target.disabled = true;
+      // un numéro seul, un nom seul, ou les deux : ocr_creer_client fait le tri
+      const estTel = /[0-9]/.test(t) && t.replace(/[^0-9]/g, '').length >= 6;
+      try {
+        const r = await API.creerClient(estTel ? { tel: t } : { nom: t });
+        await lier(r.id, estTel ? telAffiche(t) : t);
+      } catch (ex) { ev.target.disabled = false; toast(ex.message, true); }
+    });
+  };
+  let mn;
+  v.querySelector('#aeQ').addEventListener('input', ev => {
+    q = ev.target.value;
+    clearTimeout(mn);
+    mn = setTimeout(async () => {
+      try { res = await API.chercherClients(q); } catch (ex) { res = []; }
+      peindre();
+    }, 280);
+  });
+}
+
 function boiteRemisePartenaire(e) {
   const v = modale(`
     <h3 class="ocr-h2">◆ Remise employés — ${esc(e.nom)}</h3>
@@ -7610,7 +7711,7 @@ function vueFicheClient() {
               href="https://wa.me/${wa}?text=${encodeURIComponent(msgRelance)}">Relancer sur WhatsApp</a>`
             : wa ? `<a class="ocr-btn ocr-btn--fantome ocr-btn--petit" target="_blank" rel="noopener"
               href="https://wa.me/${wa}">WhatsApp</a>` : ''}
-          ${peutCloturer() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnLierEnt">◆ Partenaire…</button>' : ''}
+          ${peutCorrigerFiche() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnLierEnt">◆ Partenaire…</button>' : ''}
           ${c.pin_pose_le && ['direction', 'comptable', 'manager'].includes(roleEffectif())
             ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnResetCode">Code oublié…</button>' : ''}
           ${peutCorrigerFiche() ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnCorrigerCli">✎ Corriger</button>' : ''}
