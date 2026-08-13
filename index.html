@@ -165,18 +165,26 @@
   font-family: var(--ocr-titre); font-weight: 500; font-size: 14px;
   letter-spacing: .06em; text-transform: uppercase; text-decoration: none;
   cursor: pointer; transition: transform var(--ocr-transition), background var(--ocr-transition), filter var(--ocr-transition);
+  touch-action: manipulation;     /* pas d'attente du « double-tap zoom » */
 }
-.ocr-btn:hover:not(:disabled) { transform: translateY(-2px); }
 .ocr-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 
 .ocr-btn--primaire { background: var(--ocr-grad-rouge); color: #fff; box-shadow: var(--ocr-ombre-btn); }
-.ocr-btn--primaire:hover:not(:disabled) { filter: brightness(1.08); }
 .ocr-btn--secondaire { background: rgba(244,244,245,.05); color: var(--ocr-blanc); border-color: var(--ocr-filet); }
-.ocr-btn--secondaire:hover:not(:disabled) { background: rgba(244,244,245,.09); border-color: rgba(214,32,30,.5); }
 .ocr-btn--fantome { background: none; color: var(--ocr-argent); }
-.ocr-btn--fantome:hover:not(:disabled) { color: var(--ocr-blanc); }
 .ocr-btn--wa { background: #25D366; color: #06351B; }
-.ocr-btn--wa:hover:not(:disabled) { filter: brightness(1.06); }
+
+/* Le survol n'existe QUE là où il y a un pointeur (souris). Sur un téléphone,
+   un appui déclenchait le :hover — et le laissait collé après le doigt : le
+   bouton restait soulevé, l'écran semblait « ne pas répondre ». C'était le
+   principal défaut de fluidité au toucher (constat du 13/08). */
+@media (hover: hover) and (pointer: fine) {
+  .ocr-btn:hover:not(:disabled) { transform: translateY(-2px); }
+  .ocr-btn--primaire:hover:not(:disabled) { filter: brightness(1.08); }
+  .ocr-btn--secondaire:hover:not(:disabled) { background: rgba(244,244,245,.09); border-color: rgba(214,32,30,.5); }
+  .ocr-btn--fantome:hover:not(:disabled) { color: var(--ocr-blanc); }
+  .ocr-btn--wa:hover:not(:disabled) { filter: brightness(1.06); }
+}
 .ocr-btn--bloc { width: 100%; }
 .ocr-btn--petit { min-height: 40px; padding: 9px 15px; font-size: 12.5px; }
 
@@ -191,7 +199,9 @@
   transition: border-color var(--ocr-transition), transform var(--ocr-transition);
 }
 .ocr-carte--cliquable { cursor: pointer; }
-.ocr-carte--cliquable:hover { transform: translateY(-3px); border-color: rgba(214,32,30,.5); }
+@media (hover: hover) and (pointer: fine) {
+  .ocr-carte--cliquable:hover { transform: translateY(-3px); border-color: rgba(214,32,30,.5); }
+}
 .ocr-carte--vedette { border-color: rgba(214,32,30,.55); background:
   linear-gradient(180deg, rgba(214,32,30,.07), transparent 45%), var(--ocr-surface); }
 .ocr-carte--panneau { border-radius: var(--ocr-r-l); padding: var(--ocr-e6); }
@@ -207,9 +217,11 @@
   min-height: 40px; padding: 8px 16px; border-radius: var(--ocr-r-p);
   background: var(--ocr-surface); border: 1px solid var(--ocr-filet);
   color: var(--ocr-argent); font: var(--ocr-t-petit); font-weight: 600;
-  cursor: pointer; transition: var(--ocr-transition);
+  cursor: pointer; transition: var(--ocr-transition); touch-action: manipulation;
 }
-.ocr-chip:hover { color: var(--ocr-blanc); border-color: rgba(214,32,30,.45); }
+@media (hover: hover) and (pointer: fine) {
+  .ocr-chip:hover { color: var(--ocr-blanc); border-color: rgba(214,32,30,.45); }
+}
 .ocr-chip[aria-pressed="true"], .ocr-chip.est-actif {
   background: var(--ocr-rouge); border-color: var(--ocr-rouge); color: #fff;
 }
@@ -343,6 +355,11 @@
 .ocr-btn--primaire:hover { background: linear-gradient(180deg, #EC4540, #D6201E); }
 .ocr-btn:active { transform: scale(.97); }
 .ocr-chip[aria-pressed="true"] { box-shadow: 0 4px 14px rgba(214,32,30,.3); }
+/* L'appui doit se voir AVANT que le code ne réponde : c'est ce qui fait la
+   différence entre « ça rame » et « ça répond ». Rendu par le compositeur,
+   donc instantané même si le fil principal travaille. */
+.ocr-chip:active, .fiche:active, .presta:active, .ocr-carte--cliquable:active { transform: scale(.985); }
+.fiche, .presta { touch-action: manipulation; }
 
 .voile { animation: ocrVoile .16s ease-out; }
 .boite { animation: ocrBoite .22s cubic-bezier(.2,.9,.3,1.15); }
@@ -408,7 +425,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .conn-logo{width:100%;max-width:260px;display:block;margin:0 auto var(--ocr-e5)}
 
 .appli{min-height:100dvh;display:flex;flex-direction:column}
-.barre{position:sticky;top:0;z-index:30;background:rgba(10,10,11,.92);backdrop-filter:blur(14px);
+.barre{position:sticky;top:0;z-index:30;background:#0B0B0C;
   border-bottom:1px solid var(--ocr-filet);
   padding:var(--ocr-e3) calc(var(--ocr-e4) + env(safe-area-inset-right)) var(--ocr-e3) calc(var(--ocr-e4) + env(safe-area-inset-left));
   padding-top:calc(var(--ocr-e3) + env(safe-area-inset-top));
@@ -552,15 +569,17 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .corps{flex:1;max-width:1100px;width:100%;margin:0 auto;
   padding:var(--ocr-e5) calc(var(--ocr-e4) + env(safe-area-inset-right)) 110px calc(var(--ocr-e4) + env(safe-area-inset-left))}
 .onglets{position:fixed;bottom:0;left:0;right:0;z-index:40;display:flex;
-  background:rgba(22,22,26,.96);backdrop-filter:blur(16px);border-top:1px solid var(--ocr-filet);
+  background:#16161A;border-top:1px solid var(--ocr-filet);
   padding:6px calc(4px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(4px + env(safe-area-inset-left))}
 .onglet{flex:1;background:none;border:0;cursor:pointer;color:var(--ocr-argent-2);
   display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;
   font-family:var(--ocr-titre);font-weight:500;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
 .onglet .ic{font-size:18px;line-height:1}
-.onglet{transition:color .18s ease}
+.onglet{transition:color .18s ease;touch-action:manipulation}
+.onglet:active .ic{transform:scale(.9)}
+.onglet .ic{transition:transform .12s ease}
 .onglet[aria-current="page"]{color:var(--ocr-rouge-texte)}
-.onglet[aria-current="page"] .ic{filter:drop-shadow(0 0 7px rgba(232,82,78,.7))}
+.onglet[aria-current="page"] .ic{text-shadow:0 0 7px rgba(232,82,78,.55)}
 @media (prefers-reduced-motion:reduce){.onglet{transition:none}}
 .onglet .pastille-nb{position:absolute;transform:translate(18px,-6px);background:var(--ocr-rouge);
   color:#fff;border-radius:999px;min-width:17px;height:17px;font-size:10px;font-weight:700;
@@ -615,7 +634,7 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .alerte .de{font:var(--ocr-t-mini);color:var(--ocr-argent);margin-top:3px}
 .alerte .ac{margin-left:auto;display:flex;gap:6px;flex:none}
 
-.voile{position:fixed;inset:0;background:rgba(5,5,6,.72);backdrop-filter:blur(4px);z-index:100;
+.voile{position:fixed;inset:0;background:rgba(5,5,6,.86);z-index:100;
   display:grid;place-items:center;padding:var(--ocr-e4)}
 .boite{background:var(--ocr-surface);border:1px solid var(--ocr-filet);border-radius:var(--ocr-r-l);
   width:100%;max-width:430px;max-height:88dvh;overflow:auto;padding:var(--ocr-e5)}
@@ -629,8 +648,8 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 /* ---- réglages : thème clair, taille, iPad ---- */
 /* Le logo complet est blanc : en clair, il vit sur une carte noire. */
 .theme-clair .conn-logo{background:#0A0A0B;border-radius:var(--ocr-r-m);padding:20px 24px}
-.theme-clair .barre{background:rgba(245,245,246,.92)}
-.theme-clair .onglets{background:rgba(255,255,255,.96)}
+.theme-clair .barre{background:#F5F5F6}
+.theme-clair .onglets{background:#FFF}
 .theme-clair .voile{background:rgba(20,20,23,.45)}
 .theme-clair .toast{box-shadow:0 10px 34px rgba(0,0,0,.18)}
 body.texte-grand{zoom:1.09}
@@ -647,6 +666,8 @@ body.texte-tresgrand{zoom:1.2}
 .bandeau{padding:10px 16px;font:var(--ocr-t-petit);display:flex;gap:10px;align-items:center}
 .bandeau--demo{background:rgba(245,166,35,.12);border-bottom:1px solid rgba(245,166,35,.4);color:var(--ocr-ambre)}
 .bandeau--hors{background:rgba(232,82,78,.12);border-bottom:1px solid rgba(232,82,78,.4);color:var(--ocr-erreur)}
+.bandeau--maj{background:rgba(25,158,112,.13);border-bottom:1px solid rgba(25,158,112,.45);color:#5FD3A6;
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .tourne{width:16px;height:16px;border:2px solid var(--ocr-filet);border-top-color:var(--ocr-rouge);
   border-radius:50%;display:inline-block;animation:tr .7s linear infinite}
 @keyframes tr{to{transform:rotate(360deg)}}
@@ -1308,7 +1329,15 @@ function creerClientDemo() {
     opts.forEach(o => { const op = OCR.option(o); lignes.push({ type: 'option', code: o, libelle: op.nom, prix: op.prix, duree_min: op.duree }); });
     const brut = lignes.reduce((s, l) => s + l.prix, 0);
     const id = uid();
-    const arrivee = ['08:40:00', '10:15:00', '12:05:00', '14:30:00'][D.passages.length % 4];
+    // Les véhicules d'AUJOURD'HUI arrivent par rapport à l'heure qu'il est
+    // (80, 55, 40 puis 25 minutes avant maintenant). Sinon, une démonstration
+    // faite le matin montrait des arrivées « dans le futur » et l'alerte
+    // « à démarrer depuis N min » ne se déclenchait jamais. Les jours passés
+    // gardent des horaires d'atelier fixes.
+    const maintenant = new Date().toTimeString().slice(0, 8);
+    const arrivee = ilYa
+      ? ['08:40:00', '10:15:00', '12:05:00', '14:30:00'][D.passages.length % 4]
+      : plusMin(maintenant, -[80, 55, 40, 25][D.passages.length % 4]);
     // chrono : les lavages finis ont un vrai début et une vraie fin
     const dRef = OCR.duree(presta, gab) || 30;
     const facteur = [0.9, 1.05, 1.4, 0.85][graine++ % 4];   // dont un lavage lent, pour la discussion
@@ -2058,7 +2087,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v33';
+const VERSION = 'v34';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -2141,19 +2170,32 @@ document.addEventListener('click', e => {
 });
 majBoutonsInstall();
 
-/* Le service worker : ouverture instantanée et mises à jour silencieuses.
-   Les pages passent toujours par le réseau — jamais de vieille caisse. */
+/* Le service worker : l'app s'ouvre depuis le téléphone (instantané) et la
+   nouvelle version se télécharge derrière. Quand il y en a une, on ne
+   l'applique pas dans le dos de quelqu'un qui encaisse : un bandeau propose
+   de recharger, d'un doigt. Et de toute façon, la prochaine ouverture de
+   l'app partira sur la nouvelle version. */
+let nouvelleVersion = null;
+function bandeauMaj(v) {
+  nouvelleVersion = v || 'à jour';
+  bandeau();
+}
 if ('serviceWorker' in navigator && !MODE_DEMO &&
     (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
-  navigator.serviceWorker.register('sw.js').then(reg => {
-    reg.addEventListener('updatefound', () => {
-      const nv = reg.installing;
-      if (nv) nv.addEventListener('statechange', () => {
-        if (nv.state === 'activated' && navigator.serviceWorker.controller)
-          toast('✨ L’application vient de se mettre à jour');
-      });
-    });
-  }).catch(() => {});
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.type === 'ocr-nouvelle-version' && e.data.version !== VERSION)
+      bandeauMaj(e.data.version);
+  });
+  // On demande nous-mêmes s'il y a du neuf en réserve : au démarrage, puis
+  // chaque fois qu'on revient sur l'app. Ne dépend d'aucun timing.
+  const demanderVersion = () => {
+    const c = navigator.serviceWorker.controller;
+    if (c) c.postMessage({ type: 'ocr-version?', version: VERSION });
+  };
+  setTimeout(demanderVersion, 1200);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) demanderVersion(); });
+  navigator.serviceWorker.addEventListener('controllerchange', demanderVersion);
 }
 // Double authentification exigée pour ces rôles (décision du 11 août).
 const ROLES_2FA = ['direction', 'comptable', 'manager'];
@@ -2245,10 +2287,63 @@ function bandeau() {
   // Le pointage, lui, marche sans réseau : le dire ici évite de contredire
   // l'écran Pointage, qui invite justement à pointer quand même.
   if (!navigator.onLine) h += '<div class="bandeau bandeau--hors">⛔ Hors ligne — encaissements et saisie attendent la connexion. Le pointage, lui, fonctionne : il partira tout seul.</div>';
+  // Nouvelle version déjà téléchargée : on laisse le choix du moment.
+  if (nouvelleVersion) h += '<div class="bandeau bandeau--maj">✦ Nouvelle version ' + esc(nouvelleVersion) +
+    ' prête <button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" id="btnAppliquerMaj" style="margin-left:10px">Recharger</button></div>';
   $('#bandeau').innerHTML = h;
+  const bm = $('#btnAppliquerMaj');
+  if (bm) bm.addEventListener('click', () => location.reload());
 }
 window.addEventListener('online', bandeau);
 window.addEventListener('offline', bandeau);
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MÉMOIRE COURTE (13/08) — pourquoi l'app « tournait lentement »
+
+   Chaque appui rappelait la base pour des choses qui n'avaient pas changé
+   depuis trois secondes : l'état de la journée, les absences du jour, les
+   baies, les totaux… Depuis Cotonou, chaque aller-retour coûte 200 à 400 ms,
+   et ils s'enchaînaient AVANT que le nouvel écran ne s'affiche. Résultat :
+   une seconde de rien après chaque tap.
+
+   Ces lectures sont désormais gardées 20 secondes en mémoire. Et pour qu'on
+   ne puisse JAMAIS travailler sur un chiffre périmé, la mémoire est vidée
+   d'un coup dès qu'une écriture part (n'importe quel rpc, insert, update ou
+   delete — voir surveillerEcritures), ainsi que par le bouton ↻ et par le
+   rafraîchissement automatique.
+   ══════════════════════════════════════════════════════════════════════════ */
+const MEMO = new Map();
+const MEMO_MS = 20000;
+function memo(cle, fn) {
+  const e = MEMO.get(cle);
+  if (e && Date.now() - e.t < MEMO_MS) return e.p;
+  // on garde la PROMESSE, pas seulement le résultat : deux écrans qui
+  // demandent la même chose en même temps ne font qu'un seul appel.
+  const p = Promise.resolve().then(fn).catch(ex => { MEMO.delete(cle); throw ex; });
+  MEMO.set(cle, { t: Date.now(), p });
+  return p;
+}
+const memoVider = () => MEMO.clear();
+
+/* Toute écriture vide la mémoire, où qu'elle soit écrite dans l'app : on
+   emballe une fois pour toutes rpc() et les mutations de table. Impossible
+   d'oublier un cas en ajoutant une fonction plus tard. */
+function surveillerEcritures() {
+  if (!sb || sb.__ocrSurveille) return;
+  sb.__ocrSurveille = true;
+  const rpc = sb.rpc.bind(sb);
+  sb.rpc = (...a) => { memoVider(); return rpc(...a); };
+  const from = sb.from.bind(sb);
+  sb.from = (t) => {
+    const q = from(t);
+    ['insert', 'update', 'upsert', 'delete'].forEach(m => {
+      if (typeof q[m] !== 'function') return;
+      const f = q[m].bind(q);
+      q[m] = (...a) => { memoVider(); return f(...a); };
+    });
+    return q;
+  };
+}
 
 /* ---------- accès aux données ---------- */
 const API = {
@@ -2332,21 +2427,21 @@ const API = {
     const { error } = await sb.rpc('ocr_supprimer_vehicule', { p_vehicule: id, p_motif: motif || null });
     if (error) throw new Error(error.message);
   },
-  async journee(d) {
+  journee(d) { return memo('journee:' + d, async () => {
     const { data } = await sb.from('journees').select('*').eq('date', d).maybeSingle();
     return data || { date: d, statut: 'ouverte' };
-  },
-  async totaux(d) {
+  }); },
+  totaux(d) { return memo('totaux:' + d, async () => {
     const { data } = await sb.from('v_journee_totaux').select('*').eq('date', d).maybeSingle();
     return data || { vehicules: 0, ca: 0, encaisse: 0, impaye: 0, kkiapay: 0, especes: 0, remises: 0, ticket_moyen: 0 };
-  },
-  async passages(d) {
+  }); },
+  passages(d) { return memo('passages:' + d, async () => {
     const { data, error } = await sb.from('passages')
       .select('*, clients(nom,telephone,entreprise_id), vehicules(marque,modele,immatriculation), passage_lignes(*)')
       .eq('journee', d).order('heure_arrivee');
     if (error) throw error;
     return data || [];
-  },
+  }); },
   async anomalies(d) {
     const { data } = await sb.from('anomalies').select('*').eq('journee', d);
     return data || [];
@@ -2452,7 +2547,7 @@ const API = {
   majEntreprise: (id, patch) => sb.from('entreprises').update(patch).eq('id', id),
 
   /* --- rendez-vous --- */
-  async rdvJour(d) {
+  rdvJour(d) { return memo('rdvjour:' + d, async () => {
     // Le véhicule (marque/modèle/immatriculation) vit sur vehicules, pas sur
     // reservations — sans ce join, « Arrivé → saisie » ne peut rien pré-remplir
     // et on doit tout retaper (remonté le 12/08).
@@ -2461,7 +2556,7 @@ const API = {
       .order('heure_prevue');
     if (error) throw error;
     return data || [];
-  },
+  }); },
   // Juste de quoi compter les rendez-vous par jour dans la bande semaine :
   // deux colonnes, pas la fiche entière.
   async rdvPeriode(du, au) {
@@ -2472,11 +2567,11 @@ const API = {
     return data || [];
   },
   // Réservations qui attendent une action (acompte à confirmer) — pour le badge.
-  async rdvEnAttente() {
+  rdvEnAttente() { return memo('rdvattente', async () => {
     const { data } = await sb.from('reservations').select('id')
       .eq('statut', 'en_attente_paiement').gte('date_prevue', auj());
     return (data || []).length;
-  },
+  }); },
   async clientParTelOuCreation(tel, nom) {
     const t = String(tel || '').trim();
     if (!t) throw new Error('Le téléphone est obligatoire pour un rendez-vous');
@@ -2491,19 +2586,19 @@ const API = {
   majRdv: (id, patch) => sb.from('reservations').update(patch).eq('id', id),
 
   /* --- baies --- */
-  async baies() {
+  baies() { return memo('baies', async () => {
     const { data, error } = await sb.from('baies').select('*').order('id');
     if (error) throw error;
     return data || [];
-  },
+  }); },
   basculerBaie: a => sb.rpc('ocr_basculer_baie', a),
 
   /* --- absences --- */
   // Actives un jour donné (le filtre de fin se fait ici : « au » vide = en cours).
-  async absencesJour(d) {
+  absencesJour(d) { return memo('absences:' + d, async () => {
     const { data } = await sb.from('absences').select('*').lte('du', d);
     return (data || []).filter(a => a.au == null || a.au >= d);
-  },
+  }); },
   declarerAbsence: a => sb.from('absences').insert(a),
   finirAbsence: (id, au) => sb.from('absences').update({ au }).eq('id', id),
 
@@ -2513,13 +2608,13 @@ const API = {
     const { data } = await sb.from('reglages').select('*').eq('id', 1).maybeSingle();
     return data || null;
   },
-  async objectifs() {
+  objectifs() { return memo('objectifs', async () => {
     const { data, error } = await sb.from('objectifs').select('*');
     if (error) throw error;
     const o = { jour: { ca: 0, signatures: 0 }, semaine: { ca: 0, signatures: 0 }, mois: { ca: 0, signatures: 0 } };
     (data || []).forEach(x => { o[x.portee] = { ca: x.valeur || 0, signatures: x.signatures || 0 }; });
     return o;
-  },
+  }); },
   majObjectif: (portee, ca, signatures) => sb.from('objectifs')
     .update({ valeur: ca, signatures, defini_par: moi.id }).eq('portee', portee),
   async totauxDepuis(du) {
@@ -2542,12 +2637,12 @@ const API = {
 
   // Les pauses voyagent avec le pointage : les heures travaillées, c'est la
   // présence MOINS les pauses, et il faut les deux pour le calculer.
-  async pointagesJour(d) {
+  pointagesJour(d) { return memo('pointages:' + d, async () => {
     const { data, error } = await sb.from('pointages')
       .select('*, pointage_pauses(id,debut,fin,hors_ligne)').eq('jour', d);
     if (error) throw error;
     return data || [];
-  },
+  }); },
   async pointagesPeriode(du, au, empId) {
     let q = sb.from('pointages').select('*, pointage_pauses(id,debut,fin,hors_ligne)')
       .gte('jour', du).lte('jour', au).order('jour', { ascending: false });
@@ -3080,7 +3175,7 @@ $('#btnRafraichir').addEventListener('click', async () => {
   const b = $('#btnRafraichir'), ic = $('#icRafraichir');
   if (b.disabled) return;
   b.disabled = true; ic.classList.add('gira');
-  try { await rendre(); toast('À jour ✓'); }
+  try { memoVider(); await rendre(); toast('À jour ✓'); }
   catch (ex) { toast('Impossible de rafraîchir — vérifie la connexion.', true); }
   setTimeout(() => { ic.classList.remove('gira'); b.disabled = false; }, 500);
 });
@@ -3104,6 +3199,7 @@ function rafraichirSansDeranger() {
   if (rdvOuvert || proEdite || cliNouveau) return;
   if (Date.now() - dernierRafraichissement < 20000) return;   // pas deux fois de suite
   dernierRafraichissement = Date.now();
+  memoVider();
   rendre(true);
 }
 window.__ocrRafraichir = rafraichirSansDeranger;   // testable
@@ -3157,22 +3253,19 @@ window.addEventListener('popstate', () => {
   if (moi && onglet !== ongletParDefaut()) { onglet = ongletParDefaut(); rendre(); }
 });
 
-/* ---------- navigation ---------- */
-async function rendre(discret) {
-  // discret = rafraîchissement automatique en arrière-plan : pas de spinner
-  // plein-écran, position de défilement conservée — pour ne plus « sauter »
-  // sous les yeux de quelqu'un en train de lire l'écran (retour du 12/08).
-  const yAvant = discret ? window.scrollY : 0;
-  try { ABSENCES = await API.absencesJour(auj()); } catch (e) { ABSENCES = []; }
-  const jAuj = await API.journee(auj());
-  const jVu = jourVu === auj() ? jAuj : await API.journee(jourVu);
-  // La pastille du haut suit le jour affiché sur Journée et Clôture,
-  // et reste sur aujourd'hui partout ailleurs.
-  const jPast = (onglet === 'journee' || onglet === 'cloture') ? jVu : jAuj;
-  const verrou = jPast.statut !== 'ouverte';
-  $('#etatJour').textContent = verrou ? 'Journée clôturée' : 'Journée ouverte';
-  $('#etatJour').className = 'ocr-pastille ' + (verrou ? 'ocr-pastille--succes' : 'ocr-pastille--marque');
+/* ---------- navigation ----------
 
+   Ordre des opérations (13/08, « je veux que l'app soit plus fluide ») :
+   la barre du bas est repeinte AVANT le moindre appel réseau, pour que
+   l'onglet touché s'allume sous le doigt. Ensuite seulement on va chercher
+   les données — toutes en parallèle, plus en file indienne. Et le sablier
+   n'apparaît qu'au-delà de 180 ms : quand la réponse est en mémoire, l'écran
+   change sans clignoter. */
+
+// Les onglets ne dépendent que du rôle : calcul immédiat, sans réseau.
+const SOUS_DIRECTION = ['direction', 'bilan', 'cloture', 'journal', 'pointage'];
+let badgeRdv = 0;   // dernier compte connu de rendez-vous en attente d'acompte
+function ongletsDuRole() {
   // Un technicien n'a que son pointage — sauf le remplaçant, le jour de
   // repos du manager : il voit alors les écrans du manager.
   const items = roleEffectif() === 'technicien'
@@ -3189,22 +3282,19 @@ async function rendre(discret) {
   // Toi et Guénolé : un seul onglet Direction qui regroupe tout
   // (Bilan, Clôture, objectifs, baies, absences, journal, pointage…).
   if (peutCloturer()) items.push({ id: 'direction', ic: '◆', l: 'Direction' });
-  const sousDirection = ['direction', 'bilan', 'cloture', 'journal', 'pointage'];
-  if (!items.some(i => i.id === onglet) && !(peutCloturer() && sousDirection.includes(onglet)))
+  return items;
+}
+
+function peindreOnglets() {
+  const items = ongletsDuRole();
+  if (!items.some(i => i.id === onglet) && !(peutCloturer() && SOUS_DIRECTION.includes(onglet)))
     onglet = items[0].id;
-
-  // badge : réservations en attente d'acompte (une action est attendue)
-  let badgeRdv = 0;
-  if (items.some(i => i.id === 'agenda')) {
-    try { badgeRdv = await API.rdvEnAttente(); } catch (e) {}
-  }
-
   $('#onglets').innerHTML = items.map(i => {
     // Un écran ouvert depuis le panneau Direction (Bilan, Clôture, Journal,
     // Pointage…) garde l'onglet Direction allumé : on sait toujours où on est.
     // (Avant, Pointage était exclu : plus aucun onglet n'était allumé.)
     const actif = i.id === onglet ||
-      (i.id === 'direction' && sousDirection.includes(onglet) && !items.some(x => x.id === onglet));
+      (i.id === 'direction' && SOUS_DIRECTION.includes(onglet) && !items.some(x => x.id === onglet));
     // Les pointages qui attendent le réseau : un chiffre sur l'onglet, pour
     // qu'on n'ait jamais à se demander si c'est bien parti.
     const enAttente = i.id === 'pointage' ? filePointage.length : 0;
@@ -3216,17 +3306,53 @@ async function rendre(discret) {
   }).join('');
   $('#onglets').querySelectorAll('[data-onglet]').forEach(b =>
     b.addEventListener('click', () => {
+      const dest = b.dataset.onglet;
       // Toucher un onglet referme d'abord l'écran secondaire éventuel : son
       // cran d'historique est dépilé par le rendu, on n'en empile pas d'autre.
       if (sousEcranOuvert()) {
         fermerSousEcrans();
-        onglet = b.dataset.onglet; rendre(); window.scrollTo(0, 0); return;
+        onglet = dest; peindreOnglets(); rendre(); window.scrollTo(0, 0); return;
       }
-      if (b.dataset.onglet === onglet) { rendre(); return; }
-      allerOnglet(b.dataset.onglet);
+      if (dest === onglet) { rendre(); return; }
+      allerOnglet(dest);
     }));
+}
 
-  if (!discret) $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+let tourRendu = 0;   // numéro du rendu en cours : un rendu plus vieux n'écrase plus le neuf
+async function rendre(discret) {
+  // discret = rafraîchissement automatique en arrière-plan : pas de spinner
+  // plein-écran, position de défilement conservée — pour ne plus « sauter »
+  // sous les yeux de quelqu'un en train de lire l'écran (retour du 12/08).
+  const tour = ++tourRendu;
+  const yAvant = discret ? window.scrollY : 0;
+
+  // 1 · réponse immédiate au doigt, sans attendre le réseau
+  peindreOnglets();
+  let sablier = null;
+  if (!discret) sablier = setTimeout(() => {
+    if (tour === tourRendu) $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+  }, 180);
+
+  // 2 · tout ce dont l'en-tête a besoin, en un seul aller-retour parallèle
+  const veutBadge = ongletsDuRole().some(i => i.id === 'agenda');
+  const [abs, jAuj, jVuBrut, badge] = await Promise.all([
+    API.absencesJour(auj()).catch(() => []),
+    API.journee(auj()),
+    jourVu === auj() ? Promise.resolve(null) : API.journee(jourVu),
+    veutBadge ? API.rdvEnAttente().catch(() => 0) : Promise.resolve(0),
+  ]);
+  if (tour !== tourRendu) return;   // un appui plus récent a pris la main
+  ABSENCES = abs;
+  const jVu = jVuBrut || jAuj;
+  if (badge !== badgeRdv) { badgeRdv = badge; peindreOnglets(); }
+
+  // La pastille du haut suit le jour affiché sur Journée et Clôture,
+  // et reste sur aujourd'hui partout ailleurs.
+  const jPast = (onglet === 'journee' || onglet === 'cloture') ? jVu : jAuj;
+  const verrou = jPast.statut !== 'ouverte';
+  $('#etatJour').textContent = verrou ? 'Journée clôturée' : 'Journée ouverte';
+  $('#etatJour').className = 'ocr-pastille ' + (verrou ? 'ocr-pastille--succes' : 'ocr-pastille--marque');
+
   try {
     if (onglet === 'saisie')    await vueSaisie(jAuj);
     if (onglet === 'journee')   await vueJournee(jVu);
@@ -3247,6 +3373,7 @@ async function rendre(discret) {
     const br = $('#btnReessayer');
     if (br) br.addEventListener('click', () => rendre());
   }
+  clearTimeout(sablier);
   majHistoriqueSousEcran();
   if (discret) window.scrollTo(0, yAvant);
 }
@@ -6493,6 +6620,8 @@ async function vueJournal() {
     sb = MODE_DEMO ? creerClientDemo()
                    : window.supabase.createClient(CONFIG_SUPABASE.url, CONFIG_SUPABASE.cle,
                        { auth: { experimental: { passkey: true } } });
+    // toute écriture videra la mémoire courte des lectures (voir plus haut)
+    surveillerEcritures();
   } catch (ex) {
     document.body.innerHTML = '<div class="ocr-message ocr-message--erreur" style="margin:40px auto;max-width:420px">' +
       '<span>⛔</span><div><strong>Connexion impossible</strong><br>La bibliothèque Supabase n’a pas pu être chargée. ' +
