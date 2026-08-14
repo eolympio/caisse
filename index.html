@@ -2649,8 +2649,24 @@ function creerClientDemo() {
     },
     ocr_enregistrer_passage(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
-      const j = D.journees.find(x => x.date === jourCourant);
-      if (j && j.statut !== 'ouverte') throw new Error('Journée ' + jourCourant + ' clôturée : modification impossible');
+      /* RATTRAPAGE (14/08) — copie fidèle de la base : rien dans le futur, rien
+         au-delà d'un mois, rien sur une journée signée, motif obligatoire. */
+      const jour = a.p_journee || jourCourant;
+      let retard = null;
+      if (jour !== jourCourant) {
+        if (jour > jourCourant) throw new Error('On n\'enregistre pas un lavage à venir');
+        if (jour < jourMoins(31))
+          throw new Error('Trop ancien (' + jour + ') — passe par « Reprendre d\'anciens lavages »');
+        if (!String(a.p_motif_retard || '').trim())
+          throw new Error('Dis pourquoi ce lavage est saisi en retard — c\'est inscrit au journal');
+        const jc = D.journees.find(x => x.date === jour);
+        if (jc && ['validee', 'fermee'].includes(jc.statut))
+          throw new Error('JOURNEE_SIGNEE : la journée du ' + jour +
+            ' est clôturée et signée — la direction doit la réouvrir');
+        retard = String(a.p_motif_retard).trim();
+      }
+      const j = D.journees.find(x => x.date === jour);
+      if (j && j.statut !== 'ouverte') throw new Error('Journée ' + jour + ' clôturée : modification impossible');
       const lignes = a.p_lignes || [];
       if (!lignes.length) throw new Error('Aucune prestation sélectionnée');
       /* LA PLAQUE D'ABORD — copie fidèle de la base (13/08) :
@@ -2727,12 +2743,17 @@ function creerClientDemo() {
           throw new Error('Une remise doit être justifiée — indique le motif');
       }
       const id = uid(), r = ref();
-      D.passages.push({ id, reference: r, journee: jourCourant, client_id: cl.id,
+      D.passages.push({ id, reference: r, journee: jour, client_id: cl.id,
         vehicule_id: parc || !ve ? null : ve.id,
         gabarit: a.p_gabarit, heure_arrivee: new Date().toTimeString().slice(0, 8),
         heure_debut: null, heure_fin: null,
         montant_brut: brut, remise, montant_total: brut - remise,
-        statut_atelier: 'attente', statut_paiement: 'impaye', mode_paiement: null,
+        /* Un lavage rattrapé entre TERMINÉ : il n'a jamais eu de chrono, et le
+           laisser « à démarrer » bloquerait la clôture de sa journée. */
+        retard_motif: retard,
+        statut_atelier: retard ? 'pret' : 'attente',
+        sans_chrono_motif: retard ? 'Lavage saisi en retard : ' + retard : null,
+        statut_paiement: 'impaye', mode_paiement: null,
         equipe: a.p_equipe || [], saisi_par: emp ? emp.id : null,
         quantite: q, parc_partenaire: parc,
         /* Sans plaque et hors parc partenaire : on garde POURQUOI. La base met
@@ -2740,6 +2761,8 @@ function creerClientDemo() {
         sans_plaque_motif: !plaque && !parc
           ? (String(a.p_motif_sans_plaque || '').trim() || 'Non précisé') : null,
         sans_plaque_valide_par: null, sans_plaque_valide_le: null });
+      if (!D.journees.some(x => x.date === jour))
+        D.journees.push({ date: jour, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null });
       lignes.forEach(l => D.passage_lignes.push({ id: uid(), passage_id: id, ...l }));
       if (a.p_reservation) {
         const resa = D.reservations.find(x => x.reference === String(a.p_reservation).toUpperCase().trim());
@@ -2855,6 +2878,26 @@ function creerClientDemo() {
                            traitee_par: emp.id, traitee_le: new Date().toISOString() }));
       return [{ reference: p.reference }];
     },
+    /* Réouvrir une journée signée : seuls ceux qui signent peuvent défaire une
+       signature, et jamais sans dire pourquoi (14/08). */
+    ocr_reouvrir_journee(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls le comptable et la direction peuvent réouvrir une journée');
+      if (!String(a.p_motif || '').trim())
+        throw new Error('Dis pourquoi tu réouvres cette journée — c\'est inscrit au journal');
+      const j = D.journees.find(x => x.date === a.p_date);
+      if (!j) throw new Error('Aucune journée au ' + a.p_date);
+      if (j.statut === 'ouverte') throw new Error('Cette journée est déjà ouverte');
+      if (j.statut === 'fermee')
+        throw new Error('Cette journée vient de l\'ancien cahier : elle ne se réouvre pas');
+      Object.assign(j, { statut: 'ouverte', reouverte_par: emp.id,
+        reouverte_le: new Date().toISOString(), reouverte_motif: String(a.p_motif).trim() });
+      D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Journée du ' + a.p_date + ' RÉOUVERTE — ' + j.reouverte_motif, entite: 'journee' });
+      return [{ jour: j.date, etat: j.statut }];
+    },
     /* La direction confirme, en un appui, tous les lavages sans plaque du jour. */
     ocr_valider_sans_plaque(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -2933,7 +2976,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v45';
+const VERSION = 'v46';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -3870,6 +3913,8 @@ const API = {
     return data || [];
   },
   validerSansPlaque: jour => sb.rpc('ocr_valider_sans_plaque', { p_journee: jour }),
+  reouvrirJournee: (jour, motif) =>
+    sb.rpc('ocr_reouvrir_journee', { p_date: jour, p_motif: motif }),
   /* Les entreprises partenaires — celles qui ont une remise négociée. */
   async partenaires() {
     const { data } = await sb.from('entreprises').select('id,nom,remise_pct')
@@ -4602,6 +4647,8 @@ const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque:
                prestation: null, options: [], equipe: [], remise: 0, motifRemise: '', manuel: 0,
                quantite: 1,       // plusieurs véhicules identiques (parc Ehu Motors)
                sansChrono: false, motifSansChrono: '',   // lavage déjà fait, saisi après coup
+               jour: null, motifRetard: '',   // rattrapage : lavage d'un jour passé
+               demarrer: false,   // la voiture entre en baie tout de suite
                note: '', reservation: null };
 
 /* « 1 lavage », « 3 lavages » — jamais « 1 lavage(s) ». Une parenthèse de
@@ -4696,6 +4743,38 @@ async function vueSaisie(j) {
        normal demande une plaque et un numéro ; ici il n'y a ni l'une ni
        l'autre, juste un employé et un nombre de motos. On lui donne sa
        propre porte, et elle ne s'affiche que sur une fiche encore vierge. */''}
+  ${/* POUR QUEL JOUR ? (14/08) — « hier on a eu des lavages qu'il n'a pas
+       encore eu le temps de mettre, il doit pouvoir les mettre aujourd'hui
+       pour hier » (Edwin). La barre dit toujours sur quelle journée on écrit :
+       une saisie qui tombe sur le mauvais jour fausse deux clôtures. */''}
+  ${form.jour ? `
+  <div class="ocr-carte" style="margin-bottom:var(--ocr-e4);padding:var(--ocr-e4);border-color:rgba(245,166,35,.45)">
+    <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+      <strong style="color:var(--ocr-ambre)">Rattrapage — ${jourLong(form.jour)}</strong>
+      <span style="flex:1"></span>
+      ${/* On reste sur le jour choisi après un enregistrement (on rattrape
+           rarement un seul lavage), donc il faut pouvoir changer de jour SANS
+           repasser par aujourd'hui — sinon c'est deux gestes pour rien. */''}
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-jourautre>Changer de jour</button>
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-jourauj>Revenir à aujourd’hui</button>
+    </div>
+    <p class="ocr-mini" style="margin:8px 0 9px">Ce lavage sera écrit sur la journée du
+      ${jourLong(form.jour)}, <strong style="color:var(--ocr-blanc)">terminé sans chrono</strong>
+      (il n’en a jamais eu). Guénolé devra clôturer cette journée à nouveau.</p>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">
+      ${MOTIFS_RETARD.map(([court, texte], i) => `<button class="ocr-chip" data-mr="${i}"
+        aria-pressed="${form.motifRetard === texte}">${esc(court)}</button>`).join('')}
+    </div>
+    <label class="ocr-champ" style="margin-bottom:0">
+      <span class="ocr-label" style="color:var(--ocr-rouge-texte)">Pourquoi en retard — obligatoire</span>
+      <input class="ocr-saisie" id="fMotifRetard" value="${esc(form.motifRetard)}"
+             placeholder="En deux mots"></label>
+  </div>` : `
+  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+    <span class="ocr-mini">Journée du ${jourLong(auj())}</span>
+    <span style="flex:1"></span>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-jourautre>Un lavage d’un autre jour ›</button>
+  </div>`}
   ${PARTENAIRES.length && !form.clientTrouve && !form.immat && !form.reservation ? `
   <div class="ocr-carte" style="margin-bottom:var(--ocr-e4);padding:var(--ocr-e4);border-color:rgba(214,32,30,.30)">
     <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
@@ -4859,9 +4938,18 @@ async function vueSaisie(j) {
            la voiture est lavée, et la saisie se fait après coup. Refuser
            reviendrait à faire inventer des heures — donc on accepte, et on
            écrit pourquoi. */''}
-      <div style="margin-top:var(--ocr-e4)">
-        <button class="ocr-chip" data-sc aria-pressed="${form.sansChrono}">⏱ Déjà lavé — sans chrono</button>
-      </div>
+      ${/* DÉMARRER TOUT DE SUITE (14/08) — le lavage le plus fréquent, c'est la
+           voiture qui entre en baie dans la seconde. Sans ça il faut aller la
+           retrouver dans Journée pour appuyer sur ▶ : un geste de plus, et
+           surtout LE geste qu'on oublie — c'est de là que viennent tous les
+           lavages sans chrono. Ce n'est PAS coché par défaut : quand trois
+           voitures attendent, démarrer les trois chronos gonflerait les temps. */''}
+      ${form.jour ? '' : `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:var(--ocr-e4)">
+        <button class="ocr-chip" data-dem aria-pressed="${form.demarrer}"
+          ${form.sansChrono ? 'disabled' : ''}>▶ Démarrer tout de suite</button>
+        <button class="ocr-chip" data-sc aria-pressed="${form.sansChrono}"
+          ${form.demarrer ? 'disabled' : ''}>⏱ Déjà lavé — sans chrono</button>
+      </div>`}
       ${form.sansChrono ? `
       <div class="ocr-carte" style="padding:var(--ocr-e4);margin-top:var(--ocr-e3);border-color:rgba(245,166,35,.38)">
         <p class="ocr-mini" style="margin:0 0 9px">Le véhicule entrera directement en
@@ -4975,7 +5063,7 @@ async function vueSaisie(j) {
     toast('Taille : ' + (OCR.gabarit(g) || {}).nom + ' (d’après ' + quoi + ')');
   });
   ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note', 'fMotifRemise:motifRemise',
-   'fMotifSansChrono:motifSansChrono'].forEach(p => {
+   'fMotifSansChrono:motifSansChrono', 'fMotifRetard:motifRetard'].forEach(p => {
     const [id, k] = p.split(':');
     const el = $('#' + id); if (el) el.addEventListener('input', e => { form[k] = e.target.value; });
   });
@@ -5040,6 +5128,21 @@ async function vueSaisie(j) {
     i === -1 ? form.options.push(id) : form.options.splice(i, 1);
     vueSaisie(j);
   }));
+  const bja = $('#vue').querySelector('[data-jourautre]');
+  if (bja) bja.addEventListener('click', () => boiteJourPasse(j));
+  const bjh = $('#vue').querySelector('[data-jourauj]');
+  if (bjh) bjh.addEventListener('click', () => {
+    form.jour = null; form.motifRetard = ''; vueSaisie(j);
+  });
+  $('#vue').querySelectorAll('[data-mr]').forEach(b => b.addEventListener('click', () => {
+    form.motifRetard = MOTIFS_RETARD[Number(b.dataset.mr)][1]; vueSaisie(j);
+  }));
+  const bdem = $('#vue').querySelector('[data-dem]');
+  if (bdem) bdem.addEventListener('click', () => {
+    form.demarrer = !form.demarrer;
+    if (form.demarrer) { form.sansChrono = false; form.motifSansChrono = ''; }
+    vueSaisie(j);
+  });
   const bsc = $('#vue').querySelector('[data-sc]');
   if (bsc) bsc.addEventListener('click', () => {
     form.sansChrono = !form.sansChrono;
@@ -5065,6 +5168,8 @@ async function enregistrer() {
     return toast('Indique le motif de la remise — il est inscrit au journal.', true);
   if (form.sansChrono && !String(form.motifSansChrono || '').trim())
     return toast('Dis pourquoi le chrono n’a pas tourné — sinon ce lavage devient illisible dans un mois.', true);
+  if (form.jour && !String(form.motifRetard || '').trim())
+    return toast('Dis pourquoi ce lavage est saisi en retard — Guénolé le verra à la clôture.', true);
   if (!navigator.onLine) return toast('Hors ligne — impossible d’enregistrer.', true);
 
   /* PAS DE PLAQUE (13/08) — « ça peut arriver, il faut juste qu'il mette un
@@ -5106,33 +5211,57 @@ async function enregistrer() {
       // parc du partenaire : des motos d'Ehu, pas le véhicule de l'employé
       p_parc: parcPart,
       p_motif_sans_plaque: motifSP,
+      p_journee: form.jour,
+      p_motif_retard: form.jour ? String(form.motifRetard).trim() : null,
     });
     if (error) throw error;
     const r = Array.isArray(data) ? data[0] : data;
     /* Lavage déjà fait : on le solde tout de suite, avec son motif. Si ce
        deuxième appel échoue, le passage existe et reste « à démarrer » — la
-       fiche du jour propose alors « Terminé sans chrono… ». On le dit. */
+       fiche du jour propose alors « Terminé sans chrono… ». On le dit.
+       (Un rattrapage, lui, arrive déjà terminé : c'est la base qui le fait.) */
     let scRate = null;
-    if (form.sansChrono) {
+    if (form.sansChrono && !form.jour) {
       const { error: e2 } = await API.avancer(r.id, 'pret', String(form.motifSansChrono).trim());
       if (e2) scRate = e2.message;
+    }
+    /* Le chrono part avec l'enregistrement : l'heure de début reste tamponnée
+       par le serveur, comme toujours — on épargne juste un aller-retour par
+       l'écran Journée, et surtout l'oubli du ▶. */
+    let demRate = null;
+    if (form.demarrer && !form.jour) {
+      const { error: e3 } = await API.avancer(r.id, 'en_cours', null);
+      if (e3) demRate = e3.message;
     }
     const sansClient = !form.tel && !(form.clientTrouve && form.clientTrouve.id);
     toast(r.reference + ' enregistré · ' + (T.q > 1 ? T.q + ' véhicules · ' : '') + OCR.fcfa(r.montant_total) +
       (sansClient && form.immat ? ' — fiche « Véhicule ' + form.immat +' » à compléter' : '') +
       (motifSP ? ' — sans plaque, à valider à la clôture' : '') +
-      (form.sansChrono && !scRate ? ' — terminé, sans chrono' : ''));
+      (form.jour ? ' — écrit sur le ' + jourBref(form.jour) : '') +
+      (form.sansChrono && !form.jour && !scRate ? ' — terminé, sans chrono' : '') +
+      (form.demarrer && !form.jour && !demRate ? ' — chrono lancé ▶' : ''));
+    if (demRate) toast('Enregistré, mais le chrono n’a pas démarré : ' + demRate +
+      ' — appuie sur ▶ sur la fiche du jour.', true);
     if (scRate) toast('Enregistré, mais resté « à démarrer » : ' + scRate +
       ' — solde-le avec « Terminé sans chrono… » sur la fiche du jour.', true);
     Object.assign(form, { quantite: 1, tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
                           vehTrouve: null,
                           prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0,
-                          sansChrono: false, motifSansChrono: '',
+                          sansChrono: false, motifSansChrono: '', demarrer: false,
                           note: '', reservation: null });
+    /* On NE remet PAS form.jour à aujourd'hui : quand on rattrape hier, on a
+       presque toujours plusieurs lavages à rattraper d'affilée. La barre orange
+       reste bien visible, et « Revenir à aujourd'hui » est à côté. */
+    /* On ouvre la Journée DU LAVAGE, pas celle d'aujourd'hui : après un
+       rattrapage, Samuel veut vérifier ce qu'il vient d'ajouter à hier. */
+    if (form.jour) jourVu = form.jour;
     onglet = 'journee';
     await rendre();
   } catch (ex) {
-    toast(ex.message || 'Enregistrement impossible', true);
+    const m = ex.message || 'Enregistrement impossible';
+    if (/JOURNEE_SIGNEE/.test(m))
+      toast(m.replace('JOURNEE_SIGNEE : ', '') + '. Rien n’est perdu : garde cet écran ouvert.', true);
+    else toast(m, true);
   } finally {
     enCours = false;
     const bb = $('#btnEnregistrer'); if (bb) { bb.disabled = false; bb.textContent = 'Enregistrer'; }
@@ -5463,16 +5592,32 @@ async function vueCloture(j) {
       <div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e5)"><span>✓</span><div>
         <strong>Journée du ${jourLong(d)} validée</strong><br>
         Signée par ${esc(signataire)} le ${esc((j.valide_le || '').replace('T', ' à ').slice(0, 19))}.</div></div>
-      ${carteRecap(t)}`;
+      ${carteRecap(t)}
+      ${/* RÉOUVRIR (14/08) — un lavage d'hier oublié ne doit pas rester dehors
+           parce que la journée est signée. Mais défaire une signature n'est pas
+           un geste anodin : c'est réservé à ceux qui signent, motif écrit. */''}
+      ${j.statut === 'validee' ? `
+      <div class="ocr-carte" style="margin-top:var(--ocr-e4);padding:var(--ocr-e4)">
+        <p class="ocr-mini" style="margin:0 0 9px">Un lavage de ce jour-là a été oublié ?
+          Réouvre la journée, saisis-le, et resigne. Tout est inscrit au journal.</p>
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" id="btnReouvrir"
+          style="color:var(--ocr-argent-2)">Réouvrir cette journée…</button>
+      </div>` : ''}`;
     brancherRetourDirection();
     brancherJour();
+    const bro = $('#btnReouvrir');
+    if (bro) bro.addEventListener('click', () => boiteReouvrir(d));
     return;
   }
 
   $('#vue').innerHTML = `
     ${retourDirection()}
     ${barreJour(j)}
-    ${d !== auj() ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>⚠</span><div>
+    ${j.reouverte_le ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>↺</span><div>
+      <strong>Journée réouverte</strong> le ${esc((j.reouverte_le || '').replace('T', ' à ').slice(0, 16))}
+      par ${esc((equipe.find(e => e.id === j.reouverte_par) || {}).nom || '—')}.<br>
+      Motif : « ${esc(j.reouverte_motif || '')} » — contrôle les lavages ajoutés, puis resigne.</div></div>`
+    : d !== auj() ? `<div class="ocr-message ocr-message--alerte" style="margin-bottom:var(--ocr-e4)"><span>⚠</span><div>
       <strong>Cette journée n’a jamais été clôturée.</strong><br>
       Tu peux la contrôler et la signer maintenant — elle sera figée à sa date d’origine.</div></div>` : ''}
     <div class="tuiles">
@@ -5535,6 +5680,34 @@ async function vueCloture(j) {
         ${aValider.length ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="btnValiderSP"
           style="margin-top:var(--ocr-e4)">Valider ${aValider.length > 1 ? 'ces ' : 'ce '}${
             pluriel(aValider.length, 'lavage')} sans plaque</button>` : ''}
+      </div>`;
+    })()}
+
+    ${(() => {
+      /* LES LAVAGES RATTRAPÉS (14/08) : ils n'ont pas été vus par la caisse au
+         moment où ils ont eu lieu. Guénolé doit les lire avant de resigner —
+         c'est tout l'intérêt de lui rendre la main. */
+      const rattrapes = ps.filter(x => !x.annule && x.retard_motif);
+      if (!rattrapes.length) return '';
+      const nomR = x => [(x.vehicules || {}).marque, (x.vehicules || {}).modele].filter(Boolean).join(' ')
+                     || (x.vehicules || {}).immatriculation || (x.clients || {}).nom || x.reference;
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(245,166,35,.42)">
+        <div class="ocr-surtitre">${pluriel(rattrapes.length, 'lavage')} saisi${
+          rattrapes.length > 1 ? 's' : ''} en retard</div>
+        <p class="ocr-petit" style="margin:10px 0 var(--ocr-e3)">Ajouté${rattrapes.length > 1 ? 's' : ''}
+          après coup sur cette journée. ${rattrapes.length > 1 ? 'Ils n’ont' : 'Il n’a'} pas de temps de
+          lavage — c’est normal, ${rattrapes.length > 1 ? 'ils n’ont' : 'il n’a'} jamais eu de chrono.</p>
+        ${rattrapes.map(x => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block">${esc(nomR(x))}
+              <span class="ocr-mini" style="font-weight:400">· ${OCR.fcfa(x.montant_total)}</span></span>
+            <span class="ocr-mini">${esc(x.reference)}${
+              (equipe.find(e => e.id === x.saisi_par) || {}).nom
+                ? ' · saisi par ' + esc((equipe.find(e => e.id === x.saisi_par) || {}).nom) : ''}</span>
+            <span class="ocr-mini" style="display:block;color:var(--ocr-argent-2)">Motif : ${esc(x.retard_motif)}</span>
+          </span>
+        </div>`).join('')}
       </div>`;
     })()}
 
@@ -5608,6 +5781,32 @@ async function vueCloture(j) {
       if (error) { toast(error.message, true); e.target.disabled = false; return; }
       fermerModale(); toast('Journée clôturée et signée ✓'); rendre();
     });
+  });
+}
+
+function boiteReouvrir(d) {
+  const v = modale(`
+    <h3 class="ocr-h2">Réouvrir le ${jourLong(d)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      La journée redevient modifiable : l'équipe pourra y ajouter les lavages oubliés.
+      <strong style="color:var(--ocr-blanc)">Ta signature est retirée</strong> — il faudra
+      resigner après contrôle. La réouverture est inscrite au journal à ton nom.</p>
+    <label class="ocr-champ"><span class="ocr-label" style="color:var(--ocr-rouge-texte)">Pourquoi — obligatoire</span>
+      <input class="ocr-saisie" id="roMotif" placeholder="Lavages d’hier oubliés par Samuel"></label>
+    <div style="display:flex;gap:9px;align-items:center">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok disabled>Réouvrir</button></div>`);
+  const c = v.querySelector('#roMotif');
+  c.addEventListener('input', () => { v.querySelector('[data-ok]').disabled = !c.value.trim(); });
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true; e.target.textContent = 'Réouverture…';
+    const { error } = await API.reouvrirJournee(d, c.value.trim());
+    if (error) { e.target.disabled = false; e.target.textContent = 'Réessayer'; return toast(error.message, true); }
+    fermerModale();
+    toast('Journée du ' + jourBref(d) + ' réouverte — pense à resigner après contrôle');
+    rendre();
   });
 }
 
@@ -8567,13 +8766,23 @@ async function boiteParcPartenaire(P, j) {
   if (!P) return;
   const emps = await API.employesDe(P.id).catch(() => []);
   const motos = OCR.PRESTATIONS.filter(x => x.famille === 'moto');
-  const etat = { emp: null, q: 1, presta: (motos[0] || {}).id || 'moto-express', clavier: false };
+  /* PLUSIEURS TYPES DE LAVAGE DANS LA MÊME VENUE (14/08) — « certaines motos
+     peuvent venir pour le lavage express et d'autres lavage signature, donc si
+     par exemple il y a 3 motos, 2 en express 1 en signature, on doit pouvoir le
+     mettre » (Edwin). On compte donc PAR TYPE, pas une quantité globale. */
+  const etat = { emp: null, lots: {} };
+  motos.forEach(m => { etat.lots[m.id] = 0; });
+  if (motos[0]) etat.lots[motos[0].id] = 1;
+
   const v = modale('<div id="ppCorps"></div>');
   const calc = () => {
-    const u = OCR.prix(etat.presta, 'moto') || 0;
-    const brut = u * etat.q;
+    let brut = 0, motosN = 0;
+    motos.forEach(m => {
+      const q = etat.lots[m.id] || 0;
+      brut += (OCR.prix(m.id, 'moto') || 0) * q; motosN += q;
+    });
     const remise = Math.round(brut * P.remise_pct / 100);
-    return { u, brut, remise, total: brut - remise };
+    return { brut, remise, total: brut - remise, motosN };
   };
   const peindre = () => {
     const T = calc();
@@ -8581,8 +8790,8 @@ async function boiteParcPartenaire(P, j) {
       <h3 class="ocr-h2">◆ Parc ${esc(P.nom)}</h3>
       <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
         Pas de plaque à saisir : ces motos appartiennent au concessionnaire et peuvent
-        partir chez un client. On note qui est venu, combien de motos, et la remise
-        de ${P.remise_pct} % s'applique toute seule.</p>
+        partir chez un client. On note qui est venu, combien de motos par type de lavage,
+        et la remise de ${P.remise_pct} % s'applique toute seule.</p>
 
       <div class="ocr-label" style="margin-bottom:8px">1 · Qui est venu</div>
       ${emps.length ? `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
@@ -8593,37 +8802,43 @@ async function boiteParcPartenaire(P, j) {
         Aucun employé ${esc(P.nom)} n'est encore enregistré. Ajoute-le dans
         Clients › Entreprises › ＋ Ajouter un employé, puis reviens ici.</p>`}
 
-      <div class="ocr-label" style="margin-bottom:8px">2 · Combien de motos</div>
-${/* Six pastilles couvrent la quasi-totalité des passages ; le clavier
-         numérique ne se déplie que si on en demande davantage — sinon il
-         occupe une ligne entière pour rien sur un téléphone. */''}
-      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:var(--ocr-e4)">
-        ${[1, 2, 3, 4, 5, 6].map(k => `<button class="ocr-chip" data-ppq="${k}"
-          aria-pressed="${etat.q === k && !etat.clavier}">${k}</button>`).join('')}
-        ${etat.clavier || etat.q > 6
-          ? `<input class="ocr-saisie" id="ppQ" type="number" min="1" max="50" inputmode="numeric"
-                    value="${etat.q}" style="width:76px;padding:8px 9px;text-align:center">`
-          : `<button class="ocr-chip" data-ppplus aria-label="Plus de 6 motos">＋</button>`}
-      </div>
+      <div class="ocr-label" style="margin-bottom:8px">2 · Combien de motos, par lavage</div>
+      ${motos.map(m => {
+        const q = etat.lots[m.id] || 0;
+        return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block;${q ? '' : 'color:var(--ocr-argent-2)'}">${esc(m.nom)}</span>
+            <span class="ocr-mini">${OCR.fcfa(OCR.prix(m.id, 'moto'))} l'unité${
+              q ? ' · ' + q + ' × = ' + OCR.fcfa((OCR.prix(m.id, 'moto') || 0) * q) : ''}</span>
+          </span>
+          <span style="display:flex;align-items:center;gap:8px">
+            <button class="ocr-chip" data-ppmoins="${m.id}" ${q ? '' : 'disabled'}
+              aria-label="Une de moins" style="min-width:40px">−</button>
+            <span style="min-width:22px;text-align:center;font:700 17px/1 var(--ocr-texte);
+              font-variant-numeric:tabular-nums;${q ? '' : 'color:var(--ocr-argent-2)'}">${q}</span>
+            <button class="ocr-chip" data-ppplus="${m.id}" aria-label="Une de plus"
+              style="min-width:40px">＋</button>
+          </span>
+        </div>`;
+      }).join('')}
 
-      <div class="ocr-label" style="margin-bottom:8px">3 · Le lavage</div>
-      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
-        ${motos.map(m => `<button class="ocr-chip" data-ppp="${m.id}"
-          aria-pressed="${etat.presta === m.id}">${esc(m.nom)} · ${OCR.fcfa(OCR.prix(m.id, 'moto'))}</button>`).join('')}
-      </div>
-
-      <div class="ocr-carte" style="padding:var(--ocr-e4);margin-bottom:var(--ocr-e4)">
+      <div class="ocr-carte" style="padding:var(--ocr-e4);margin:var(--ocr-e4) 0">
         <div style="display:flex;justify-content:space-between;align-items:baseline">
-          <span class="ocr-mini">${etat.q} × ${OCR.fcfa(T.u)} − ${P.remise_pct} %</span>
+          <span class="ocr-mini">${T.motosN ? pluriel(T.motosN, 'moto') + ' · ' + OCR.fcfa(T.brut) +
+            ' − ' + P.remise_pct + ' %' : 'Aucune moto pour l’instant'}</span>
           <span style="font:700 20px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(T.total)}</span>
         </div>
+        ${Object.keys(etat.lots).filter(k => etat.lots[k] > 0).length > 1 ? `
+        <p class="ocr-mini" style="margin:9px 0 0">Deux types de lavage = deux lignes dans la Journée,
+          chacune avec son chrono. Un seul passage au comptoir.</p>` : ''}
       </div>
 
       <div style="display:flex;gap:9px;align-items:center">
         <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
         <div style="flex:1"></div>
-        <button class="ocr-btn ocr-btn--primaire" data-ppok ${etat.emp ? '' : 'disabled'}>
-          ${etat.emp ? 'Enregistrer · ' + OCR.fcfa(T.total) : 'Choisis qui est venu'}</button>
+        <button class="ocr-btn ocr-btn--primaire" data-ppok ${etat.emp && T.motosN ? '' : 'disabled'}>
+          ${!etat.emp ? 'Choisis qui est venu' : !T.motosN ? 'Ajoute au moins une moto'
+            : 'Enregistrer · ' + OCR.fcfa(T.total)}</button>
       </div>`;
     lier();
   };
@@ -8632,42 +8847,121 @@ ${/* Six pastilles couvrent la quasi-totalité des passages ; le clavier
     v.querySelectorAll('[data-ppe]').forEach(b => b.addEventListener('click', () => {
       etat.emp = emps.find(e => e.id === b.dataset.ppe); peindre();
     }));
-    v.querySelectorAll('[data-ppq]').forEach(b => b.addEventListener('click', () => {
-      etat.q = Number(b.dataset.ppq); etat.clavier = false; peindre();
+    v.querySelectorAll('[data-ppplus]').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.ppplus;
+      etat.lots[k] = Math.min(50, (etat.lots[k] || 0) + 1); peindre();
     }));
-    const bp = v.querySelector('[data-ppplus]');
-    if (bp) bp.addEventListener('click', () => {
-      etat.clavier = true; peindre();
-      const c = v.querySelector('#ppQ'); if (c) { c.focus(); c.select(); }
-    });
-    v.querySelectorAll('[data-ppp]').forEach(b => b.addEventListener('click', () => {
-      etat.presta = b.dataset.ppp; peindre();
+    v.querySelectorAll('[data-ppmoins]').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.ppmoins;
+      etat.lots[k] = Math.max(0, (etat.lots[k] || 0) - 1); peindre();
     }));
-    const cq = v.querySelector('#ppQ');
-    if (cq) cq.addEventListener('change', e => {
-      etat.q = Math.max(1, Math.min(50, Number(e.target.value) || 1));
-      etat.clavier = etat.q > 6; peindre();
-    });
-    v.querySelector('[data-ppok]').addEventListener('click', () => {
-      if (!etat.emp) return;
-      /* On remplit la fiche de saisie et on laisse le chemin habituel faire le
-         reste : même enregistrement, même journal, même remise partenaire. */
-      Object.assign(form, {
-        tel: etat.emp.telephone || '', nom: etat.emp.nom,
-        clientTrouve: { id: etat.emp.id, nom: etat.emp.nom, telephone: etat.emp.telephone,
-                        entreprise_id: P.id, entreprises: { nom: P.nom, remise_pct: P.remise_pct } },
-        vehsClient: [], parPlaque: false, vehTrouve: null,
-        gabarit: 'moto', gabaritManuel: true, gabaritDeduit: null, gabaritDesaccord: null,
-        marque: '', modele: '', immat: '',
-        prestation: etat.presta, options: [], remise: 0, motifRemise: '', manuel: 0,
-        sansChrono: false, motifSansChrono: '',
-        quantite: etat.q, note: '', reservation: null,
-      });
-      fermerModale();
-      enregistrer();
+    const ok = v.querySelector('[data-ppok]');
+    if (ok) ok.addEventListener('click', () => {
+      const lots = motos.filter(m => (etat.lots[m.id] || 0) > 0)
+                        .map(m => ({ presta: m.id, q: etat.lots[m.id] }));
+      if (!etat.emp || !lots.length) return;
+      ok.disabled = true; ok.textContent = 'Enregistrement…';
+      enregistrerParc(P, etat.emp, lots, j, ok);
     });
   };
   peindre();
+}
+
+/* Une ligne d'enregistrement PAR TYPE de lavage : la base porte une prestation
+   et une quantité par passage. Deux types = deux passages, même employé, même
+   remise, même journée — et « Qui est venu » les regroupe déjà par prestation.
+   Le chemin habituel (form + enregistrer) ne sait faire qu'un lavage à la fois :
+   pour un lot, on appelle l'API directement. */
+async function enregistrerParc(P, emp, lots, j, bouton) {
+  if (enCours) return;
+  if (!navigator.onLine) { fermerModale(); return toast('Hors ligne — impossible d’enregistrer.', true); }
+  enCours = true;
+  const faits = [];
+  let total = 0, echec = null;
+  try {
+    for (const lot of lots) {
+      const pr = OCR.prestation(lot.presta);
+      const prix = OCR.prix(lot.presta, 'moto') || 0;
+      const remise = Math.round(prix * lot.q * P.remise_pct / 100);
+      const { data, error } = await API.enregistrer({
+        p_client_nom: emp.nom, p_telephone: emp.telephone || null, p_gabarit: 'moto',
+        p_lignes: [{ type: 'prestation', code: pr.id, libelle: pr.nom, prix,
+                     duree_min: OCR.duree(lot.presta, 'moto') }],
+        p_remise: remise, p_motif_remise: null,
+        p_marque: null, p_modele: null, p_immat: null,
+        p_equipe: [], p_note: null, p_reservation: null,
+        p_quantite: lot.q, p_parc: true, p_motif_sans_plaque: null,
+        p_journee: form.jour, p_motif_retard: form.jour ? String(form.motifRetard).trim() : null,
+      });
+      if (error) { echec = error.message; break; }
+      const r = Array.isArray(data) ? data[0] : data;
+      faits.push(lot.q + ' × ' + pr.nom);
+      total += r.montant_total;
+    }
+  } finally { enCours = false; }
+  fermerModale();
+  /* Si la deuxième ligne échoue, la première EXISTE. On ne prétend pas le
+     contraire : on dit ce qui est passé et ce qui reste à faire. */
+  if (faits.length) {
+    toast(esc(emp.nom) + ' · ' + faits.join(' + ') + ' · ' + OCR.fcfa(total) +
+      (form.jour ? ' — écrit sur le ' + jourBref(form.jour) : ''));
+  }
+  if (echec) toast(faits.length
+    ? 'Le reste n’est pas passé : ' + echec + ' — reprends le parc pour la ligne manquante.'
+    : echec, true);
+  if (form.jour) jourVu = form.jour;
+  onglet = 'journee';
+  await rendre();
+}
+
+/* ==========================================================================
+   RATTRAPER UN JOUR PASSÉ (14/08)
+   « Hier on a eu des lavages qu'il n'a pas encore eu le temps de mettre car
+     j'étais en train de mettre l'application à jour. Donc il doit pouvoir les
+     mettre aujourd'hui pour hier, et Guénolé devra donc clôturer vu qu'il y a
+     des modifications, et Samuel doit justifier toujours. » (Edwin)
+   Trois refus tenus par la base : rien dans le futur, rien au-delà d'un mois,
+   rien sur une journée déjà signée — celle-là, seule la direction la réouvre.
+   ========================================================================== */
+const MOTIFS_RETARD = [
+  ['Mise à jour de l’app', 'Application en cours de mise à jour ce jour-là'],
+  ['Atelier débordé',      'Atelier débordé — pas eu le temps de saisir'],
+  ['Panne de réseau',      'Pas de réseau au moment du lavage'],
+  ['Oubli de saisie',      'Lavage fait, saisie oubliée'],
+];
+
+function boiteJourPasse(j) {
+  const propositions = [1, 2, 3].map(k => decaleJour(auj(), -k));
+  const v = modale(`
+    <h3 class="ocr-h2">Un lavage d’un autre jour</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      Le lavage sera écrit sur <strong style="color:var(--ocr-blanc)">la journée où il a eu
+      lieu</strong> — c’est le seul moyen que le chiffre d’affaires de ce jour-là soit juste.
+      Il entrera terminé, sans chrono, et Guénolé devra clôturer cette journée à nouveau.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${propositions.map((d, i) => `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc"
+        data-jp="${d}" style="text-align:left;justify-content:flex-start">${
+        i === 0 ? 'Hier — ' : ''}${jourLong(d)}</button>`).join('')}
+    </div>
+    <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Une autre date</span>
+      <input class="ocr-saisie" id="jpDate" type="date" max="${decaleJour(auj(), -1)}"
+             min="${decaleJour(auj(), -31)}"></label>
+    <p class="ocr-mini" style="margin:0 0 var(--ocr-e3)">Au-delà d’un mois, passe par
+      <strong style="color:var(--ocr-blanc)">Reprendre d’anciens lavages</strong> : c'est fait pour ça.</p>
+    <div style="display:flex;gap:9px;align-items:center">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-jpok disabled>Choisir cette date</button></div>`);
+  const choisir = d => {
+    form.jour = d;
+    if (!form.motifRetard) form.motifRetard = MOTIFS_RETARD[0][1];
+    fermerModale(); vueSaisie(j);
+  };
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelectorAll('[data-jp]').forEach(b => b.addEventListener('click', () => choisir(b.dataset.jp)));
+  const c = v.querySelector('#jpDate');
+  c.addEventListener('input', () => { v.querySelector('[data-jpok]').disabled = !c.value; });
+  v.querySelector('[data-jpok]').addEventListener('click', () => { if (c.value) choisir(c.value); });
 }
 
 /* Saisie après coup : le lavage est déjà fait quand on l'enregistre. Ce n'est
