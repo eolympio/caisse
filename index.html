@@ -2765,6 +2765,36 @@ function creerClientDemo() {
       } else throw new Error('Enchaînement impossible : ' + p.statut_atelier + ' → ' + a.p_vers);
       return [];
     },
+    /* La remise après coup — mêmes refus qu'en base, mot pour mot. */
+    ocr_remise_passage(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp || !emp.actif) throw new Error('Accès réservé au personnel');
+      if (!['manager', 'comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls le manager, la comptabilité et la direction posent une remise');
+      const p = D.passages.find(x => x.id === a.p_passage);
+      if (!p) throw new Error('Lavage introuvable');
+      if (p.annule) throw new Error('Ce lavage est annulé — rien à remiser');
+      if (p.statut_paiement === 'paye')
+        throw new Error('Ce lavage est déjà encaissé : une remise se pose AVANT le paiement, jamais après');
+      const r = Number(a.p_remise);
+      if (!(r >= 0)) throw new Error('Remise invalide');
+      if (r > p.montant_brut)
+        throw new Error('La remise ne peut pas dépasser le montant du lavage (' + p.montant_brut + ' F)');
+      const motif = String(a.p_motif || '').trim();
+      if (r > 0 && !motif) throw new Error('Une remise doit être justifiée — indique le motif');
+      const avant = p.remise || 0;
+      p.remise = r; p.montant_total = p.montant_brut - r;
+      p.note = [r > 0 ? 'Remise ' + r + ' F : ' + motif : null,
+                String(p.note || '').replace(/^Remise \d+ F : [^·]*(· )?/, '') || null]
+               .filter(Boolean).join(' · ') || null;
+      D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: r === 0
+          ? 'Remise retirée sur ' + p.reference + ' — le lavage revient à ' + p.montant_brut + ' F'
+          : 'Remise de ' + r + ' F sur ' + p.reference + ' (' + p.montant_brut + ' F → ' +
+            p.montant_total + ' F) — ' + motif + (avant > 0 ? ' [remplace une remise de ' + avant + ' F]' : ''),
+        entite: 'passage', entite_id: p.id });
+      return [{ reference: p.reference, montant_brut: p.montant_brut, remise: r, montant_total: p.montant_total }];
+    },
     ocr_mesure_passage(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp) throw new Error('Accès réservé au personnel');
@@ -3396,7 +3426,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v59';
+const VERSION = 'v60';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -4491,6 +4521,11 @@ const API = {
   },
   validerSansPlaque: jour => sb.rpc('ocr_valider_sans_plaque', { p_journee: jour }),
   /* La fin de la journée de travail — pas l'heure d'ouverture au public. */
+  /* La remise sur un lavage DÉJÀ enregistré — mais jamais déjà encaissé.
+     « La remise est avant l'encaissement, toujours, sinon c'est trop tard »
+     (Edwin, 14/08). La base tient la règle, ceci n'est que la porte. */
+  remisePassage: (id, montant, motif) => sb.rpc('ocr_remise_passage',
+    { p_passage: id, p_remise: Math.max(0, Number(montant) || 0), p_motif: motif || null }),
   fermerCarwash: (jour, note, annuler) => sb.rpc('ocr_fermer_carwash',
     { p_date: jour, p_note: note || null, p_annuler: !!annuler }),
   reouvrirJournee: (jour, motif) =>
@@ -5472,6 +5507,11 @@ function totalForm() {
            partenaire: auto > 0 && !(Number(form.remise) > 0) ? ent : null };
 }
 
+/* Les lavages déjà enregistrés pour la journée saisie — juste ce qu'il faut
+   pour dire « cette plaque est déjà passée ». Rempli à chaque rendu de la
+   Saisie, à partir du cache : aucun aller-retour supplémentaire. */
+let LAVAGES_DU_JOUR = [];
+
 /* L'aide sous le champ Immatriculation — jamais bloquante, toujours parlante.
    Elle dit, selon le cas : le format attendu, la plaque reconnue, ou le
    véhicule déjà connu et à qui il appartient. */
@@ -5481,17 +5521,43 @@ function aideImmat() {
     return 'La plaque suffit à démarrer : elle reconnaît le client toute seule. ' +
            'Voiture : ' + OCR.PLAQUE_EXEMPLES.voiture + ' · Moto : ' + OCR.PLAQUE_EXEMPLES.moto;
   const v = form.vehTrouve;
+
+  /* ── DEUX GARDE-FOUS, AUCUN NE BLOQUE (14/08) ──────────────────────────
+     Le 14/08, un grand SUV a été annulé puis re-saisi en BERLINE pour que le
+     prix tombe de 3 500 à 3 000. Ces deux phrases-là auraient arrêté le geste
+     au moment exact où il se faisait. Elles ne refusent rien : elles disent
+     tout haut ce que l'application savait déjà. */
+  const alertes = [];
+  if (v && v.gabarit && form.gabarit && v.gabarit !== form.gabarit) {
+    const gF = (OCR.gabarit(v.gabarit) || {}).court || v.gabarit;
+    const gS = (OCR.gabarit(form.gabarit) || {}).court || form.gabarit;
+    const pF = OCR.prix(form.prestation, v.gabarit), pS = OCR.prix(form.prestation, form.gabarit);
+    alertes.push('<span style="color:var(--ocr-ambre)">⚠ ' + esc(et.cle) + ' est enregistrée en <strong>' +
+      esc(gF) + '</strong> — tu saisis une <strong>' + esc(gS) + '</strong>.' +
+      (pF != null && pS != null && pF !== pS
+        ? ' Le tarif change : ' + OCR.fcfa(pS) + ' au lieu de ' + OCR.fcfa(pF) + '.' : '') + '</span>');
+  }
+  const dejaVu = (LAVAGES_DU_JOUR || []).filter(x => OCR.plaque(x.immat) === et.cle);
+  if (dejaVu.length) {
+    alertes.push('<span style="color:var(--ocr-ambre)">⚠ ' + esc(et.cle) + ' a déjà ' +
+      (dejaVu.length > 1 ? dejaVu.length + ' lavages' : 'un lavage') + ' ' +
+      (form.jour ? 'ce jour-là' : 'aujourd’hui') + ' : ' +
+      esc(dejaVu.map(x => x.reference + (x.heure ? ' à ' + x.heure : '') +
+        ' · ' + OCR.fcfa(x.montant)).join(', ')) + '.</span>');
+  }
+  const avec = txt => (alertes.length ? alertes.join('<br>') + '<br>' : '') + txt;
+
   if (v && v.immatriculation === et.cle && v.clients) {
     // La plaque appartient à quelqu'un d'autre que le client saisi : on le dit,
     // on ne corrige rien tout seul (il arrive qu'on lave la voiture d'un proche).
     if (form.clientTrouve && form.clientTrouve.id !== v.clients.id)
-      return '<span style="color:var(--ocr-ambre)">⚠ Cette plaque est au nom de ' + esc(v.clients.nom) +
-             ', pas de ' + esc(form.clientTrouve.nom) + ' — à vérifier.</span>';
-    return '<span style="color:var(--ocr-vert)">✓ Véhicule connu — ' + esc(v.clients.nom) + '</span>';
+      return avec('<span style="color:var(--ocr-ambre)">⚠ Cette plaque est au nom de ' + esc(v.clients.nom) +
+             ', pas de ' + esc(form.clientTrouve.nom) + ' — à vérifier.</span>');
+    return avec('<span style="color:var(--ocr-vert)">✓ Véhicule connu — ' + esc(v.clients.nom) + '</span>');
   }
   if (!et.ok || !et.accord)
-    return '<span style="color:var(--ocr-ambre)">' + esc(et.aide) + '</span>';
-  return '<span style="color:var(--ocr-vert)">' + esc(et.aide) + '</span>';
+    return avec('<span style="color:var(--ocr-ambre)">' + esc(et.aide) + '</span>');
+  return avec('<span style="color:var(--ocr-vert)">' + esc(et.aide) + '</span>');
 }
 
 async function vueSaisie(j) {
@@ -5506,6 +5572,15 @@ async function vueSaisie(j) {
     if (bj) bj.addEventListener('click', () => allerOnglet('journee'));
     return;
   }
+  /* Ce qui est déjà passé ce jour-là : lu du cache, donc gratuit. Sert au
+     garde-fou « cette plaque a déjà un lavage » (voir aideImmat). */
+  try {
+    LAVAGES_DU_JOUR = (await API.passages(form.jour || auj()))
+      .filter(x => !x.annule && (x.vehicules || {}).immatriculation)
+      .map(x => ({ immat: x.vehicules.immatriculation, reference: x.reference,
+                   heure: heureCourte(x.heure_arrivee), montant: x.montant_total }));
+  } catch (ex) { LAVAGES_DU_JOUR = []; }
+
   const T = totalForm();
   const opts = form.prestation ? OCR.optionsPour(form.prestation) : [];
 
@@ -6171,6 +6246,8 @@ async function vueJournee(j) {
   brancherFinDeJournee(d);
   const bo = $('#btnObjectifs');
   if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
+  $('#vue').querySelectorAll('[data-remise]').forEach(b => b.addEventListener('click', () =>
+    boiteRemise(b.dataset.remise, b.dataset.ref, Number(b.dataset.brut), Number(b.dataset.deja))));
   $('#vue').querySelectorAll('[data-avance]').forEach(b => b.addEventListener('click', async () => {
     b.disabled = true;
     const { error } = await API.avancer(b.dataset.avance, b.dataset.vers);
@@ -6243,6 +6320,14 @@ function ficheePassage(p, verrou) {
         data-avance="${p.id}" data-vers="pret">✓ Lavage terminé</button>` : ''}
       ${!paye ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
         data-encaisser="${p.id}" data-montant="${p.montant_total}">Encaisser</button>` : ''}
+      ${/* LA REMISE APRÈS COUP (14/08). Avant, elle n'existait qu'à la saisie :
+           une fois le lavage enregistré, le seul levier était d'annuler. C'est
+           ce qui s'est passé le 14/08 — un grand SUV annulé puis re-saisi en
+           berline pour que le prix tombe. Le bouton disparaît dès que le
+           lavage est encaissé : après, ce n'est plus une remise. */''}
+      ${!paye && !verrou && peutCorriger() ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
+        data-remise="${p.id}" data-ref="${esc(p.reference)}" data-brut="${p.montant_brut}"
+        data-deja="${p.remise || 0}">${p.remise > 0 ? 'Remise · ' + OCR.fcfa(p.remise) : 'Remise…'}</button>` : ''}
       ${peutCloturer() && p.heure_debut && p.heure_fin ? (p.hors_mesure
         ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-remesurej="${p.id}"
              style="color:var(--ocr-argent-2)">Remettre dans les mesures</button>`
@@ -6253,6 +6338,63 @@ function ficheePassage(p, verrou) {
         style="margin-left:auto;color:var(--ocr-argent-2)">Annuler…</button>` : ''}
     </div>`}
   </div>`;
+}
+
+/* ── LA REMISE SUR UN LAVAGE DÉJÀ ENREGISTRÉ (14/08) ───────────────────────
+   Edwin : « Pas besoin de seuil, je veux faire confiance à Samuel et l'aider à
+   grandir, il est jeune donc il apprend. »
+   Donc aucun plafond, aucune autorisation à demander — mais un motif, et le
+   journal. La confiance se donne avec une trace, pas à la place d'une trace :
+   c'est ce qui permet d'en reparler calmement plus tard. */
+function boiteRemise(id, ref, brut, deja) {
+  const v = modale(`
+    <h3 class="ocr-h2">Remise sur ${esc(ref)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Lavage à
+      <strong style="color:var(--ocr-blanc)">${OCR.fcfa(brut)}</strong>. La remise se pose
+      <strong style="color:var(--ocr-blanc)">avant l’encaissement</strong> — après, il est trop tard.
+      Le motif est inscrit au journal à ton nom.</p>
+    <label class="ocr-champ"><span class="ocr-label">Montant de la remise</span>
+      <input class="ocr-saisie" id="rmMontant" type="number" inputmode="numeric" min="0" step="500"
+             max="${brut}" value="${deja || ''}" placeholder="500">
+      <span class="ocr-aide" id="rmCalcul">&nbsp;</span></label>
+    <label class="ocr-champ"><span class="ocr-label" style="color:var(--ocr-rouge-texte)">Motif — obligatoire</span>
+      <input class="ocr-saisie" id="rmMotif" placeholder="Geste commercial exceptionnel, reprise d’un défaut…">
+      <span class="ocr-aide">Dis ce qui s’est passé : dans un mois, c’est cette phrase qui expliquera l’écart.</span></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3);align-items:center">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+      ${deja > 0 ? '<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="rmRetirer" ' +
+        'style="color:var(--ocr-argent-2)">Retirer la remise</button>' : ''}
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Appliquer</button>
+    </div>`);
+  const champ = v.querySelector('#rmMontant');
+  const calcul = () => {
+    const m = Math.max(0, Math.min(brut, Number(champ.value) || 0));
+    v.querySelector('#rmCalcul').innerHTML = m > 0
+      ? OCR.fcfa(brut) + ' − ' + OCR.fcfa(m) + ' = <strong style="color:var(--ocr-blanc)">' +
+        OCR.fcfa(brut - m) + '</strong> à encaisser'
+      : 'Le client paiera le tarif plein.';
+  };
+  champ.addEventListener('input', calcul); calcul();
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  const poser = async (montant, motif, bouton) => {
+    bouton.disabled = true;
+    const { error } = await API.remisePassage(id, montant, motif);
+    if (error) { toast(error.message, true); bouton.disabled = false; return; }
+    fermerModale(); memoVider();
+    toast(montant > 0 ? 'Remise de ' + OCR.fcfa(montant) + ' appliquée sur ' + ref
+                      : 'Remise retirée — ' + ref + ' revient à ' + OCR.fcfa(brut));
+    rendre();
+  };
+  const bR = v.querySelector('#rmRetirer');
+  if (bR) bR.addEventListener('click', e => poser(0, null, e.target));
+  v.querySelector('[data-ok]').addEventListener('click', e => {
+    const m = Math.max(0, Math.min(brut, Number(champ.value) || 0));
+    const motif = v.querySelector('#rmMotif').value.trim();
+    if (m <= 0) return toast('Mets un montant, ou « Retirer la remise ».', true);
+    if (!motif) return toast('Le motif est obligatoire — il est inscrit au journal.', true);
+    poser(m, motif, e.target);
+  });
 }
 
 function boiteAnnulation(id, ref, paye) {
@@ -6525,6 +6667,65 @@ async function vueCloture(j) {
               (equipe.find(e => e.id === x.saisi_par) || {}).nom
                 ? ' · saisi par ' + esc((equipe.find(e => e.id === x.saisi_par) || {}).nom) : ''}</span>
             <span class="ocr-mini" style="display:block;color:var(--ocr-argent-2)">Motif : ${esc(x.retard_motif)}</span>
+          </span>
+        </div>`).join('')}
+      </div>`;
+    })()}
+
+    ${(() => {
+      /* LES REMISES DU JOUR (14/08). La trace existait déjà au journal, mais
+         personne n'allait la chercher. Ici, elle passe sous les yeux de
+         Guénolé une fois par jour — c'est toute la différence entre une
+         information archivée et une information vue. */
+      const rem = ps.filter(x => !x.annule && x.remise > 0);
+      if (!rem.length) return '';
+      const total = rem.reduce((t, x) => t + x.remise, 0);
+      const nomR = x => [(x.vehicules || {}).marque, (x.vehicules || {}).modele].filter(Boolean).join(' ')
+                     || (x.vehicules || {}).immatriculation || (x.clients || {}).nom || x.reference;
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+        <div class="ocr-surtitre">${pluriel(rem.length, 'remise')} ce jour-là · ${OCR.fcfa(total)}</div>
+        <p class="ocr-mini" style="margin:9px 0 var(--ocr-e3)">Pour information — chacune porte son motif.</p>
+        ${rem.map(x => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block">${esc(nomR(x))}
+              <span class="ocr-mini" style="font-weight:400">· ${OCR.fcfa(x.montant_brut)} −
+                ${OCR.fcfa(x.remise)} = ${OCR.fcfa(x.montant_total)}</span></span>
+            <span class="ocr-mini">${esc(x.reference)}${
+              (equipe.find(e => e.id === x.saisi_par) || {}).nom
+                ? ' · ' + esc((equipe.find(e => e.id === x.saisi_par) || {}).nom) : ''}</span>
+            <span class="ocr-mini" style="display:block;color:var(--ocr-argent-2)">${
+              esc(String(x.note || '').replace(/^Remise \d+ F : /, '') || 'motif non repris')}</span>
+          </span>
+        </div>`).join('')}
+      </div>`;
+    })()}
+
+    ${(() => {
+      /* LES ANNULATIONS DU JOUR (14/08). Jusqu'ici un lavage annulé disparaissait
+         de l'écran sans que personne ne le voie passer — c'est exactement ce qui
+         a permis au contournement du 14/08 de rester invisible jusqu'au soir. */
+      const ann = ps.filter(x => x.annule);
+      if (!ann.length) return '';
+      const perdu = ann.reduce((t, x) => t + (x.montant_total || 0), 0);
+      const nomA = x => [(x.vehicules || {}).marque, (x.vehicules || {}).modele].filter(Boolean).join(' ')
+                     || (x.vehicules || {}).immatriculation || (x.clients || {}).nom || x.reference;
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(245,166,35,.42)">
+        <div class="ocr-surtitre">${pluriel(ann.length, 'lavage')} annulé${ann.length > 1 ? 's' : ''} ·
+          ${OCR.fcfa(perdu)} sorti${ann.length > 1 ? 's' : ''} du chiffre d’affaires</div>
+        <p class="ocr-mini" style="margin:9px 0 var(--ocr-e3)">Ils ne comptent nulle part — c'est bien
+          pour ça qu'il faut les lire avant de signer.</p>
+        ${ann.map(x => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block;text-decoration:line-through">${esc(nomA(x))}
+              <span class="ocr-mini" style="font-weight:400;text-decoration:none">· ${OCR.fcfa(x.montant_total)}</span></span>
+            <span class="ocr-mini">${esc(x.reference)}${
+              (equipe.find(e => e.id === x.annule_par) || {}).nom
+                ? ' · annulé par ' + esc((equipe.find(e => e.id === x.annule_par) || {}).nom) : ''}${
+              x.annule_le ? ' à ' + esc(String(x.annule_le).slice(11, 16)) : ''}</span>
+            <span class="ocr-mini" style="display:block;color:var(--ocr-argent-2)">Motif : ${
+              esc(x.annule_motif || 'non précisé')}</span>
           </span>
         </div>`).join('')}
       </div>`;
