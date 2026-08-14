@@ -441,6 +441,20 @@
      · aucun     — réglage système « réduire les animations » : on respecte.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* ---- LE CALENDRIER « ALLER À UNE DATE » ---- */
+.cal-entete,.cal-grille{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-entete span{text-align:center;font:var(--ocr-t-mini);color:var(--ocr-argent-2);padding-bottom:4px}
+.cal-j{position:relative;aspect-ratio:1;min-height:38px;border:1px solid var(--ocr-filet);
+  border-radius:10px;background:var(--ocr-surface);color:var(--ocr-blanc);
+  font:600 13px/1 var(--ocr-texte);cursor:pointer;display:grid;place-items:center;
+  transition:transform var(--ocr-transition),border-color var(--ocr-transition)}
+.cal-j:active:not(:disabled){transform:scale(.94)}
+.cal-j:disabled{opacity:.28;cursor:default}
+.cal-j i{position:absolute;bottom:5px;left:50%;transform:translateX(-50%);
+  width:5px;height:5px;border-radius:50%}
+.cal-j--auj{border-color:var(--ocr-argent-2)}
+.cal-j--ici{background:var(--ocr-grad-rouge);border-color:transparent;color:#fff}
+
 /* ---- LE RIDEAU D'OUVERTURE ---- */
 /* LE RIDEAU NE SUIT PAS LE THÈME (14/08, v62). Il prenait --ocr-noir, qui vaut
    #F5F5F6 en thème clair : le fond devenait blanc et la tuile noire de
@@ -1185,7 +1199,6 @@ const CONFIG = {
      elle ne se prescrit pas. */
   arriveeDebut: 8 * 60 + 30,
   arriveeFin:   9 * 60,
-  pauseMin:     45,        // une pause par jour, obligatoire — jamais bloquante
   pasCreneau:   30,        // grille de réservation, en minutes
   battementMin: 15,        // sortie/entrée véhicule entre deux prestations
   baies:        2,         // 2 véhicules lavés en simultané
@@ -1904,11 +1917,11 @@ function creerClientDemo() {
     journees: [{ date: jourCourant, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null }],
     passages: [], passage_lignes: [], paiements: [], anomalies: [], journal: [],
     reservations: [], entreprises: [], pointages: [], absences: [],
-    /* Horaires et pause obligatoire : en base depuis le 14/08, pour qu'ils se
-       corrigent sans republier l'application. */
+    /* Horaires : en base depuis le 14/08, pour qu'ils se corrigent sans
+       republier l'application. La pause obligatoire a disparu le 15/08. */
     reglages: [{ id: 1, lat: null, lng: null, rayon_m: 150,
                  ouverture: '09:00:00', fermeture: '19:00:00',
-                 arrivee_debut: '08:30:00', arrivee_fin: '09:00:00', pause_min: 45,
+                 arrivee_debut: '08:30:00', arrivee_fin: '09:00:00',
                  cahier_depuis: null }],
     demandes: [],
     // Catalogue des véhicules : semé depuis le socle, comme la vraie base.
@@ -2026,10 +2039,11 @@ function creerClientDemo() {
   );
 
   // Pointages : l'équipe est là aujourd'hui, hier est complet,
-  // et Cabo a oublié de pointer son départ avant-hier.
-  const semerPointage = (empId, ilYa, arr, dep) => D.pointages.push({
+  // et Cabo a oublié de pointer son départ avant-hier — le système l'a fermé
+  // à 19h30, ce qui est justement la nouvelle règle du 15/08.
+  const semerPointage = (empId, ilYa, arr, dep, auto) => D.pointages.push({
     id: uid(), employe_id: empId, jour: jourMoins(ilYa), arrivee: arr, depart: dep,
-    arrivee_par: empId, depart_par: dep ? empId : null, note: null });
+    arrivee_par: empId, depart_par: dep ? empId : null, depart_auto: !!auto, note: null });
   semerPointage('e3', 0, '07:55:00', null);
   semerPointage('e4', 0, '08:05:00', null);
   semerPointage('e5', 0, '08:20:00', null);
@@ -2038,14 +2052,12 @@ function creerClientDemo() {
     semerPointage('e4', n, '08:00:00', '18:00:00');
     if (n !== 4) semerPointage('e5', n, '08:10:00', '17:45:00');
   });
-  semerPointage('e5', 2, '08:15:00', null);   // départ oublié
-  // Pauses : Abel a déjeuné et repris, Cabo est en pause en ce moment —
-  // les deux états visibles d'un coup d'œil pour la démonstration.
+  semerPointage('e5', 2, '08:15:00', '19:30:00', true);   // départ oublié, fermé par le système
+  /* Une sortie en journée, exactement le cas d'Edwin du 15/08 : Cabo est parti
+     deux heures pour une affaire personnelle, puis il est revenu. */
   const ptAuj = e => D.pointages.find(x => x.employe_id === e && x.jour === jourCourant);
-  const pAbel = ptAuj('e4'); if (pAbel) pAbel.pointage_pauses = [
-    { id: uid(), debut: '12:00:00', fin: '12:42:00', hors_ligne: false }];
-  const pCabo = ptAuj('e5'); if (pCabo) pCabo.pointage_pauses = [
-    { id: uid(), debut: plusMin(new Date().toTimeString().slice(0, 8), -12), fin: null, hors_ligne: false }];
+  const pCabo = ptAuj('e5'); if (pCabo) pCabo.pointage_sorties = [
+    { id: uid(), debut: '14:00:00', fin: '16:00:00', motif: 'Affaire personnelle' }];
 
   // Prospection : deux entreprises, dont une relance en retard.
   D.entreprises.push(
@@ -2380,7 +2392,17 @@ function creerClientDemo() {
       single()      { return Promise.resolve({ data: filtrer()[0] || null, error: null }); },
       update(patch) {
         return { eq(k, v) {
-          (D[table] || []).filter(r => String(r[k]) === String(v)).forEach(r => Object.assign(r, patch));
+          const cibles = (D[table] || []).filter(r => String(r[k]) === String(v));
+          /* Même refus que trg_pointage_verrouille en base (15/08) : une
+             journée signée ne se corrige plus qu'à la direction. */
+          if (table === 'pointages') {
+            const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+            const bloque = cibles.find(r => (D.journees.find(j => j.date === r.jour) || {}).statut === 'validee');
+            if (bloque && (!emp || emp.role !== 'direction'))
+              return Promise.resolve({ data: null, error: { message:
+                'La journée du ' + frJour(bloque.jour) + ' est signée : seule la direction peut encore corriger un pointage' } });
+          }
+          cibles.forEach(r => Object.assign(r, patch));
           return Promise.resolve({ data: null, error: null });
         } };
       },
@@ -2413,6 +2435,8 @@ function creerClientDemo() {
     return emp;
   };
   const telCle = t => String(t || '').replace(/[^0-9]/g, '').slice(-8);
+  // Les refus parlent comme la base : « la journée du 13/08/2026 est signée… »
+  const frJour = j => String(j).split('-').reverse().join('/');
 
   const RPC = {
     ocr_reinitialiser_code_client(a) {
@@ -3086,39 +3110,68 @@ function creerClientDemo() {
               (a.p_hors_ligne ? ' (hors ligne)' : ''), entite: 'pointage' });
       return [{ jour_pointe: pt.jour, heure_arrivee: pt.arrivee, heure_depart: pt.depart }];
     },
-    ocr_pause(a) {
+    /* LA SORTIE EN JOURNÉE (15/08) — mêmes refus qu'ocr_sortie en base, aux
+       mêmes mots, pour que la démonstration ne mente jamais sur une règle. */
+    ocr_sortie(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp) throw new Error('Accès réservé au personnel');
-      if (!['debut', 'fin'].includes(a.p_sens)) throw new Error('Sens inconnu');
-      const cible = a.p_employe ? D.employes.find(e => e.id === a.p_employe) : emp;
-      if (!cible) throw new Error('Employé inconnu');
-      if (cible.id !== emp.id && !['manager', 'comptable', 'direction'].includes(emp.role))
-        throw new Error('Seuls le manager, le comptable et la direction pointent pour un employé');
-      const jour = a.p_jour || jourCourant;
-      const heure = a.p_heure ? String(a.p_heure).slice(0, 8) : new Date().toTimeString().slice(0, 8);
-      const pt = D.pointages.find(x => x.employe_id === cible.id && x.jour === jour);
-      if (!pt || !pt.arrivee) throw new Error('Il faut d’abord pointer l’arrivée');
-      pt.pointage_pauses = pt.pointage_pauses || [];
-      const ouverte = pt.pointage_pauses.filter(x => !x.fin).pop() || null;
-      if (a.p_sens === 'debut') {
-        if (ouverte) return [{ pause_id: ouverte.id, debut: ouverte.debut, fin: null }];
-        if (a.p_cle && pt.pointage_pauses.some(x => x.cle_client === a.p_cle)) {
-          const d = pt.pointage_pauses.find(x => x.cle_client === a.p_cle);
-          return [{ pause_id: d.id, debut: d.debut, fin: d.fin }];
-        }
-        const p = { id: uid(), debut: heure, fin: null, cle_client: a.p_cle || null, hors_ligne: !!a.p_hors_ligne };
-        pt.pointage_pauses.push(p);
+      if (!['manager', 'comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls le manager, la comptabilité et la direction déclarent une sortie');
+      const signee = j => (D.journees.find(x => x.date === j) || {}).statut === 'validee';
+      const fige = j => {
+        if (signee(j) && emp.role !== 'direction')
+          throw new Error('La journée du ' + frJour(j) + ' est signée : seule la direction peut encore la corriger');
+      };
+      if (a.p_action === 'supprimer') {
+        const pt = D.pointages.find(x => (x.pointage_sorties || []).some(y => y.id === a.p_sortie));
+        if (!pt) throw new Error('Sortie introuvable');
+        fige(pt.jour);
+        pt.pointage_sorties = pt.pointage_sorties.filter(y => y.id !== a.p_sortie);
         D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
-          quoi: cible.nom + ' en pause à ' + heure.slice(0, 5) +
-                (cible.id !== emp.id ? ' — pointé par ' + emp.nom : ''), entite: 'pointage' });
-        return [{ pause_id: p.id, debut: p.debut, fin: null }];
+          quoi: 'Sortie du ' + frJour(pt.jour) + ' retirée', entite: 'pointage' });
+        return a.p_sortie;
       }
-      if (!ouverte) throw new Error('Aucune pause en cours');
-      ouverte.fin = heure;
+      if (a.p_action !== 'ajouter') throw new Error('Action inconnue');
+      const jour = a.p_jour || jourCourant;
+      if (jour > jourCourant) throw new Error('Impossible de déclarer une sortie dans le futur');
+      if (!a.p_debut || !a.p_fin) throw new Error('Il faut l’heure de départ ET l’heure de retour');
+      const hm = t => String(t).slice(0, 5);
+      if (hm(a.p_fin) <= hm(a.p_debut)) throw new Error('Le retour est avant le départ');
+      if (String(a.p_motif || '').trim().length < 3)
+        throw new Error('Le motif est obligatoire — c’est lui qui expliquera l’écart dans un mois');
+      fige(jour);
+      const pt = D.pointages.find(x => x.employe_id === a.p_employe && x.jour === jour);
+      if (!pt || !pt.arrivee)
+        throw new Error('Cet employé n’a pas d’arrivée pointée ce jour-là — commence par là');
+      if (hm(a.p_debut) < hm(pt.arrivee))
+        throw new Error('La sortie commence avant son arrivée (' + hm(pt.arrivee) + ')');
+      if (pt.depart && hm(a.p_fin) > hm(pt.depart))
+        throw new Error('Le retour (' + hm(a.p_fin) + ') est après son départ (' + hm(pt.depart) + ')');
+      pt.pointage_sorties = pt.pointage_sorties || [];
+      if (pt.pointage_sorties.some(y => hm(y.debut) < hm(a.p_fin) && hm(y.fin) > hm(a.p_debut)))
+        throw new Error('Une sortie est déjà déclarée sur ce créneau');
+      const cible = D.employes.find(e => e.id === a.p_employe) || { nom: '' };
+      const so = { id: uid(), debut: String(a.p_debut).slice(0, 8).padEnd(8, ':00').slice(0, 8),
+                   fin: String(a.p_fin).slice(0, 8).padEnd(8, ':00').slice(0, 8),
+                   motif: String(a.p_motif).trim() };
+      pt.pointage_sorties.push(so);
+      const min = OCR.hm2min(hm(so.fin)) - OCR.hm2min(hm(so.debut));
       D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
-        quoi: cible.nom + ' a reprise à ' + heure.slice(0, 5) +
-              (cible.id !== emp.id ? ' — pointé par ' + emp.nom : ''), entite: 'pointage' });
-      return [{ pause_id: ouverte.id, debut: ouverte.debut, fin: ouverte.fin }];
+        quoi: cible.nom + ' sorti(e) de ' + hm(so.debut) + ' à ' + hm(so.fin) + ' le ' + frJour(jour) +
+              ' (' + min + ' min déduites) — ' + so.motif, entite: 'pointage' });
+      return so.id;
+    },
+    /* Le départ oublié se ferme à 19h30 (Edwin, 15/08). En base c'est une tâche
+       planifiée à 23h55 plus un passage à la clôture ; ici, la clôture suffit. */
+    ocr_fermer_pointages_oublies(a) {
+      const jour = a && a.p_jour ? a.p_jour : jourCourant;
+      const cibles = D.pointages.filter(x => x.jour === jour && x.arrivee && !x.depart);
+      cibles.forEach(x => { x.depart = '19:30:00'; x.depart_auto = true;
+        x.note = (x.note ? x.note + ' · ' : '') + 'Départ non pointé — fermé à 19h30 par le système'; });
+      if (cibles.length) D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: null,
+        qui_nom: 'Système', quoi: cibles.length + ' départ(s) non pointé(s) le ' + frJour(jour) +
+        ' — fermé(s) automatiquement à 19h30', entite: 'pointage' });
+      return cibles.length;
     },
     ocr_annuler_passage(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -3295,6 +3348,9 @@ function creerClientDemo() {
         && !['pret', 'livre'].includes(x.statut_atelier)).length;
       if (enCoursJ) throw new Error(enCoursJ + ' lavage(s) pas encore terminé(s) — chaque véhicule doit être ' +
         '« Terminé », ou soldé par « Terminé sans chrono… » avec son motif, avant de clôturer');
+      /* Les départs oubliés se ferment AVANT la signature (15/08) : après,
+         plus personne à part la direction n'y touchera. */
+      RPC.ocr_fermer_pointages_oublies({ p_jour: a.p_date });
       const j = D.journees.find(x => x.date === a.p_date) || { date: a.p_date };
       /* La note de clôture est ce qui distingue une journée « vérifiée et vide »
          d'une journée « pas encore faite » — la base la garde depuis toujours,
@@ -3462,7 +3518,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v63';
+const VERSION = 'v65';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -4232,7 +4288,9 @@ const API = {
   },
   journee(d) { return memo('journee:' + d, async () => {
     const { data } = await sb.from('journees').select('*').eq('date', d).maybeSingle();
-    return data || { date: d, statut: 'ouverte' };
+    const j = data || { date: d, statut: 'ouverte' };
+    JOURS_SIGNES[d] = j.statut === 'validee';    // voir peutTouchePointage()
+    return j;
   }); },
   totaux(d) { return memo('totaux:' + d, async () => {
     const { data } = await sb.from('v_journee_totaux').select('*').eq('date', d).maybeSingle();
@@ -4480,23 +4538,28 @@ const API = {
     return data || [];
   },
 
-  // Les pauses voyagent avec le pointage : les heures travaillées, c'est la
-  // présence MOINS les pauses, et il faut les deux pour le calculer.
+  // Les sorties voyagent avec le pointage : les heures travaillées, c'est la
+  // présence MOINS les sorties, et il faut les deux pour le calculer.
   pointagesJour(d) { return memo('pointages:' + d, async () => {
     const { data, error } = await sb.from('pointages')
-      .select('*, pointage_pauses(id,debut,fin,hors_ligne)').eq('jour', d);
+      .select('*, pointage_sorties(id,debut,fin,motif)').eq('jour', d);
     if (error) throw error;
     return data || [];
   }); },
   async pointagesPeriode(du, au, empId) {
-    let q = sb.from('pointages').select('*, pointage_pauses(id,debut,fin,hors_ligne)')
+    let q = sb.from('pointages').select('*, pointage_sorties(id,debut,fin,motif)')
       .gte('jour', du).lte('jour', au).order('jour', { ascending: false });
     if (empId) q = q.eq('employe_id', empId);
     const { data, error } = await q;
     if (error) throw error;
     return data || [];
   },
-  pause: args => sb.rpc('ocr_pause', args),
+  /* La sortie en journée (15/08) : DÉCLARÉE par le manager, jamais pointée par
+     l'employé. Une seule porte ; c'est la base qui tient les règles. */
+  ajouterSortie: (emp, jour, debut, fin, motif) => sb.rpc('ocr_sortie',
+    { p_action: 'ajouter', p_employe: emp, p_jour: jour,
+      p_debut: debut, p_fin: fin, p_motif: motif }),
+  retirerSortie: id => sb.rpc('ocr_sortie', { p_action: 'supprimer', p_sortie: id }),
   corrigerPointage(ligneId, empId, d, patch) {
     return ligneId
       ? sb.from('pointages').update(patch).eq('id', ligneId)
@@ -6235,20 +6298,126 @@ function barreJour(j) {
              : j.statut === 'ouverte' ? '⚠ jamais clôturée' : 'clôturée et signée';
   return `<div class="barre-jour">
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-jnav="-1" aria-label="Jour précédent">‹</button>
-    <div class="bj-centre">
-      <div class="bj-date">${jourLong(jourVu)}</div>
+    ${/* La date s'ouvre (14/08). Edwin : « si je veux aller à une date
+         antérieure je suis obligé d'y aller flèche par flèche, ça prendrait
+         trop de temps si je dois remonter trois semaines ». Les flèches restent
+         — elles sont parfaites pour hier — mais elles ne sont plus le SEUL
+         chemin. */''}
+    <button class="bj-centre" id="btnAllerJour" style="background:none;border:0;padding:0;
+      cursor:pointer;font:inherit;color:inherit;text-align:center">
+      <div class="bj-date">${jourLong(jourVu)} <span style="opacity:.5;font-size:.8em">▾</span></div>
       <div class="ocr-mini" style="margin-top:2px">${etat}${estAuj ? '' :
-        ' · <button class="bj-lien" data-jnav="0">revenir à aujourd’hui</button>'}</div>
-    </div>
+        ' · <span class="bj-lien" data-jnav="0">revenir à aujourd’hui</span>'}</div>
+    </button>
     <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-jnav="1"
             aria-label="Jour suivant" ${estAuj ? 'disabled' : ''}>›</button>
   </div>`;
 }
 function brancherJour() {
-  $('#vue').querySelectorAll('[data-jnav]').forEach(b => b.addEventListener('click', () => {
+  $('#vue').querySelectorAll('[data-jnav]').forEach(b => b.addEventListener('click', ev => {
+    ev.stopPropagation();          // « revenir à aujourd'hui » vit DANS le bouton de date
     const n = Number(b.dataset.jnav);
     jourVu = n === 0 ? auj() : decaleJour(jourVu, n);
     rendre();
+  }));
+  const ba = $('#btnAllerJour');
+  if (ba) ba.addEventListener('click', () => boiteAllerAuJour(jourVu, d => { jourVu = d; rendre(); }));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ALLER À UNE DATE (14/08)
+
+   Edwin : « Si je veux aller à une date précise antérieure, je suis obligé d'y
+   aller avec la flèche une journée par une journée — cela prendrait trop de
+   temps si je dois remonter trois semaines en arrière. Partout où il y a des
+   choix de dates, nous devons avoir des choix bien meilleurs et plus rapides. »
+
+   Trois chemins, du plus rapide au plus précis, dans la même fenêtre :
+     1. les raccourcis — hier, il y a une semaine, le début du mois ;
+     2. le CALENDRIER du mois, qui montre AUSSI ce qui s'est passé chaque jour :
+        un point vert pour une journée signée, ambre pour une journée ouverte
+        qu'on n'a jamais clôturée, rien du tout pour un jour sans activité.
+        C'est là que ça devient utile : on ne cherche pas une date, on cherche
+        LE JOUR OÙ IL S'EST PASSÉ QUELQUE CHOSE ;
+     3. le sélecteur du téléphone, pour aller loin en deux gestes.
+   Aucun jour futur : il n'y a rien à y voir.
+   ══════════════════════════════════════════════════════════════════════════ */
+let calMois = null;     // le mois affiché dans la fenêtre, AAAA-MM
+
+async function boiteAllerAuJour(depuis, choisir) {
+  calMois = String(depuis || auj()).slice(0, 7);
+  const v = modale('<div id="zoneCal"><div class="vide"><span class="tourne"></span></div></div>');
+  peindreCalendrier(v, depuis, choisir);
+}
+
+async function peindreCalendrier(v, courant, choisir) {
+  const z = v.querySelector('#zoneCal'); if (!z) return;
+  const debut = calMois + '-01';
+  const fin = finDeMois(calMois);
+  /* L'état de chaque journée du mois : c'est ce qui transforme un calendrier
+     en outil. Une seule requête, et elle est mémoïsée. */
+  let etats = {};
+  try {
+    (await API.journees(debut, fin)).forEach(j => { etats[j.date] = j.statut; });
+  } catch (ex) { /* hors ligne : le calendrier marche quand même, sans pastilles */ }
+  if (!v.isConnected) return;
+
+  const premier = new Date(debut + 'T12:00:00');
+  const decalage = (premier.getDay() + 6) % 7;          // lundi = 0
+  const nbJours = Number(fin.slice(8));
+  const cases = [];
+  for (let i = 0; i < decalage; i++) cases.push('<span></span>');
+  for (let n = 1; n <= nbJours; n++) {
+    const jour = calMois + '-' + String(n).padStart(2, '0');
+    const futur = jour > auj();
+    const st = etats[jour];
+    const point = st === 'validee' || st === 'fermee' ? 'var(--ocr-vert)'
+                : st === 'ouverte' ? 'var(--ocr-ambre)' : 'transparent';
+    cases.push(`<button class="cal-j${jour === courant ? ' cal-j--ici' : ''}${
+      jour === auj() ? ' cal-j--auj' : ''}" data-caljour="${jour}" ${futur ? 'disabled' : ''}>
+      ${n}<i style="background:${point}"></i></button>`);
+  }
+
+  z.innerHTML = `
+    <h3 class="ocr-h2">Aller à une date</h3>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin:10px 0 var(--ocr-e4)">
+      ${[['Aujourd’hui', auj()], ['Hier', decaleJour(auj(), -1)],
+         ['Il y a 7 jours', decaleJour(auj(), -7)], ['Début du mois', auj().slice(0, 8) + '01']]
+        .map(([lab, d]) => `<button class="ocr-chip" data-caljour="${d}"
+          aria-pressed="${d === courant}">${lab}</button>`).join('')}
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-calmois="-1" aria-label="Mois précédent">‹</button>
+      <div style="flex:1;text-align:center;font:600 14px/1.2 var(--ocr-texte);color:var(--ocr-blanc)">
+        ${esc(moisLong(calMois))}</div>
+      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-calmois="1" aria-label="Mois suivant"
+        ${calMois >= auj().slice(0, 7) ? 'disabled' : ''}>›</button>
+    </div>
+    <div class="cal-entete">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map(x => '<span>' + x + '</span>').join('')}</div>
+    <div class="cal-grille">${cases.join('')}</div>
+    <div class="ocr-mini" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:var(--ocr-e3)">
+      <span><i style="display:inline-block;width:6px;height:6px;border-radius:50%;
+        background:var(--ocr-vert);vertical-align:1px"></i> journée signée</span>
+      <span><i style="display:inline-block;width:6px;height:6px;border-radius:50%;
+        background:var(--ocr-ambre);vertical-align:1px"></i> jamais clôturée</span>
+    </div>
+
+    <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Ou une date précise</span>
+      <input class="ocr-saisie" id="calDate" type="date" value="${courant}" max="${auj()}"></label>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer>Fermer</button>`;
+
+  z.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  z.querySelectorAll('[data-calmois]').forEach(b => b.addEventListener('click', () => {
+    const suivant = moisDecale(calMois, Number(b.dataset.calmois));
+    if (suivant > auj().slice(0, 7)) return;
+    calMois = suivant; peindreCalendrier(v, courant, choisir);
+  }));
+  const aller = d => { fermerModale(); choisir(d); };
+  z.querySelectorAll('[data-caljour]').forEach(b => b.addEventListener('click', () => aller(b.dataset.caljour)));
+  /* iOS n'émet parfois que « change » sur un sélecteur de date — les deux. */
+  ['input', 'change'].forEach(ev => z.querySelector('#calDate').addEventListener(ev, e => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value) && e.target.value <= auj()) aller(e.target.value);
   }));
 }
 
@@ -6677,10 +6846,10 @@ async function vueCloture(j) {
     ${carteFinDeJournee(j, ptsJ, d, true)}
 
     ${(() => {
-      /* L'ÉQUIPE, À LA CLÔTURE (14/08) — départs non pointés et pauses non
-         prises. Rien de bloquant : « si ils ne la prennent pas c'est pas grave
-         à mon niveau, mais on doit voir quelque part qu'ils n'ont pas pris de
-         pause » (Edwin). C'est ici qu'on le voit, une fois par jour. */
+      /* L'ÉQUIPE, À LA CLÔTURE — retards, départs fermés à 19h30 faute d'avoir
+         été pointés, et qui n'était pas là. Rien de bloquant : la clôture
+         ferme d'elle-même les départs oubliés avant de signer (15/08), donc
+         Guénolé ne signe jamais une journée dont les heures sont à trous. */
       const lignes = ptsJ.map(pt => ({ pt, ecarts: ecartsPointage(pt) }))
                          .filter(x => x.ecarts.length);
       const absents = equipePointage().filter(e =>
@@ -6916,7 +7085,7 @@ async function boiteSauvegarde() {
         sb.from('passages').select('*, passage_lignes(*)').order('journee'),
         sb.from('clients').select('*'),
         sb.from('vehicules').select('*'),
-        sb.from('pointages').select('*, pointage_pauses(*)'),
+        sb.from('pointages').select('*, pointage_sorties(*)'),
         sb.from('journees').select('*'),
         sb.from('paiements').select('*'),
       ]);
@@ -7033,6 +7202,12 @@ const CLE_FILE = MODE_DEMO ? 'ocr-file-demo' : 'ocr-file-pointage';
 let filePointage = [];
 try { filePointage = JSON.parse(localStorage.getItem(CLE_FILE) || '[]') || []; } catch (e) {}
 const sauverFile = () => { try { localStorage.setItem(CLE_FILE, JSON.stringify(filePointage)); } catch (e) {} };
+/* Purge des gestes de pause restés dans la file d'un téléphone (15/08) : la
+   fonction serveur ocr_pause n'existe plus, ils tourneraient en boucle sans
+   jamais partir. On les retire une fois, en silence. */
+if (filePointage.some(g => g.type === 'pause')) {
+  filePointage = filePointage.filter(g => g.type !== 'pause'); sauverFile();
+}
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
   : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
       const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
@@ -7048,12 +7223,12 @@ async function positionSiPossible() {
 
 /* Envoie un geste de pointage, ou le met en file s'il ne passe pas. */
 async function envoyerGeste(g, silencieux) {
-  const args = g.type === 'pause'
-    ? { p_sens: g.sens, p_employe: g.employe || null, p_heure: g.heure, p_jour: g.jour,
-        p_hors_ligne: g.horsLigne, p_cle: g.cle }
-    : { p_sens: g.sens, p_employe: g.employe || null, p_heure: g.heure, p_jour: g.jour,
-        p_hors_ligne: g.horsLigne, p_lat: g.lat, p_lng: g.lng, p_precision: g.precision };
-  const { data, error } = g.type === 'pause' ? await API.pause(args) : await API.pointer(args);
+  /* Depuis le 15/08 il n'y a plus qu'un seul geste à envoyer : arriver ou
+     partir. La pause avait sa propre file, ses propres clés de rejeu et son
+     propre état ouvert/fermé — tout ça a disparu avec elle. */
+  const args = { p_sens: g.sens, p_employe: g.employe || null, p_heure: g.heure, p_jour: g.jour,
+                 p_hors_ligne: g.horsLigne, p_lat: g.lat, p_lng: g.lng, p_precision: g.precision };
+  const { data, error } = await API.pointer(args);
   if (!error) return { ok: true, data };
   // Le serveur a répondu et refuse : réessayer éternellement n'y changera
   // rien. On le sort de la file et on le dit — sauf hors ligne, où l'échec
@@ -7156,27 +7331,47 @@ const fmtDuree = min => {
   if (min == null || min <= 0) return '—';
   return Math.floor(min / 60) + ' h ' + String(Math.round(min % 60)).padStart(2, '0');
 };
-const pausesDe = p => (p && p.pointage_pauses) || [];
-/* Minutes de pause d'une journée. Une pause encore ouverte compte jusqu'à
-   maintenant si on est aujourd'hui — sinon elle s'arrête à l'heure de départ,
-   pour ne pas gonfler indéfiniment une pause que personne n'a fermée. */
-function minutesPauses(p) {
-  const fin = p && p.depart ? OCR.hm2min(heureCourte(p.depart))
-            : (p && p.jour === auj() ? OCR.hm2min(heureCourte(heureLocale())) : null);
-  return pausesDe(p).reduce((s, x) => {
-    const d = OCR.hm2min(heureCourte(x.debut));
-    const f = x.fin ? OCR.hm2min(heureCourte(x.fin)) : fin;
-    return f != null && f > d ? s + (f - d) : s;
-  }, 0);
-}
-const pauseEnCours = p => pausesDe(p).find(x => !x.fin) || null;
+/* ══════════════════════════════════════════════════════════════════════════
+   LA SORTIE EN JOURNÉE — CE QUI REMPLACE LA PAUSE (15/08)
+
+   Edwin, en supprimant les pauses : « J'ai peur que ça porte à confusion.
+   Quelqu'un peut aller en pause puis voir que l'équipe a besoin d'aide et
+   revient et repart après finir, c'est pas simple. »
+   Et, dans la même phrase, le vrai besoin : « Aujourd'hui Cabo a dû aller faire
+   une tâche personnelle pendant l'après-midi pendant 1 à 2 heures. Il n'est pas
+   parti définitivement pour la journée mais il est parti et est revenu. »
+
+   La différence entre les deux tient en un mot : QUI, et QUAND.
+     · la pause était un interrupteur que l'EMPLOYÉ actionnait deux fois, en
+       direct, au milieu du travail. Un atelier ne marche pas comme ça : on
+       s'arrête, on aide, on repart. L'interrupteur restait allumé, les heures
+       devenaient fausses, et plus personne ne regardait le compteur ;
+     · la sortie est un fait que SAMUEL écrit UNE FOIS, après coup, quand les
+       deux heures sont connues. Rien à basculer, rien à tenir à jour. Si
+       personne n'écrit rien, la journée reste simplement entière.
+
+   Un état à maintenir se perd ; un fait qu'on écrit reste. C'est toute la
+   leçon des trois derniers jours.
+   ══════════════════════════════════════════════════════════════════════════ */
+const sortiesDe = p => (p && p.pointage_sorties) || [];
+const minutesSorties = p => sortiesDe(p).reduce((s, x) => {
+  const d = OCR.hm2min(heureCourte(x.debut)), f = OCR.hm2min(heureCourte(x.fin));
+  return d != null && f != null && f > d ? s + (f - d) : s;
+}, 0);
+const sortiesTriees = p => sortiesDe(p).slice().sort((a, b) => (a.debut < b.debut ? -1 : 1));
+
+/* Une journée signée fige aussi les heures (Edwin, 15/08) : « lorsque la
+   journée est clôturée Samuel ne peut plus changer les pointages, seulement la
+   direction le peut ». La base refuse pour de bon — ici on évite seulement de
+   montrer un bouton qui serait refusé. */
+const JOURS_SIGNES = {};
+const jourSigne = d => JOURS_SIGNES[d] === true;
+const peutTouchePointage = d => peutCorriger() && (!jourSigne(d) || roleEffectif() === 'direction');
 
 /* ── LES RÈGLES DE LA JOURNÉE (14/08) ──────────────────────────────────────
    « Les horaires d'ouverture c'est 9 h – 19 h. Les employés doivent être là
      entre 8 h 30 et 9 h pour débuter la journée. Et après ils finissent après
-     avoir fait le nettoyage. » — « Une pause par jour est obligatoire 45 min.
-     Si ils ne la prennent pas c'est pas grave mon niveau, mais on doit voir
-     quelque part qu'ils n'ont pas pris de pause. » (Edwin)
+     avoir fait le nettoyage. » (Edwin)
    Donc : rien ne bloque jamais un pointage. Tout se VOIT.
    Les valeurs viennent des réglages en base — modifiables sans republier. */
 const REGLE = () => ({
@@ -7184,37 +7379,34 @@ const REGLE = () => ({
                                                  : OCR.CONFIG.arriveeFin,
   arriveeDebut: (REGLAGES && REGLAGES.arrivee_debut) ? OCR.hm2min(String(REGLAGES.arrivee_debut).slice(0, 5))
                                                      : OCR.CONFIG.arriveeDebut,
-  pause: (REGLAGES && REGLAGES.pause_min != null) ? Number(REGLAGES.pause_min) : OCR.CONFIG.pauseMin,
   ouverture: (REGLAGES && REGLAGES.ouverture) ? String(REGLAGES.ouverture).slice(0, 5) : '09:00',
   fermeture: (REGLAGES && REGLAGES.fermeture) ? String(REGLAGES.fermeture).slice(0, 5) : '19:00',
 });
 
 /* Ce qui cloche dans une journée pointée — chaque anomalie porte son mot.
-   Le jour EN COURS ne reproche rien : la pause n'est pas « non prise »
-   à 10 h du matin, elle est simplement « pas encore prise ». */
+   Le jour EN COURS ne reproche rien : à 10 h du matin, personne n'a « oublié »
+   de pointer son départ. */
 function ecartsPointage(pt) {
   const R = REGLE(), out = [];
   if (!pt || !pt.arrivee) return out;
-  const enCours = pt.jour === auj() && !pt.depart;
   const arr = OCR.hm2min(heureCourte(pt.arrivee));
   if (arr != null && arr > R.arriveeFin)
     out.push({ cle: 'retard', mot: 'arrivé à ' + heureCourte(pt.arrivee) +
       ' (attendu avant ' + OCR.min2hm(R.arriveeFin) + ')', ton: 'ambre' });
-  const pz = minutesPauses(pt);
-  if (!enCours) {
-    if (pz === 0) out.push({ cle: 'sans-pause', mot: 'aucune pause prise', ton: 'ambre' });
-    else if (pz < R.pause) out.push({ cle: 'pause-courte',
-      mot: 'pause de ' + fmtDuree(pz) + ' (' + R.pause + ' min attendues)', ton: 'ambre' });
-  }
+  /* 19h30 posé par le système, pas par la personne (Edwin, 15/08) : « c'est sa
+     faute s'il avait fait des heures sup car il a oublié de pointer ». Ça se
+     voit une fois, ça ne se punit pas deux fois. */
+  if (pt.depart_auto)
+    out.push({ cle: 'depart-auto', mot: 'départ non pointé — fermé à 19h30', ton: 'ambre' });
   if (!pt.depart && pt.jour < auj())
     out.push({ cle: 'sans-depart', mot: 'départ jamais pointé', ton: 'rouge' });
   return out;
 }
 const pastilleEcart = e => '<span class="ocr-mini" style="color:var(--ocr-' +
   (e.ton === 'rouge' ? 'erreur' : 'ambre') + ')">⚠ ' + esc(e.mot) + '</span>';
-/* Heures travaillées = présence − pauses. C'est ce chiffre qui compte. */
+/* Heures travaillées = présence − sorties déclarées. C'est ce chiffre qui compte. */
 const minutesPointage = p => (p && p.arrivee && p.depart)
-  ? Math.max(0, OCR.hm2min(heureCourte(p.depart)) - OCR.hm2min(heureCourte(p.arrivee)) - minutesPauses(p))
+  ? Math.max(0, OCR.hm2min(heureCourte(p.depart)) - OCR.hm2min(heureCourte(p.arrivee)) - minutesSorties(p))
   : null;
 
 /* Objectifs d'équipe : CA et lavages Signature — jour, semaine, mois. */
@@ -7468,11 +7660,12 @@ function carteEquipe(pts, d) {
       const abs = estAuj ? absenceDe(e.id) : null;
       const p = pts.find(x => x.employe_id === e.id);
       const duree = minutesPointage(p);
-      const pause = pauseEnCours(p);
+      const sorti = minutesSorties(p);
       const statut = (enRepos || abs) && (!p || !p.arrivee) ? ''
         : !p || !p.arrivee ? (estAuj ? 'pas encore arrivé' : 'absent')
         : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(duree)
-                                             : pause ? ' · ☕ en pause' : ' · présent');
+                                             : ' · présent')
+          + (sorti > 0 ? ' · sorti ' + fmtDuree(sorti) : '');
       const moiMeme = e.id === moi.id;
       return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap${enRepos || abs ? ';opacity:.65' : ''}">
         ${avatar(e, 40)}
@@ -7486,7 +7679,7 @@ function carteEquipe(pts, d) {
         <span style="display:flex;gap:6px;margin-left:auto">
           ${moiMeme && estAuj && (!p || !p.arrivee) ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pointer="arrivee">J’arrive</button>` : ''}
           ${moiMeme && estAuj && p && p.arrivee ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-pointer="depart">${p.depart ? 'Repartir' : 'Je pars'}</button>` : ''}
-          ${peutCorriger() && !moiMeme ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-corriger="${e.id}">Corriger</button>` : ''}
+          ${peutTouchePointage(d) && !moiMeme ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-corriger="${e.id}">Corriger</button>` : ''}
         </span>
       </div>`;
     }).join('')}
@@ -7639,9 +7832,14 @@ function brancherEquipe(pts, d) {
 }
 
 function boiteCorrectionPointage(emp, p, d) {
+  /* Le verrou vit en base (trg_pointage_verrouille) : même en forçant l'écran,
+     la correction serait refusée. Ici on le dit avant, pas après. */
+  if (!peutTouchePointage(d))
+    return toast('La journée est signée : seule la direction peut encore corriger un pointage.', true);
   const v = modale(`
     <h3 class="ocr-h2">Corriger — ${esc(emp.nom)}</h3>
-    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">${jourLong(d)}. La correction est inscrite au journal à ton nom.</p>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">${jourLong(d)}. La correction est inscrite au journal à ton nom.
+      ${p && p.depart_auto ? '<br><span style="color:var(--ocr-ambre)">Ce départ a été fermé à 19h30 par le système —\n      il n’a pas été pointé.</span>' : ''}</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
       <label class="ocr-champ"><span class="ocr-label">Arrivée</span>
         <input class="ocr-saisie" id="cArr" type="time" value="${p && p.arrivee ? heureCourte(p.arrivee) : ''}"></label>
@@ -7683,13 +7881,15 @@ async function vuePointage() {
     API.signaturesDepuis(auj()).catch(() => []),
     peutCorriger() ? API.pointagesJour(auj()).catch(() => []) : Promise.resolve([]),
     peutCorriger() ? API.pointagesPeriode(debutMois(), auj(), null).catch(() => []) : Promise.resolve([]),
+    // remplit JOURS_SIGNES : après la signature, seule la direction corrige
+    API.journee(auj()).catch(() => null),
   ]);
   const auJour = mes.find(x => x.jour === auj());
   const duree = minutesPointage(auJour);
-  const enPause = pauseEnCours(auJour);
+  const mesSorties = sortiesTriees(auJour);
   const joursFaits = mes.filter(x => x.arrivee).length;
   const totalMin = mes.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
-  const oublis = mes.filter(x => x.arrivee && !x.depart && x.jour < auj()).length;
+  const oublis = mes.filter(x => x.depart_auto || (x.arrivee && !x.depart && x.jour < auj())).length;
   const mesEnFile = fileDe(moi.id, auj());
 
   // Direction et comptabilité arrivent ici par une tuile du panneau Direction :
@@ -7718,26 +7918,22 @@ async function vuePointage() {
             ? 'Enregistré à ' + heureCourte(mesEnFile[0].heure) + ' — en attente d’envoi.'
           : !auJour || !auJour.arrivee ? 'Appuie sur « J’arrive » en commençant ta journée.'
           : auJour.depart ? 'Journée de ' + fmtDuree(duree) + ' — bonne soirée !'
-          : enPause ? '☕ En pause depuis ' + heureCourte(enPause.debut)
           : 'Présent — bon travail !'}
-        ${auJour && minutesPauses(auJour) > 0
-          ? '<br><span class="ocr-mini">Pause du jour : ' + fmtDuree(minutesPauses(auJour)) +
-            ' sur ' + REGLE().pause + ' min' + (minutesPauses(auJour) >= REGLE().pause ? ' ✓' : '') + '</span>'
-          : auJour && auJour.arrivee && !auJour.depart
-          ? '<br><span class="ocr-mini">Pause de ' + REGLE().pause + ' min à prendre dans la journée</span>' : ''}
+        ${mesSorties.length ? '<br><span class="ocr-mini">Sortie du jour : ' + esc(mesSorties.map(x =>
+            heureCourte(x.debut) + '–' + heureCourte(x.fin)).join(' · ')) + ' — déduite des heures</span>' : ''}
         ${auJour ? ecartsPointage(auJour).map(x => '<br>' + pastilleEcart(x)).join('') : ''}
       </div>
       ${!auJour || !auJour.arrivee
         ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-pointer="arrivee" style="font-size:16px;padding:16px">🟢 J’arrive</button>`
-        : `${!auJour.depart ? (enPause
-             ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-pause="fin" style="font-size:16px;padding:16px;margin-bottom:9px">▶ Je reprends</button>`
-             : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-pause="debut" style="font-size:16px;padding:16px;margin-bottom:9px">☕ Je prends ma pause</button>`) : ''}
-           <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-pointer="depart" style="font-size:16px;padding:16px">
+        : `<button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-pointer="depart" style="font-size:16px;padding:16px">
             ${auJour.depart ? 'Je repars (remplace ' + heureCourte(auJour.depart) + ')' : '🔴 Je pars'}</button>`}
       <p class="ocr-mini" style="margin:12px 0 0">Atelier ouvert au public de ${REGLE().ouverture} à
         ${REGLE().fermeture} · équipe attendue entre ${OCR.min2hm(REGLE().arriveeDebut)} et
         ${OCR.min2hm(REGLE().arriveeFin)}. La journée, elle, se termine quand le dernier part —
         un extra après ${REGLE().fermeture} est normal. Le départ se pointe après le nettoyage.</p>
+      ${/* La règle des 19h30, dite là où elle s'applique (Edwin, 15/08). */''}
+      <p class="ocr-mini" style="margin:8px 0 0;color:var(--ocr-ambre)">Un départ jamais pointé est fermé
+        à 19h30 par le système. Les heures faites après ne seront pas comptées — pense à pointer.</p>
       <p class="ocr-mini" style="margin:8px 0 0">${navigator.onLine
         ? 'L’heure enregistrée est celle du serveur, pas celle du téléphone.' +
           (REGLAGES && REGLAGES.lat != null ? ' Le pointage vérifie que tu es à l’atelier.' : '')
@@ -7762,19 +7958,20 @@ async function vuePointage() {
     ${jePointe ? `
     <div class="tuiles" style="grid-template-columns:repeat(2,1fr);margin-top:var(--ocr-e4)">
       <div class="tuile"><div class="lab">Jours ce mois</div><div class="val">${joursFaits}</div>
-        <div class="sub">${oublis ? '⚠ ' + oublis + ' départ(s) non pointé(s)' : 'pointages complets'}</div></div>
+        <div class="sub">${oublis ? '⚠ ' + oublis + ' fermé(s) à 19h30' : 'pointages complets'}</div></div>
       <div class="tuile"><div class="lab">Heures ce mois</div><div class="val">${fmtDuree(totalMin)}</div>
-        <div class="sub">pauses déduites</div></div>
+        <div class="sub">sorties déduites</div></div>
     </div>
 
     <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
       <div class="ocr-surtitre">Mes journées</div>
       ${mes.length ? mes.map(x => {
-        const pz = minutesPauses(x);
+        const so = minutesSorties(x);
         return `<div style="display:flex;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
           <span class="ocr-mini" style="width:46px;flex:none">${dateFr(x.jour)}</span>
           <span style="font-variant-numeric:tabular-nums">${x.arrivee ? heureCourte(x.arrivee) : '—'} → ${x.depart ? heureCourte(x.depart) : '…'}
-            ${pz > 0 ? '<span class="ocr-mini">· ☕ ' + fmtDuree(pz) + '</span>' : ''}</span>
+            ${x.depart_auto ? '<span class="ocr-mini" style="color:var(--ocr-ambre)">(auto)</span>' : ''}
+            ${so > 0 ? '<span class="ocr-mini">· sorti ' + fmtDuree(so) + '</span>' : ''}</span>
           <span style="flex:1"></span>
           <span style="font-weight:600">${fmtDuree(minutesPointage(x))}</span>
         </div>`;
@@ -7788,8 +7985,8 @@ async function vuePointage() {
 /* ── L'ÉQUIPE SUR LE MOIS (14/08) ──────────────────────────────────────────
    Guénolé est directeur financier ET ressources humaines : il lui faut le mois
    entier en un écran, pas une ligne par jour à recomposer de tête. Jours
-   travaillés, heures, retards, journées sans pause — et les départs jamais
-   pointés, qui rendent les heures fausses. */
+   travaillés, heures, retards, sorties déclarées — et les départs fermés à
+   19h30 faute d'avoir été pointés. */
 function carteEquipeMois(pts) {
   const R = REGLE();
   const lignes = equipePointage().map(e => {
@@ -7798,15 +7995,17 @@ function carteEquipeMois(pts) {
     const compte = cle => p.filter(x => ecartsPointage(x).some(y => y.cle === cle)).length;
     return { e, jours: p.length, heures,
              retards: compte('retard'),
-             sansPause: compte('sans-pause') + compte('pause-courte'),
+             auto: compte('depart-auto'),
+             sorties: p.reduce((s, x) => s + sortiesDe(x).length, 0),
+             minSorties: p.reduce((s, x) => s + minutesSorties(x), 0),
              sansDepart: compte('sans-depart') };
   }).filter(l => l.jours || l.sansDepart);
   if (!lignes.length) return '';
   return `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
     <div class="ocr-surtitre">L’équipe ce mois</div>
     <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Depuis le 1er du mois. Les heures excluent
-      les pauses. Une journée sans départ pointé ne compte aucune heure — c’est ce qu’il faut corriger
-      en premier.</p>
+      les sorties déclarées. Un départ jamais pointé est fermé à 19h30 : les extras de ce jour-là
+      ne sont pas comptés.</p>
     ${lignes.map(l => `
       <div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
         ${avatar(l.e, 34)}
@@ -7817,8 +8016,12 @@ function carteEquipeMois(pts) {
             pluriel(l.sansDepart, 'départ') + ' jamais pointé' + (l.sansDepart > 1 ? 's' : '') + '</span>' : ''}
           ${l.retards ? '<span class="ocr-mini" style="display:block;color:var(--ocr-ambre)">' +
             pluriel(l.retards, 'arrivée') + ' après ' + OCR.min2hm(R.arriveeFin) + '</span>' : ''}
-          ${l.sansPause ? '<span class="ocr-mini" style="display:block;color:var(--ocr-ambre)">' +
-            pluriel(l.sansPause, 'journée') + ' sans les ' + R.pause + ' min de pause</span>' : ''}
+          ${l.auto ? '<span class="ocr-mini" style="display:block;color:var(--ocr-ambre)">' +
+            pluriel(l.auto, 'départ') + ' fermé' + (l.auto > 1 ? 's' : '') + ' à 19h30 (non pointé' +
+            (l.auto > 1 ? 's' : '') + ')</span>' : ''}
+          ${l.sorties ? '<span class="ocr-mini" style="display:block">' +
+            pluriel(l.sorties, 'sortie') + ' déclarée' + (l.sorties > 1 ? 's' : '') +
+            ' · − ' + fmtDuree(l.minSorties) + '</span>' : ''}
         </span>
       </div>`).join('')}
   </div>`;
@@ -7836,20 +8039,23 @@ function carteEquipePointage(pts) {
     </div>
     <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Quelqu’un a oublié de pointer ? Fais-le pour lui —
       c’est enregistré à ton nom. Arrivée attendue entre ${OCR.min2hm(REGLE().arriveeDebut)} et
-      ${OCR.min2hm(REGLE().arriveeFin)} · pause de ${REGLE().pause} min par jour.</p>
+      ${OCR.min2hm(REGLE().arriveeFin)}. Un départ non pointé sera fermé à 19h30.</p>
+    ${jourSigne(auj()) ? `<div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e3)"><span>🔒</span><div>
+      La journée est signée. ${roleEffectif() === 'direction'
+        ? 'Tu peux encore corriger — c’est inscrit au journal.'
+        : 'Les heures ne bougent plus : passe par la direction.'}</div></div>` : ''}
     ${equipePointage().map(e => {
       const enRepos = e.repos_jour != null && e.repos_jour === js;
       const abs = absenceDe(e.id);
       const p = pts.find(x => x.employe_id === e.id);
-      const pz = minutesPauses(p);
-      const pause = pauseEnCours(p);
+      const so = minutesSorties(p);
       const enFile = fileDe(e.id, auj());
       const etat = abs ? (MOTIFS_ABSENCE[abs.motif] || ['absent'])[0]
         : !p || !p.arrivee ? (enFile.length ? '⏳ ' + heureCourte(enFile[0].heure) + ' — en attente d’envoi'
                               : enRepos ? 'repos' : 'pas encore arrivé')
         : heureCourte(p.arrivee) + (p.depart ? ' → ' + heureCourte(p.depart) + ' · ' + fmtDuree(minutesPointage(p))
-                                            : pause ? ' · ☕ en pause' : ' · présent')
-          + (pz > 0 && !pause ? ' · ☕ ' + fmtDuree(pz) : '');
+                                            : ' · présent')
+          + (so > 0 ? ' · sorti ' + fmtDuree(so) : '');
       const marque = p && (p.arrivee_hors_ligne || p.depart_hors_ligne);
       return `<div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep);flex-wrap:wrap${enRepos || abs ? ';opacity:.65' : ''}">
         ${avatar(e, 38)}
@@ -7864,11 +8070,14 @@ function carteEquipePointage(pts) {
         <span style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
           ${abs ? '' : !p || !p.arrivee
             ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pointer="arrivee" data-emp="${e.id}">Arrivé</button>`
-            : `${!p.depart ? (pause
-                 ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pause="fin" data-emp="${e.id}">Reprend</button>`
-                 : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-pause="debut" data-emp="${e.id}">☕ Pause</button>`) : ''}
-               <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-pointer="depart" data-emp="${e.id}">${p.depart ? 'Repart' : 'Part'}</button>`}
-          <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-corriger="${e.id}">Corriger</button>
+            : `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-pointer="depart" data-emp="${e.id}">${p.depart ? 'Repart' : 'Part'}</button>`}
+          ${/* « Il n'est pas parti définitivement pour la journée mais il est parti
+                et est revenu » (Edwin, 15/08). Le bouton n'apparaît qu'une fois
+                l'arrivée pointée : sans arrivée, une sortie ne veut rien dire. */''}
+          ${!abs && p && p.arrivee && peutTouchePointage(auj())
+            ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-sortie="${e.id}">Sortie${
+                sortiesDe(p).length ? ' · ' + sortiesDe(p).length : '…'}</button>` : ''}
+          ${peutTouchePointage(auj()) ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-corriger="${e.id}">Corriger</button>` : ''}
         </span>
       </div>`;
     }).join('')}
@@ -7891,7 +8100,6 @@ function brancherGestesPointage() {
       const r = await pointerMaintenant(type, sens, emp || null);
       const qui = emp && emp !== moi.id ? ((equipe.find(x => x.id === emp) || {}).nom || '') + ' — ' : '';
       if (r.enFile) toast(qui + 'Gardé hors ligne, partira tout seul 📶');
-      else if (type === 'pause') toast(qui + (sens === 'debut' ? 'Pause commencée ☕' : 'Reprise du travail ✓'));
       else {
         const d = Array.isArray(r.data) ? r.data[0] : r.data;
         toast(qui + (sens === 'arrivee'
@@ -7903,13 +8111,81 @@ function brancherGestesPointage() {
   };
   $('#vue').querySelectorAll('[data-pointer]').forEach(b =>
     b.addEventListener('click', () => agir(b, 'pointage', b.dataset.pointer, b.dataset.emp)));
-  $('#vue').querySelectorAll('[data-pause]').forEach(b =>
-    b.addEventListener('click', () => agir(b, 'pause', b.dataset.pause, b.dataset.emp)));
   $('#vue').querySelectorAll('[data-corriger]').forEach(b => b.addEventListener('click', async () => {
     const emp = equipePointage().find(e => e.id === b.dataset.corriger);
     const pts = await API.pointagesJour(auj()).catch(() => []);
     boiteCorrectionPointage(emp, pts.find(x => x.employe_id === emp.id), auj());
   }));
+  $('#vue').querySelectorAll('[data-sortie]').forEach(b => b.addEventListener('click', async () => {
+    const emp = equipePointage().find(e => e.id === b.dataset.sortie);
+    const pts = await API.pointagesJour(auj()).catch(() => []);
+    boiteSortie(emp, pts.find(x => x.employe_id === emp.id), auj());
+  }));
+}
+
+/* ── DÉCLARER UNE SORTIE ───────────────────────────────────────────────────
+   Deux heures et une phrase, dans la même fenêtre que la liste de ce qui a
+   déjà été déclaré. Samuel l'ouvre quand la personne est REVENUE, pas quand
+   elle part : c'est précisément ce qui fait qu'elle n'est jamais à moitié
+   remplie — et c'est là toute la différence avec l'ancienne pause. */
+function boiteSortie(emp, p, d) {
+  const liste = sortiesTriees(p);
+  const duree = x => OCR.hm2min(heureCourte(x.fin)) - OCR.hm2min(heureCourte(x.debut));
+  const v = modale(`
+    <h3 class="ocr-h2">Sortie — ${esc(emp.nom)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">${jourLong(d)}. Il est parti puis revenu dans la
+      journée. Note les deux heures : le temps est
+      <strong style="color:var(--ocr-blanc)">déduit de ses heures</strong>, et le motif reste au journal
+      à ton nom.</p>
+    ${liste.length ? '<div style="margin-bottom:var(--ocr-e4)">' + liste.map(x =>
+      `<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
+        <span style="min-width:0;flex:1">
+          <span style="font-weight:600;font-variant-numeric:tabular-nums">${heureCourte(x.debut)} → ${heureCourte(x.fin)}</span>
+          <span class="ocr-mini" style="display:block">${esc(x.motif)}</span></span>
+        <span style="font-weight:600;flex:none">− ${fmtDuree(duree(x))}</span>
+        <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-oter="${x.id}">Retirer</button>
+      </div>`).join('') + '</div>' : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Parti à</span>
+        <input class="ocr-saisie" id="soDeb" type="time"></label>
+      <label class="ocr-champ"><span class="ocr-label">Revenu à</span>
+        <input class="ocr-saisie" id="soFin" type="time"></label>
+    </div>
+    <span class="ocr-aide" id="soCalcul" style="display:block;margin:-6px 0 var(--ocr-e3)">&nbsp;</span>
+    <label class="ocr-champ"><span class="ocr-label" style="color:var(--ocr-rouge-texte)">Motif — obligatoire</span>
+      <input class="ocr-saisie" id="soMotif" placeholder="Affaire personnelle, rendez-vous, course…">
+      <span class="ocr-aide">Dans un mois, c’est cette phrase qui expliquera les heures en moins.</span></label>
+    <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Fermer</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Enregistrer</button></div>`);
+  const deb = v.querySelector('#soDeb'), fin = v.querySelector('#soFin');
+  const calcul = () => {
+    const a = OCR.hm2min(deb.value), b = OCR.hm2min(fin.value);
+    v.querySelector('#soCalcul').innerHTML = (a != null && b != null && b > a)
+      ? '<strong style="color:var(--ocr-blanc)">' + fmtDuree(b - a) + '</strong> retirés de sa journée'
+      : '&nbsp;';
+  };
+  [deb, fin].forEach(x => x.addEventListener('input', calcul));
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelectorAll('[data-oter]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { error } = await API.retirerSortie(b.dataset.oter);
+    if (error) { toast(error.message, true); b.disabled = false; return; }
+    fermerModale(); memoVider(); toast('Sortie retirée'); rendre();
+  }));
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    const a = deb.value, b = fin.value, motif = v.querySelector('#soMotif').value.trim();
+    if (!a || !b) return toast('Il faut l’heure de départ ET l’heure de retour.', true);
+    if (OCR.hm2min(b) <= OCR.hm2min(a)) return toast('Le retour est avant le départ.', true);
+    if (motif.length < 3) return toast('Le motif est obligatoire.', true);
+    e.target.disabled = true;
+    const { error } = await API.ajouterSortie(emp.id, d, a, b, motif);
+    if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    fermerModale(); memoVider();
+    toast(emp.nom + ' — sortie de ' + fmtDuree(OCR.hm2min(b) - OCR.hm2min(a)) + ' enregistrée');
+    rendre();
+  });
 }
 
 /* ==========================================================================
@@ -11109,7 +11385,7 @@ async function vueDirection() {
     ['absences', '🤒', 'Absences', absents ? absents + ' en cours' : 'personne d’absent'],
     ['repos', '📅', 'Jours de repos', 'Planning hebdomadaire'],
     ['pointage', '◉', 'Pointage', filePointage.length
-      ? filePointage.length + ' en attente d’envoi' : 'Arrivées, pauses, départs'],
+      ? filePointage.length + ' en attente d’envoi' : 'Arrivées, départs, sorties'],
     ['catalogue', '▦', 'Marques & modèles', 'Ajouter, corriger les tailles'],
     ['temps', '⏱', 'Contrôle des temps', 'Lavages sans chrono, lavages écartés'],
     /* Deux portes vers le passé, et elles ne servent pas au même moment : le
@@ -11289,16 +11565,16 @@ async function vueDirection() {
    un genre de rapport RH. »
 
    CE QU'IL A DEMANDÉ D'Y VOIR : heures et jours travaillés, ponctualité,
-   absences et jours de repos. Les pauses non prises n'y sont pas — elles
-   restent là où elles servent, sur l'écran du jour, au moment où on peut
-   encore en parler à la personne. Un reproche vieux de trois semaines ne
-   corrige rien.
+   sorties déclarées, absences et jours de repos.
 
-   LA RÈGLE DES HEURES, CHOISIE AVEC LUI : une journée sans sortie pointée ne
-   compte AUCUNE heure, et elle se voit en ambre. On n'invente pas une heure de
-   départ, même « raisonnable » : un total qu'on n'a pas mesuré est un total
-   sur lequel on ne peut pas discuter avec quelqu'un. La journée reste à
-   corriger à la main, et le total se refait tout seul.
+   LA RÈGLE DES HEURES A CHANGÉ LE 15/08. Avant : une journée sans départ
+   pointé ne comptait AUCUNE heure, pour ne pas inventer un total dont on ne
+   pourrait pas discuter. En pratique l'oubli était puni deux fois et le
+   rapport devenait illisible — donc personne ne l'ouvrait. Edwin a tranché :
+   « il faut que le système du coup le pointe à 19h30, c'est sa faute s'il
+   avait fait des heures sup car il a oublié de pointer ». Le total est donc
+   toujours mesurable, la journée n'est jamais perdue, et l'oubli coûte
+   exactement ses extras. Ces journées-là restent marquées.
 
    Le mois en cours s'arrête à AUJOURD'HUI : compter des jours de repos qui ne
    sont pas encore arrivés donnerait un rapport faux dès le 2 du mois.
@@ -11355,7 +11631,10 @@ function lignesRH(pts, abs, du, au) {
          elle ne compte pas encore d'heures. Ne pas faire cette différence
          affichait « 3 sorties jamais pointées » tous les après-midi. */
       enCours: p.some(x => !x.depart && x.jour === auj()),
-      sansSortie: p.filter(x => !x.depart && x.jour < auj()).map(x => x.jour),
+      sansDepart: p.filter(x => !x.depart && x.jour < auj()).map(x => x.jour),
+      auto: p.filter(x => x.depart_auto).map(x => x.jour),
+      sorties: p.reduce((somme, x) => somme + sortiesDe(x).length, 0),
+      minSorties: p.reduce((somme, x) => somme + minutesSorties(x), 0),
       retards: p.filter(x => ecartsPointage(x).some(y => y.cle === 'retard')).map(x => x.jour),
       absents: joursAbsents(abs.filter(a => a.employe_id === e.id), du, au),
       repos: joursDeRepos(e.repos_jour, du, au),
@@ -11392,7 +11671,7 @@ async function peindreRH(v) {
   const lignes = lignesRH(pts, abs, du, au);
   const totalH = lignes.reduce((s, l) => s + l.heures, 0);
   const totalJ = lignes.reduce((s, l) => s + l.presents, 0);
-  const aCorriger = lignes.reduce((s, l) => s + l.sansSortie.length, 0);
+  const aCorriger = lignes.reduce((s, l) => s + l.sansDepart.length, 0);
 
   z.innerHTML = `
     <h3 class="ocr-h2">📋 Rapport RH</h3>
@@ -11405,14 +11684,14 @@ async function peindreRH(v) {
     </div>
     <p class="ocr-mini" style="margin:0 0 var(--ocr-e4)">${esc(moisLong(rhMois))}${
       enCours ? ' — arrêté au ' + dateFr(au) + ' (mois en cours)' : ''}.
-      Les heures sont la présence moins les pauses.</p>
+      Les heures sont la présence moins les sorties déclarées.</p>
 
     <div class="tuiles" style="margin-bottom:var(--ocr-e4)">
       <div class="tuile"><div class="lab">Heures de l’équipe</div><div class="val">${fmtDuree(totalH)}</div>
         <div class="sub">${pluriel(totalJ, 'journée')} pointée${totalJ > 1 ? 's' : ''}</div></div>
       <div class="tuile"><div class="lab">À corriger</div><div class="val"
         style="${aCorriger ? 'color:var(--ocr-ambre)' : ''}">${aCorriger}</div>
-        <div class="sub">${aCorriger ? 'sortie(s) jamais pointée(s)' : 'toutes les journées sont complètes'}</div></div>
+        <div class="sub">${aCorriger ? 'départ(s) jamais pointé(s)' : 'toutes les journées sont complètes'}</div></div>
     </div>
 
     ${lignes.length ? lignes.map(l => `
@@ -11434,11 +11713,15 @@ async function peindreRH(v) {
           ${l.enCours ? '<span style="color:var(--ocr-vert)">journée en cours</span>' : ''}
           ${l.absents ? '<span>' + pluriel(l.absents, 'jour') + ' d’absence</span>' : ''}
           ${l.repos ? '<span>' + pluriel(l.repos, 'jour') + ' de repos</span>' : ''}
+          ${l.sorties ? '<span>' + pluriel(l.sorties, 'sortie') + ' · − ' + fmtDuree(l.minSorties) + '</span>' : ''}
         </div>
-        ${l.sansSortie.length ? `<div class="ocr-mini" style="margin-top:6px;color:var(--ocr-erreur)">
-          ⚠ ${pluriel(l.sansSortie.length, 'sortie')} jamais pointée${l.sansSortie.length > 1 ? 's' : ''}
-          (${l.sansSortie.map(j => dateFr(j)).join(', ')}) — ${
-          l.sansSortie.length > 1 ? 'ces journées ne comptent' : 'cette journée ne compte'} aucune heure</div>` : ''}
+        ${l.auto.length ? `<div class="ocr-mini" style="margin-top:6px;color:var(--ocr-ambre)">
+          ${pluriel(l.auto.length, 'départ')} non pointé${l.auto.length > 1 ? 's' : ''}, fermé${
+          l.auto.length > 1 ? 's' : ''} à 19h30 (${l.auto.map(j => dateFr(j)).join(', ')})</div>` : ''}
+        ${l.sansDepart.length ? `<div class="ocr-mini" style="margin-top:6px;color:var(--ocr-erreur)">
+          ⚠ ${pluriel(l.sansDepart.length, 'départ')} jamais pointé${l.sansDepart.length > 1 ? 's' : ''}
+          (${l.sansDepart.map(j => dateFr(j)).join(', ')}) — ${
+          l.sansDepart.length > 1 ? 'ces journées ne comptent' : 'cette journée ne compte'} aucune heure</div>` : ''}
         ${l.retards.length ? `<div class="ocr-mini" style="margin-top:6px;color:var(--ocr-ambre)">
           ${pluriel(l.retards.length, 'arrivée')} après ${OCR.min2hm(R.arriveeFin)}
           (${l.retards.map(j => dateFr(j)).join(', ')})</div>` : ''}
@@ -11464,12 +11747,14 @@ async function peindreRH(v) {
   z.querySelector('#rhCsv').addEventListener('click', () => {
     const col = [
       'Nom', 'Poste', 'Jours présents', 'Heures', 'Minutes', 'Moyenne par jour',
-      'Sorties non pointées', 'Arrivées après ' + OCR.min2hm(R.arriveeFin),
+      'Sorties déclarées', 'Minutes de sortie', 'Départs fermés à 19h30',
+      'Départs jamais pointés', 'Arrivées après ' + OCR.min2hm(R.arriveeFin),
       'Jours d’absence', 'Jours de repos',
     ];
     const lig = lignes.map(l => [
       l.e.nom, metier(l.e), l.presents, fmtDuree(l.heures), l.heures, fmtDuree(l.moyenne),
-      l.sansSortie.length, l.retards.length, l.absents, l.repos,
+      l.sorties, l.minSorties, l.auto.length,
+      l.sansDepart.length, l.retards.length, l.absents, l.repos,
     ]);
     const echapper = c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"';
     // BOM UTF-8 + point-virgule : Excel francophone ouvre le fichier tel quel.
