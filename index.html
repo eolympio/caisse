@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>OCR Brillance — Atelier</title>
 <meta name="theme-color" content="#0A0A0B">
+<link rel="preconnect" href="https://wrepjvxbffyigbmmyccm.supabase.co" crossorigin>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -259,6 +260,9 @@
   border-radius: var(--ocr-r-m); color: var(--ocr-blanc);
   font: var(--ocr-t-corps); outline: none; transition: var(--ocr-transition);
 }
+/* 16 px minimum : en dessous, Safari iOS zoome toute la page dès qu'on touche
+   un champ — et il faut pincer pour revenir. Vu sur l'iPhone d'Edwin (14/08). */
+.ocr-saisie { font-size: 16px; }
 .ocr-saisie::placeholder { color: var(--ocr-argent-2); }
 .ocr-saisie:focus { border-color: var(--ocr-rouge); }
 .ocr-saisie:disabled { opacity: .45; cursor: not-allowed; }
@@ -3077,7 +3081,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v50';
+const VERSION = 'v51';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -3166,8 +3170,14 @@ majBoutonsInstall();
    de recharger, d'un doigt. Et de toute façon, la prochaine ouverture de
    l'app partira sur la nouvelle version. */
 let nouvelleVersion = null;
+/* Une saisie est « en cours » dès qu'un champ porte quelque chose. Tant que
+   c'est le cas, le bandeau de mise à jour attend son tour : il ne doit jamais
+   inviter à recharger au-dessus d'une fiche à moitié remplie (Edwin, 14/08). */
+const saisieEnCours = () => typeof form !== 'undefined' && onglet === 'saisie' &&
+  !!(form.tel || form.nom || form.immat || form.prestation || form.jour);
 function bandeauMaj(v) {
   nouvelleVersion = v || 'à jour';
+  if (saisieEnCours()) { setTimeout(() => bandeauMaj(nouvelleVersion), 90000); return; }
   bandeau();
 }
 if ('serviceWorker' in navigator && !MODE_DEMO &&
@@ -4154,6 +4164,31 @@ async function seDeconnecter() {
   $('#connexion').classList.remove('masque');
 }
 
+/* ── LE BROUILLON (14/08) ──────────────────────────────────────────────────
+   « En aucun cas les mises à jour ne doivent écraser ce qu'on est en train de
+   faire » (Edwin). La saisie est recopiée dans le téléphone à chaque frappe :
+   rechargement, fermeture, batterie à plat — à la réouverture, la fiche
+   revient telle quelle. Jamais en démonstration : les tests repartent de zéro. */
+const CLE_BROUILLON = 'ocr-brouillon-saisie';
+function sauverBrouillon() {
+  if (MODE_DEMO) return;
+  try {
+    if (form.tel || form.nom || form.immat || form.prestation || form.note || form.jour)
+      localStorage.setItem(CLE_BROUILLON, JSON.stringify({ t: Date.now(), f: form }));
+    else localStorage.removeItem(CLE_BROUILLON);
+  } catch (e) {}
+}
+function effacerBrouillon() { try { localStorage.removeItem(CLE_BROUILLON); } catch (e) {} }
+function restaurerBrouillon() {
+  if (MODE_DEMO) return false;
+  try {
+    const b = JSON.parse(localStorage.getItem(CLE_BROUILLON) || 'null');
+    if (!b || Date.now() - b.t > 12 * 3600 * 1000) { effacerBrouillon(); return false; }
+    Object.assign(form, b.f);
+    return true;
+  } catch (e) { return false; }
+}
+
 async function demarrer() {
   moi = await API.monEmploye();
   if (!moi) {
@@ -4175,6 +4210,11 @@ async function demarrer() {
   $('#quiRole').textContent = enInterim() ? 'remplace le manager aujourd’hui' : libelleRole(moi.role);
   // Edwin et Guénolé atterrissent sur le pilotage : ouvrir l'app = savoir où on en est.
   onglet = peutCloturer() ? 'direction' : 'saisie';
+  /* Une fiche laissée en plan revient d'elle-même, et on l'ouvre devant soi. */
+  if (restaurerBrouillon()) {
+    onglet = 'saisie';
+    setTimeout(() => toast('Ta saisie en cours a été retrouvée — rien n’est perdu.'), 600);
+  }
   majBoucler();
   await rendre();
   // Des pointages attendaient le réseau depuis la dernière session : on les
@@ -5314,6 +5354,10 @@ async function vueSaisie(j) {
   $('#vue').querySelectorAll('[data-parc]').forEach(b => b.addEventListener('click', () =>
     boiteParcPartenaire(PARTENAIRES.find(x => x.id === b.dataset.parc), j)));
   $('#btnEnregistrer').addEventListener('click', enregistrer);
+  /* Chaque frappe met le brouillon à l'abri — les listeners « input » du dessus
+     remplissent form sans repeindre, celui-ci recopie form dans le téléphone. */
+  $('#vue').addEventListener('input', sauverBrouillon);
+  sauverBrouillon();
 }
 
 async function enregistrer() {
@@ -5408,6 +5452,7 @@ async function enregistrer() {
                           prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0,
                           sansChrono: false, motifSansChrono: '', demarrer: false,
                           note: '', reservation: null });
+    effacerBrouillon();
     /* On NE remet PAS form.jour à aujourd'hui : quand on rattrape hier, on a
        presque toujours plusieurs lavages à rattraper d'affilée. La barre orange
        reste bien visible, et « Revenir à aujourd'hui » est à côté. */
@@ -5972,6 +6017,76 @@ async function vueCloture(j) {
       fermerModale(); toast('Journée clôturée et signée ✓'); rendre();
     });
   });
+}
+
+/* ── LA SAUVEGARDE (14/08) ─────────────────────────────────────────────────
+   Les vraies données s'accumulent : un fichier téléchargé chaque semaine met
+   l'essentiel à l'abri d'une fausse manipulation ou d'un compte perdu.
+   Deux formats, deux usages : le CSV s'ouvre dans Excel pour vérifier, le
+   JSON contient TOUT et permettrait de tout reconstruire. */
+async function boiteSauvegarde() {
+  const v = modale(`
+    <h3 class="ocr-h2">Sauvegarde des données</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Les fichiers se téléchargent sur ce
+      téléphone — garde-les ensuite dans un endroit sûr (Drive, ordinateur).
+      À faire une fois par semaine.</p>
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-sv="csv" style="margin-bottom:9px">
+      Lavages et paiements (CSV, pour Excel)</button>
+    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-sv="json" style="margin-bottom:9px">
+      Tout — clients, véhicules, pointages… (JSON)</button>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer>Fermer</button>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  const telecharger = (nom, contenu, type) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([contenu], { type }));
+    a.download = nom; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+  v.querySelectorAll('[data-sv]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; const txt = b.innerHTML; b.textContent = 'Préparation…';
+    try {
+      const [ps, cl, ve, pt, jo, pa] = await Promise.all([
+        sb.from('passages').select('*, passage_lignes(*)').order('journee'),
+        sb.from('clients').select('*'),
+        sb.from('vehicules').select('*'),
+        sb.from('pointages').select('*, pointage_pauses(*)'),
+        sb.from('journees').select('*'),
+        sb.from('paiements').select('*'),
+      ]);
+      const err = [ps, cl, ve, pt, jo, pa].find(x => x.error);
+      if (err) throw err.error;
+      const jour = auj();
+      if (b.dataset.sv === 'csv') {
+        const champ = x => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"';
+        const lignes = [['journee','reference','client','vehicule','plaque','prestation','gabarit',
+          'quantite','brut','remise','total','paiement','statut_paiement','transaction','note'].join(';')];
+        const nomC = id => (cl.data.find(c => c.id === id) || {}).nom || '';
+        const veh = id => ve.data.find(x => x.id === id) || {};
+        /* La référence KKiapay vit dans paiements, pas sur le passage — c'est
+           elle que Guénolé recoupe avec les SMS. */
+        const refPay = id => ((pa.data || []).find(y => y.passage_id === id) || {}).transaction_id || '';
+        ps.data.filter(x => !x.annule).forEach(x => {
+          const l = (x.passage_lignes || []).find(y => y.type === 'prestation') || {};
+          lignes.push([x.journee, x.reference, nomC(x.client_id),
+            [veh(x.vehicule_id).marque, veh(x.vehicule_id).modele].filter(Boolean).join(' '),
+            veh(x.vehicule_id).immatriculation || '', l.libelle || '', x.gabarit,
+            x.quantite, x.montant_brut, x.remise, x.montant_total,
+            x.mode_paiement || '', x.statut_paiement, refPay(x.id), x.note || '']
+            .map(champ).join(';'));
+        });
+        /* Le BOM en tête : sans lui, Excel lit les accents de travers. */
+        telecharger('ocr-lavages-' + jour + '.csv', '\ufeff' + lignes.join('\n'), 'text/csv');
+      } else {
+        telecharger('ocr-sauvegarde-' + jour + '.json', JSON.stringify({
+          exporte_le: new Date().toISOString(), par: moi.nom,
+          passages: ps.data, clients: cl.data, vehicules: ve.data,
+          pointages: pt.data, journees: jo.data, paiements: pa.data,
+        }, null, 1), 'application/json');
+      }
+      toast('Sauvegarde téléchargée ✓');
+    } catch (ex) { toast(ex.message || 'Export impossible', true); }
+    b.disabled = false; b.innerHTML = txt;
+  }));
 }
 
 function boiteReouvrir(d) {
@@ -9254,7 +9369,9 @@ async function vueCahier() {
       </div>`;
     brancherRetourDirection();
     const c = $('#cjDepuis'), bt = $('#cjCommencer');
-    c.addEventListener('input', () => { bt.disabled = !c.value; });
+    /* Sur iPhone, le sélecteur de date n'émet parfois que « change » : on
+       écoute les deux, sinon le bouton reste éteint alors qu'une date est là. */
+    ['input', 'change'].forEach(ev => c.addEventListener(ev, () => { bt.disabled = !c.value; }));
     bt.addEventListener('click', async () => {
       bt.disabled = true; bt.textContent = 'Enregistrement…';
       const { error } = await API.majReglages({ cahier_depuis: c.value });
@@ -9607,7 +9724,8 @@ function boiteJourPasse(j) {
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
   v.querySelectorAll('[data-jp]').forEach(b => b.addEventListener('click', () => choisir(b.dataset.jp)));
   const c = v.querySelector('#jpDate');
-  c.addEventListener('input', () => { v.querySelector('[data-jpok]').disabled = !c.value; });
+  ['input', 'change'].forEach(ev => c.addEventListener(ev,
+    () => { v.querySelector('[data-jpok]').disabled = !c.value; }));
   v.querySelector('[data-jpok]').addEventListener('click', () => { if (c.value) choisir(c.value); });
 }
 
@@ -9892,6 +10010,7 @@ async function vueDirection() {
        par « Reprendre » se confondaient — corrigé le 14/08. */
     ['cahier', '📓', 'Saisir le cahier papier', 'Ligne par ligne, recoupé au total du jour'],
     ['journal', '📜', 'Journal d’activité', 'Qui a fait quoi, quand'],
+    ['sauvegarde', '⬇', 'Sauvegarde', 'Télécharger toutes les données'],
     ['compte', '🛡', 'Mon compte', 'Mot de passe, double sécurité'],
   ];
 
@@ -10041,6 +10160,7 @@ async function vueDirection() {
     const id = b.dataset.dir;
     if (['bilan', 'cloture', 'journal', 'pointage', 'catalogue', 'temps', 'cahier'].includes(id))
       return allerOnglet(id);
+    if (id === 'sauvegarde') return boiteSauvegarde();
     if (id === 'objectifs') { const obj = await API.objectifs().catch(() => null); if (obj) boiteObjectifs(obj); return; }
     if (id === 'baies') return allerOnglet('agenda');
     if (id === 'absences') return boiteAbsences();
