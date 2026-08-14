@@ -1720,7 +1720,8 @@ function creerClientDemo() {
        corrigent sans republier l'application. */
     reglages: [{ id: 1, lat: null, lng: null, rayon_m: 150,
                  ouverture: '09:00:00', fermeture: '19:00:00',
-                 arrivee_debut: '08:30:00', arrivee_fin: '09:00:00', pause_min: 45 }],
+                 arrivee_debut: '08:30:00', arrivee_fin: '09:00:00', pause_min: 45,
+                 cahier_depuis: null }],
     demandes: [],
     // Catalogue des véhicules : semé depuis le socle, comme la vraie base.
     modeles_vehicules: OCR.MARQUES.flatMap(m => Object.keys(m.gab).flatMap(g =>
@@ -3020,7 +3021,11 @@ function creerClientDemo() {
       const sp = sansPlaque().filter(r => r.journee === a.p_date && !r.sans_plaque_valide_le).length;
       if (sp) throw new Error(sp + ' lavage(s) sans plaque à valider avant de clôturer');
       const j = D.journees.find(x => x.date === a.p_date) || { date: a.p_date };
-      Object.assign(j, { statut: 'validee', valide_par: emp.id, valide_le: new Date().toISOString(), totaux: totaux(a.p_date) });
+      /* La note de clôture est ce qui distingue une journée « vérifiée et vide »
+         d'une journée « pas encore faite » — la base la garde depuis toujours,
+         le mode démonstration l'oubliait. */
+      Object.assign(j, { statut: 'validee', valide_par: emp.id, valide_le: new Date().toISOString(),
+        totaux: totaux(a.p_date), note: a.p_note != null ? a.p_note : j.note });
       if (!D.journees.includes(j)) D.journees.push(j);
       return [{ jour: j.date, etat: 'validee', signe_par: emp.nom, signe_le: j.valide_le }];
     },
@@ -3072,7 +3077,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v48';
+const VERSION = 'v50';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -3902,6 +3907,14 @@ const API = {
 
   /* --- pointage --- */
   pointer: args => sb.rpc('ocr_pointer', args),
+  majReglages: patch => sb.from('reglages').update(patch).eq('id', 1),
+  /* L'état de toutes les journées d'une plage — c'est lui qui dit où en est la
+     reprise du cahier, sans interroger jour après jour. */
+  async journees(du, au) {
+    const { data } = await sb.from('journees').select('date,statut,note')
+      .gte('date', du).lte('date', au).order('date');
+    return data || [];
+  },
   async reglages() {
     const { data } = await sb.from('reglages').select('*').eq('id', 1).maybeSingle();
     return data || null;
@@ -4665,7 +4678,7 @@ window.addEventListener('popstate', () => {
 
 // Les onglets ne dépendent que du rôle : calcul immédiat, sans réseau.
 const SOUS_DIRECTION = ['direction', 'bilan', 'cloture', 'journal', 'pointage', 'catalogue',
-                        'temps', 'import', 'cahier'];
+                        'temps', 'cahier'];
 let badgeRdv = 0;   // dernier compte connu de rendez-vous en attente d'acompte
 function ongletsDuRole() {
   // Un technicien n'a que son pointage — sauf le remplaçant, le jour de
@@ -4768,7 +4781,6 @@ async function rendre(discret) {
     if (onglet === 'pointage')  await vuePointage();
     if (onglet === 'catalogue')  await vueCatalogue();
     if (onglet === 'temps')      await vueControleTemps();
-    if (onglet === 'import')     await vueImport();
   } catch (ex) {
     // Jamais d'écran mort : même quand le chargement échoue, il y a un bouton
     // pour réessayer (et les onglets du bas restent utilisables).
@@ -9205,13 +9217,81 @@ async function enregistrerParc(P, emp, lots, j, bouton) {
        global, jamais un total par journée.
    ========================================================================== */
 let cahier = { jour: null, presta: 'express', gabarit: 'berline', immat: '',
-               montant: null, mode: 'kkiapay', ref: '', fiche: '', total: '' };
+               montant: null, mode: 'kkiapay', ref: '', fiche: '', total: '',
+               saut: null };   // journée regardée hors de la marche, pour corriger
+
+/* La marche : de la première fiche du cahier jusqu'à hier, dans l'ordre.
+   Une journée SIGNÉE est une journée finie — c'est le seul marqueur dont on a
+   besoin, et il est déjà en base. */
+function marcheCahier(depuis, journees) {
+  const fin = decaleJour(auj(), -1);
+  const jours = [];
+  for (let d = depuis; d <= fin; d = decaleJour(d, 1)) jours.push(d);
+  const finie = d => {
+    const j = journees.find(x => x.date === d);
+    return !!j && j.statut !== 'ouverte';
+  };
+  const reste = jours.filter(d => !finie(d));
+  return { jours, reste, faites: jours.length - reste.length, courante: reste[0] || null };
+}
 
 async function vueCahier() {
-  if (!cahier.jour) cahier.jour = decaleJour(auj(), -1);
+  const depuis = REGLAGES && REGLAGES.cahier_depuis ? String(REGLAGES.cahier_depuis).slice(0, 10) : null;
+
+  /* ── Première fois : on demande où commence le cahier ─────────────────── */
+  if (!depuis) {
+    $('#vue').innerHTML = `
+      ${retourDirection()}
+      <div class="ocr-carte">
+        <div class="ocr-surtitre">Saisir le cahier papier</div>
+        <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">
+          On va reprendre les fiches <strong style="color:var(--ocr-blanc)">dans l’ordre</strong>,
+          de la plus ancienne jusqu’à hier. À chaque journée terminée, l’écran passe tout seul
+          à la suivante — tu n’auras jamais à chercher où tu en étais.</p>
+        <label class="ocr-champ"><span class="ocr-label">Date de la première fiche du cahier</span>
+          <input class="ocr-saisie" id="cjDepuis" type="date" max="${decaleJour(auj(), -1)}"></label>
+        <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="cjCommencer" disabled>Commencer</button>
+      </div>`;
+    brancherRetourDirection();
+    const c = $('#cjDepuis'), bt = $('#cjCommencer');
+    c.addEventListener('input', () => { bt.disabled = !c.value; });
+    bt.addEventListener('click', async () => {
+      bt.disabled = true; bt.textContent = 'Enregistrement…';
+      const { error } = await API.majReglages({ cahier_depuis: c.value });
+      if (error) { bt.disabled = false; bt.textContent = 'Réessayer'; return toast(error.message, true); }
+      REGLAGES = await API.reglages().catch(() => REGLAGES);
+      cahier.jour = null; memoVider(); vueCahier();
+    });
+    return;
+  }
+
+  const journees = await API.journees(depuis, decaleJour(auj(), -1)).catch(() => []);
+  const M = marcheCahier(depuis, journees);
+  const jour = cahier.saut || M.courante;
+
+  /* ── Tout est repris ──────────────────────────────────────────────────── */
+  if (!jour) {
+    $('#vue').innerHTML = `
+      ${retourDirection()}
+      <div class="ocr-message ocr-message--succes"><span>✓</span><div>
+        <strong>Le cahier est repris en entier.</strong><br>
+        ${pluriel(M.jours.length, 'journée')} depuis le ${jourBref(depuis)}, toutes signées.</div></div>
+      <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+        <p class="ocr-petit" style="margin:0 0 var(--ocr-e3)">Besoin de revenir sur une journée ?
+          Choisis-la — si elle est signée, tu pourras la réouvrir.</p>
+        <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Revoir une journée</span>
+          <input class="ocr-saisie" id="cjSaut" type="date" min="${depuis}" max="${decaleJour(auj(), -1)}"></label>
+      </div>`;
+    brancherRetourDirection();
+    $('#cjSaut').addEventListener('change', e => {
+      if (e.target.value) { cahier.saut = e.target.value; cahier.total = ''; vueCahier(); }
+    });
+    return;
+  }
+
   const [lignes, j] = await Promise.all([
-    API.cahierJour(cahier.jour).catch(() => []),
-    API.journee(cahier.jour).catch(() => null),
+    API.cahierJour(jour).catch(() => []),
+    API.journee(jour).catch(() => null),
   ]);
   const signee = j && j.statut !== 'ouverte';
   const cumul = lignes.reduce((s, x) => s + (x.montant_total || 0), 0);
@@ -9219,30 +9299,32 @@ async function vueCahier() {
   const ecart = attendu ? cumul - attendu : null;
   const tarif = OCR.prix(cahier.presta, cahier.gabarit);
   const montant = cahier.montant != null ? cahier.montant : (tarif == null ? '' : tarif);
+  const rang = M.jours.indexOf(jour) + 1;
+  const suivante = M.reste.find(d => d > jour) || null;
 
   $('#vue').innerHTML = `
     ${retourDirection()}
     <div class="ocr-carte">
-      <div class="ocr-surtitre">Reprendre le cahier</div>
-      <p class="ocr-mini" style="margin:9px 0 var(--ocr-e4)">Une journée à la fois. Chaque ligne est
-        écrite sur <strong style="color:var(--ocr-blanc)">la date du cahier</strong>, terminée sans chrono
-        (elle n’en a jamais eu), et encaissée dans le même geste.</p>
-      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:var(--ocr-e3)">
-        ${[1, 2, 3, 4, 5, 6, 7].map(k => {
-          const d = decaleJour(auj(), -k);
-          return `<button class="ocr-chip" data-cj="${d}" aria-pressed="${cahier.jour === d}">${
-            k === 1 ? 'Hier' : jourBref(d)}</button>`;
-        }).join('')}
-        <input class="ocr-saisie" id="cjDate" type="date" value="${cahier.jour}"
-               max="${decaleJour(auj(), -1)}" style="width:150px;padding:8px 9px">
+      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <div class="ocr-surtitre">Saisir le cahier papier</div>
+        <span style="flex:1"></span>
+        <span class="ocr-mini">journée ${rang} sur ${M.jours.length}</span>
+      </div>
+      <div style="height:6px;border-radius:99px;background:var(--ocr-sep);margin:10px 0 var(--ocr-e3);overflow:hidden">
+        <div style="height:100%;width:${Math.round(M.faites / M.jours.length * 100)}%;background:var(--ocr-vert)"></div>
       </div>
       <p class="ocr-petit" style="margin:0">
-        <strong style="color:var(--ocr-blanc)">${jourLong(cahier.jour)}</strong> ·
-        ${signee ? '<span style="color:var(--ocr-ambre)">journée signée — il faut la réouvrir pour écrire</span>'
-                 : '<span style="color:var(--ocr-vert)">journée ouverte</span>'}
-      </p>
-      ${signee ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="cjReouvrir"
-        style="margin-top:var(--ocr-e3)">Réouvrir cette journée…</button>` : ''}
+        <strong style="color:var(--ocr-blanc)">${jourLong(jour)}</strong>${
+        cahier.saut ? ' <span class="ocr-mini">(journée revue hors de l’ordre)</span>' : ''}<br>
+        <span class="ocr-mini">${M.reste.length ? pluriel(M.reste.length, 'journée') + ' encore à reprendre'
+          : 'dernière journée'} · départ le ${jourBref(depuis)}</span></p>
+      ${signee ? `<div class="ocr-message ocr-message--alerte" style="margin-top:var(--ocr-e3)"><span>🔒</span><div>
+        <strong>Journée signée</strong> — ${esc(j.note || 'déjà reprise')}.<br>
+        Réouvre-la si une ligne manque.</div></div>
+        <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="cjReouvrir"
+          style="margin-top:var(--ocr-e3)">Réouvrir cette journée…</button>` : ''}
+      ${cahier.saut ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" id="cjReprendre"
+        style="margin-top:var(--ocr-e3)">‹ Revenir à la journée en cours</button>` : ''}
     </div>
 
     ${signee ? '' : `
@@ -9251,11 +9333,8 @@ async function vueCahier() {
 
       <div class="ocr-label" style="margin:var(--ocr-e4) 0 8px">Prestation</div>
       <div style="display:flex;gap:7px;flex-wrap:wrap">
-        ${/* Nom court : « Lavage Express » sur dix lignes fait dix lignes. Sur
-             cet écran on recopie, on ne découvre pas le catalogue. */''}
         ${OCR.PRESTATIONS.map(x => `<button class="ocr-chip" data-cp="${x.id}"
-          aria-pressed="${cahier.presta === x.id}">${esc(x.nom.replace(/^Lavage /, ''))}${
-          x.famille === 'moto' ? '' : ''}</button>`).join('')}
+          aria-pressed="${cahier.presta === x.id}">${esc(x.nom.replace(/^Lavage /, ''))}</button>`).join('')}
       </div>
 
       <div class="ocr-label" style="margin:var(--ocr-e4) 0 8px">Type de véhicule</div>
@@ -9290,7 +9369,7 @@ async function vueCahier() {
       </div>
 
       <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="cjAjouter"
-        style="margin-top:var(--ocr-e4)">＋ Ajouter au ${jourBref(cahier.jour)}</button>
+        style="margin-top:var(--ocr-e4)">＋ Ajouter au ${jourBref(jour)}</button>
     </div>`}
 
     <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
@@ -9299,19 +9378,20 @@ async function vueCahier() {
         <span style="flex:1"></span>
         <span style="font:700 20px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(cumul)}</span>
       </div>
-      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">${pluriel(lignes.length, 'lavage')} ${
-        lignes.length > 1 ? 'repris' : 'repris'} · à comparer au TOTAL JOURNALIER écrit sur la fiche.</p>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">${pluriel(lignes.length, 'lavage')} repris ·
+        à comparer au TOTAL JOURNALIER écrit sur la fiche.</p>
 
+      ${signee ? '' : `
       <label class="ocr-champ"><span class="ocr-label">Total écrit sur le cahier</span>
         <input class="ocr-saisie" id="cjTotal" type="number" inputmode="numeric" value="${esc(cahier.total)}"
                placeholder="ce qui est écrit et signé en bas de la fiche"></label>
       ${ecart === null ? '' : ecart === 0
         ? '<div class="ocr-message ocr-message--succes"><span>✓</span><div><strong>Les deux totaux tombent juste.</strong><br>Cette journée est fidèle au papier.</div></div>'
         : `<div class="ocr-message ocr-message--alerte"><span>⚠</span><div>
-            <strong>Écart de ${OCR.fcfa(Math.abs(ecart))}</strong> — l’application ${ecart > 0 ? 'a' : 'a'}
+            <strong>Écart de ${OCR.fcfa(Math.abs(ecart))}</strong> — l’application a
             ${ecart > 0 ? OCR.fcfa(Math.abs(ecart)) + ' de PLUS' : OCR.fcfa(Math.abs(ecart)) + ' de MOINS'}
             que le cahier.<br>${ecart > 0 ? 'Une ligne a été saisie deux fois, ou un montant est trop haut.'
-              : 'Il reste des lignes à saisir, ou un montant est trop bas.'}</div></div>`}
+              : 'Il reste des lignes à saisir, ou un montant est trop bas.'}</div></div>`}`}
 
       ${lignes.length ? lignes.map(x => `
         <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
@@ -9328,17 +9408,26 @@ async function vueCahier() {
               ? esc(x.mode_paiement === 'kkiapay' ? 'KKiapay' : 'espèces') : '⚠ non payé'}</span>
           </span>
         </div>`).join('') : '<div class="vide">Rien encore repris pour cette journée.</div>'}
-    </div>`;
+    </div>
+
+    ${signee ? '' : `
+    <div class="ocr-carte" style="margin-top:var(--ocr-e4);border-color:rgba(214,32,30,.35)">
+      <div class="ocr-h3">Cette journée est finie ?</div>
+      <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">La signer la fige à ton nom et
+        ${suivante ? 'ouvre le <strong style="color:var(--ocr-blanc)">' + jourLong(suivante) + '</strong>'
+                   : 'termine la reprise du cahier'}.</p>
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="cjFinir">
+        ${lignes.length ? 'Signer et passer' + (suivante ? ' au ' + jourBref(suivante) : ' à la suite')
+                        : 'Signer cette journée'}</button>
+      ${lignes.length ? '' : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="cjVide"
+        style="margin-top:9px">Aucun client ce jour-là</button>
+      <p class="ocr-mini" style="margin:9px 0 0">Atelier fermé, jour férié, aucune fiche : la journée
+        est signée à zéro et l’écran passe à la suivante. C’est ce qui distingue une journée
+        <em>vérifiée et vide</em> d’une journée <em>pas encore faite</em>.</p>`}
+    </div>`}`;
 
   brancherRetourDirection();
   const maj = () => vueCahier();
-  $('#vue').querySelectorAll('[data-cj]').forEach(b => b.addEventListener('click', () => {
-    cahier.jour = b.dataset.cj; cahier.total = ''; maj();
-  }));
-  const cd = $('#cjDate');
-  if (cd) cd.addEventListener('change', e => {
-    if (e.target.value) { cahier.jour = e.target.value; cahier.total = ''; maj(); }
-  });
   $('#vue').querySelectorAll('[data-cp]').forEach(b => b.addEventListener('click', () => {
     cahier.presta = b.dataset.cp; cahier.montant = null; maj();
   }));
@@ -9356,9 +9445,10 @@ async function vueCahier() {
   if (cm) cm.addEventListener('input', e => { cahier.montant = e.target.value === '' ? null : Number(e.target.value); });
   const ct = $('#cjTotal');
   if (ct) ct.addEventListener('change', e => { cahier.total = e.target.value; maj(); });
-
   const cr = $('#cjReouvrir');
-  if (cr) cr.addEventListener('click', () => boiteReouvrir(cahier.jour));
+  if (cr) cr.addEventListener('click', () => boiteReouvrir(jour));
+  const crp = $('#cjReprendre');
+  if (crp) crp.addEventListener('click', () => { cahier.saut = null; cahier.total = ''; maj(); });
 
   const ca = $('#cjAjouter');
   if (ca) ca.addEventListener('click', async () => {
@@ -9369,7 +9459,7 @@ async function vueCahier() {
       return toast('La référence du SMS KKiapay — c’est elle qui rendra le recoupement possible.', true);
     ca.disabled = true; ca.textContent = 'Ajout…';
     const { data, error } = await API.saisirCahier({
-      p_journee: cahier.jour, p_gabarit: cahier.gabarit,
+      p_journee: jour, p_gabarit: cahier.gabarit,
       p_lignes: [{ type: 'prestation', code: pr.id, libelle: pr.nom, prix: Number(prix),
                    duree_min: OCR.duree(cahier.presta, cahier.gabarit) }],
       p_immat: OCR.plaque(cahier.immat) || null,
@@ -9378,15 +9468,66 @@ async function vueCahier() {
       p_fiche: cahier.fiche ? 'Fiche ' + cahier.fiche : null,
       p_note: null,
     });
-    ca.disabled = false; ca.textContent = '＋ Ajouter au ' + jourBref(cahier.jour);
+    ca.disabled = false; ca.textContent = '＋ Ajouter au ' + jourBref(jour);
     if (error) return toast(error.message, true);
     const r = Array.isArray(data) ? data[0] : data;
-    toast(r.reference + ' · ' + OCR.fcfa(r.montant_total) + ' ajouté au ' + jourBref(cahier.jour));
-    /* On garde la prestation, la taille et le mode : dans un cahier, les lignes
-       se ressemblent. On vide ce qui change à chaque ligne. */
+    toast(r.reference + ' · ' + OCR.fcfa(r.montant_total) + ' ajouté au ' + jourBref(jour));
     cahier.immat = ''; cahier.ref = ''; cahier.montant = null;
+    memoVider(); maj();
+  });
+
+  /* Signer la journée et avancer. Un écart ne bloque pas — une fiche papier
+     peut être mal additionnée, et bloquer quelqu'un qui recopie trente
+     journées le ferait sortir de l'application. Mais l'écart est ÉCRIT sur la
+     journée : on le retrouvera. */
+  const signer = async (note, bouton) => {
+    bouton.disabled = true; bouton.textContent = 'Signature…';
+    const { error } = await API.cloturer({ p_date: jour, p_note: note });
+    if (error) { bouton.disabled = false; bouton.textContent = 'Réessayer'; return toast(error.message, true); }
+    cahier.saut = null; cahier.total = ''; cahier.immat = ''; cahier.ref = ''; cahier.montant = null;
     memoVider();
+    toast(jourBref(jour) + ' signé' + (suivante ? ' — au tour du ' + jourBref(suivante) : ' — cahier terminé ✓'));
     maj();
+  };
+
+  const cf = $('#cjFinir');
+  if (cf) cf.addEventListener('click', () => {
+    const base = pluriel(lignes.length, 'lavage') + ' · ' + OCR.fcfa(cumul);
+    if (ecart === 0) return signer('Cahier repris — ' + base + ', conforme au total écrit', cf);
+    const v = modale(`
+      <h3 class="ocr-h2">Signer le ${jourLong(jour)}</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">${ecart === null
+        ? 'Tu n’as pas saisi le total écrit sur la fiche. Tu peux signer quand même — mais alors rien ne prouve que cette journée est complète.'
+        : '<strong style="color:var(--ocr-ambre)">Il reste un écart de ' + OCR.fcfa(Math.abs(ecart)) +
+          '</strong> entre l’application et le cahier. Tu peux signer quand même : l’écart sera <strong style="color:var(--ocr-blanc)">écrit sur la journée</strong> et tu pourras y revenir.'}</p>
+      <div style="display:flex;gap:9px;align-items:center">
+        <button class="ocr-btn ocr-btn--fantome" data-fermer>Je vérifie</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-ok>Signer quand même</button></div>`);
+    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+    v.querySelector('[data-ok]').addEventListener('click', e => {
+      fermerModale();
+      signer('Cahier repris — ' + base + (ecart === null ? ' ; total du cahier non vérifié'
+        : ' ; total du cahier ' + OCR.fcfa(attendu) + ' ; ÉCART ' + OCR.fcfa(ecart)), cf);
+    });
+  });
+
+  const cv = $('#cjVide');
+  if (cv) cv.addEventListener('click', () => {
+    const v = modale(`
+      <h3 class="ocr-h2">Aucun client le ${jourLong(jour)} ?</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">La journée sera signée à
+        <strong style="color:var(--ocr-blanc)">zéro franc</strong>, avec la mention « aucun client ».
+        C’est ce qui la distingue d’une journée qu’on aurait simplement oublié de reprendre.</p>
+      <div style="display:flex;gap:9px;align-items:center">
+        <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-ok>Aucun client — signer</button></div>`);
+    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+    v.querySelector('[data-ok]').addEventListener('click', () => {
+      fermerModale();
+      signer('Aucun client ce jour-là (vérifié au cahier)', cv);
+    });
   });
 }
 
@@ -9669,274 +9810,15 @@ function boiteHorsMesure(id, apres) {
 }
 
 /* ==========================================================================
-   REPRENDRE L'ANCIEN CAHIER (13/08)
-   « Je vais bientôt importer les lavages faits depuis un mois. Il y a eu des
-     lavages où on n'avait pas mis l'immatriculation, c'était juste le type de
-     véhicule et le type de lavage. »
-   Donc : DATE + TAILLE + PRESTATION suffisent. Le montant se calcule tout
-   seul depuis la grille si la case est vide. Ces lavages comptent dans le
-   chiffre d'affaires et dans les types de véhicules, jamais dans les temps
-   (ils n'ont jamais eu de chrono) et jamais dans la caisse du jour.
+   L'IMPORT PAR TABLEAU A ÉTÉ RETIRÉ (14/08)
+   « Supprime la partie coller un tableau, on n'en a plus besoin. » (Edwin)
+   Guénolé recopie le cahier ligne à ligne dans « 📓 Saisir le cahier papier » :
+   il a le SMS KKiapay sous les yeux, et le total du jour se recoupe à l'écran.
+   Coller un tableau supposait d'avoir déjà un fichier — ce qui n'arrive pas.
+   Les fonctions ocr_importer_lavages / ocr_annuler_import restent en base :
+   elles ne coûtent rien, et si un lot avait été importé un jour, il faudrait
+   encore pouvoir l'annuler. C'est l'écran qui disparaît, pas l'histoire.
    ========================================================================== */
-/* L'ORDRE EST CELUI DE LA FICHE PAPIER « Recette journalière » — c'est elle
-   qu'on recopie, il ne faut pas obliger à réorganiser des colonnes. Les
-   en-têtes sont reconnus par leur nom quand ils sont là ; sans en-tête, on
-   suppose cet ordre-là, et on le DIT à l'écran. */
-const COLONNES_IMPORT = [
-  ['date',           ['date', 'jour', 'quand']],
-  ['prestation',     ['prestation', 'lavage', 'type de lavage', 'type de service', 'service',
-                      'formule', 'description', 'type de service description']],
-  ['immatriculation',['immatriculation', 'plaque', 'immat', 'n plaque', 'no plaque', 'numero de plaque']],
-  ['gabarit',        ['taille', 'gabarit', 'type', 'type de vehicule', 'vehicule', 'categorie']],
-  ['montant',        ['montant', 'prix', 'ca', 'somme', 'total', 'paye', 'montant fcfa']],
-  ['paiement',       ['paiement', 'mode', 'mode de paiement', 'moyen', 'paye par', 'reglement']],
-  ['fiche',          ['fiche', 'n fiche', 'no fiche', 'numero de fiche', 'piece', 'n piece']],
-  ['note',           ['note', 'remarque', 'observation', 'commentaire', 'observations']],
-  ['marque',         ['marque']],
-  ['modele',         ['modele', 'model']],
-];
-let importTexte = '';
-
-/* Découpe un tableau collé depuis Excel (tabulations) ou un CSV (; ou ,). */
-function decouperTableau(texte) {
-  const lignes = String(texte || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (!lignes.length) return [];
-  const sep = lignes[0].includes('\t') ? '\t' : (lignes[0].split(';').length > lignes[0].split(',').length ? ';' : ',');
-  return lignes.map(l => l.split(sep).map(c => c.trim().replace(/^"|"$/g, '')));
-}
-
-/* Reconnaît l'en-tête s'il y en a un ; sinon suppose l'ordre du modèle. */
-function analyserImport(texte) {
-  const brut = decouperTableau(texte);
-  if (!brut.length) return { lignes: [], erreurs: [], total: 0 };
-  const cles = brut[0].map(c => OCR.clefTexte(c));
-  const trouve = c => cles.findIndex(k => k && COLONNES_IMPORT.find(x => x[0] === c)[1].some(a => OCR.clefTexte(a) === k));
-  const entete = COLONNES_IMPORT.filter(([c]) => trouve(c) >= 0).length >= 3;
-  const idx = {};
-  COLONNES_IMPORT.forEach(([c], i) => { idx[c] = entete ? trouve(c) : i; });
-  const corps = entete ? brut.slice(1) : brut;
-
-  const lignes = [], erreurs = [];
-  corps.forEach((cel, n) => {
-    const val = c => (idx[c] >= 0 && cel[idx[c]] != null ? cel[idx[c]] : '');
-    const num = n + (entete ? 2 : 1);
-    const date = OCR.lireDate(val('date'));
-    const gab  = OCR.trouverGabarit(val('gabarit'));
-    const code = OCR.trouverPrestation(val('prestation'), gab);
-    const pb   = OCR.lireMontant(val('montant'));
-    const mal = [];
-    if (!date) mal.push('date illisible (« ' + (val('date') || 'vide') + ' »)');
-    if (!gab)  mal.push('taille inconnue (« ' + (val('gabarit') || 'vide') + ' »)');
-    if (!code) mal.push('prestation inconnue (« ' + (val('prestation') || 'vide') + ' »)');
-    if (date && date > auj()) mal.push('date dans le futur');
-    let montant = pb;
-    if (montant == null && gab && code) montant = OCR.prix(code, gab);
-    if (montant == null && !mal.length) mal.push('montant absent, et cette prestation est sur devis');
-    if (mal.length) { erreurs.push({ num, quoi: mal.join(' · '), brut: cel.join(' | ') }); return; }
-    const pr = OCR.prestation(code) || {};
-    // « RAS » dans la colonne Observation de la fiche papier ne veut rien dire :
-    // on ne le recopie pas comme une note.
-    const obs = /^(ras|r\.a\.s\.?|néant|neant|-)$/i.test(val('note').trim()) ? '' : val('note').trim();
-    const fic = val('fiche').trim();
-    lignes.push({
-      date, gabarit: gab, code, libelle: pr.nom || code, montant,
-      duree: OCR.duree(code, gab) || null,
-      marque: val('marque') ? OCR.marqueCanon(val('marque'), gab) : '',
-      modele: val('modele'),
-      // « / » sur la fiche papier = pas de plaque, ce n'est pas une plaque
-      immatriculation: /^[\/\-–—.]*$/.test(val('immatriculation').trim()) ? '' : val('immatriculation'),
-      paiement: OCR.trouverPaiement(val('paiement')) || null,
-      fiche: fic,
-      note: [fic ? 'Fiche ' + fic : '', obs].filter(Boolean).join(' · '),
-    });
-  });
-  return { lignes, erreurs, total: lignes.reduce((a, l) => a + l.montant, 0), entete };
-}
-
-const MODELE_IMPORT = 'date;taille;prestation;montant;marque;modele;immatriculation;paiement;fiche;note\n' +
-  '26/06/2026;Moto;Express;1000;;;;KKiapay;005;\n' +
-  '26/06/2026;Moto;Express;1000;;;;KKiapay;005;\n' +
-  '05/07/2026;Berline;Signature;8000;Toyota;RAV4;CB5916;Espèces;012;\n' +
-  '06/07/2026;Grand SUV;Deep cleaning;45000;;;;KKiapay;013;\n';
-
-async function vueImport() {
-  const a = analyserImport(importTexte);
-  const lots = await API.lavagesSansMesure(ilYA(400)).catch(() => []);
-  const parLot = {};
-  lots.filter(l => l.import_lot).forEach(l => {
-    const o = parLot[l.import_lot] || (parLot[l.import_lot] = { n: 0, ca: 0, du: l.journee, au: l.journee });
-    o.n++; o.ca += l.montant_total || 0;
-    if (l.journee < o.du) o.du = l.journee;
-    if (l.journee > o.au) o.au = l.journee;
-  });
-  const nomsLots = Object.keys(parLot).sort().reverse();
-
-  $('#vue').innerHTML = `
-    ${retourDirection()}
-    <div class="ocr-carte">
-      <div class="ocr-surtitre">Reprendre d’anciens lavages</div>
-      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">
-        Colle ici le tableau de ton fichier Excel (sélectionne les cellules, copie, colle) ou le contenu d’un CSV.
-        <strong style="color:var(--ocr-blanc)">Trois colonnes suffisent : la date, la taille du véhicule et le
-        type de lavage.</strong> Le montant se calcule tout seul s’il manque. Marque, modèle et plaque sont un plus,
-        pas une obligation.</p>
-      <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="impModele">⤓ Récupérer un tableau modèle</button>
-      <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Le tableau</span>
-        <textarea class="ocr-saisie" id="impTexte" rows="7" spellcheck="false"
-          style="font:13px/1.5 ui-monospace,monospace;resize:vertical"
-          placeholder="date;taille;prestation;montant&#10;05/07/2026;Berline;Signature;8000">${esc(importTexte)}</textarea></label>
-      <p class="ocr-mini">Tailles acceptées : Petite · Berline · Grand SUV · Camionnette · Moto.
-        Lavages : Express · Signature · Deep cleaning · Pack Intérieur · Pack Extérieur · Moteur · Polissage · Céramique.
-        Paiement : KKiapay · Espèces · Carnet. Les colonnes suivent la fiche papier —
-        un « / » dans la colonne plaque veut dire « pas de plaque », et « RAS » en observation n'est pas recopié.</p>
-    </div>
-
-    ${importTexte.trim() ? `
-    <div class="tuiles" style="margin-top:var(--ocr-e4)">
-      <div class="tuile"><div class="lab">Lignes lues</div><div class="val">${a.lignes.length}</div>
-        <div class="sub">prêtes à importer</div></div>
-      <div class="tuile"><div class="lab">À corriger</div>
-        <div class="val" style="${a.erreurs.length ? 'color:var(--ocr-erreur)' : ''}">${a.erreurs.length}</div>
-        <div class="sub">${a.erreurs.length ? 'ces lignes seront ignorées' : 'rien à corriger'}</div></div>
-      <div class="tuile"><div class="lab">Chiffre d’affaires</div><div class="val">${OCR.fcfa(a.total)}</div>
-        <div class="sub">ajouté à l’historique</div></div>
-    </div>
-    ${!a.entete && a.lignes.length ? `<div class="ocr-message" style="margin-top:var(--ocr-e4)"><span>ⓘ</span><div>
-      <strong>Pas de ligne d’en-tête reconnue.</strong> Les colonnes sont donc lues dans l’ordre de la
-      fiche papier : date · prestation · plaque · taille · montant · paiement · n° fiche · observation.
-      Vérifie l’aperçu ci-dessous — ou colle aussi la ligne de titres, l’app s’en sert.</div></div>` : ''}
-
-    ${a.erreurs.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4);border-color:rgba(214,64,64,.45)">
-      <div class="ocr-surtitre">Lignes à corriger</div>
-      ${a.erreurs.slice(0, 12).map(e => `<div style="padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
-        <div class="ocr-petit"><strong>Ligne ${e.num}</strong> — ${esc(e.quoi)}</div>
-        <div class="ocr-mini">${esc(e.brut)}</div></div>`).join('')}
-      ${a.erreurs.length > 12 ? `<p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">
-        ${a.erreurs.length} lignes en tout — les 12 premières sont montrées.</p>` : ''}
-    </div>` : ''}
-
-    ${a.lignes.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
-      ${/* Le cahier porte un TOTAL JOURNALIER écrit à la main et signé. C'est
-            LUI qu'il faut recouper, journée par journée, avant d'importer :
-            un total global juste peut cacher deux erreurs qui s'annulent. */''}
-      <div class="ocr-surtitre">Total par journée — à comparer avec le cahier</div>
-      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Chaque ligne doit correspondre au
-        « TOTAL JOURNALIER » écrit et signé sur la fiche de ce jour-là.</p>
-      ${(() => {
-        const j = {};
-        a.lignes.forEach(l => { const o = j[l.date] || (j[l.date] = { n: 0, ca: 0, fiches: new Set() });
-          o.n++; o.ca += l.montant; if (l.fiche) o.fiches.add(l.fiche); });
-        return Object.keys(j).sort().map(d => `
-          <div style="display:flex;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid var(--ocr-sep)">
-            <span style="min-width:0;flex:1"><span style="font-weight:600">${jourBref(d)}</span>
-              <span class="ocr-mini"> · ${j[d].n} lavage(s)${j[d].fiches.size
-                ? ' · fiche' + (j[d].fiches.size > 1 ? 's ' : ' ') + [...j[d].fiches].join(', ') : ''}</span></span>
-            <span style="font-weight:700;font-variant-numeric:tabular-nums">${OCR.fcfa(j[d].ca)}</span>
-          </div>`).join('');
-      })()}
-    </div>
-
-    <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
-      <div class="ocr-surtitre">Aperçu · ${a.lignes.length} lavage(s)</div>
-      ${a.lignes.slice(0, 15).map(l => `
-        <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--ocr-sep)">
-          <span style="min-width:0;flex:1">
-            <span style="font-weight:600">${esc(l.libelle)}</span>
-            <span class="ocr-mini" style="display:block">${jourBref(l.date)} · ${
-              esc((OCR.gabarit(l.gabarit) || {}).nom)}${l.marque ? ' · ' + esc(l.marque + ' ' + (l.modele || '')) : ''}${
-              l.immatriculation ? ' · ' + esc(OCR.plaque(l.immatriculation)) : ''}${
-              l.paiement ? ' · ' + (l.paiement === 'kkiapay' ? 'KKiapay' : l.paiement === 'especes' ? 'Espèces' : 'Carnet') : ''}${
-              l.fiche ? ' · fiche ' + esc(l.fiche) : ''}</span>
-          </span>
-          <span style="font-weight:700;font-variant-numeric:tabular-nums">${OCR.fcfa(l.montant)}</span>
-        </div>`).join('')}
-      ${a.lignes.length > 15 ? `<p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">
-        … et ${a.lignes.length - 15} autres.</p>` : ''}
-      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="impGo" style="margin-top:var(--ocr-e4)">
-        Importer ${a.lignes.length} lavage(s) · ${OCR.fcfa(a.total)}</button>
-      <p class="ocr-mini" style="margin:8px 0 0">Ils apparaîtront dans le Bilan et dans « Quels véhicules dominent ».
-        Ils resteront hors des temps et hors de la caisse. Un import s’annule en bloc.</p>
-    </div>` : ''}` : ''}
-
-    ${nomsLots.length ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
-      <div class="ocr-surtitre">Imports déjà faits</div>
-      ${nomsLots.map(nom => `
-        <div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
-          <span style="min-width:0;flex:1">
-            <span style="font-weight:600">${esc(nom)}</span>
-            <span class="ocr-mini" style="display:block">${parLot[nom].n} lavage(s) · ${
-              OCR.fcfa(parLot[nom].ca)} · du ${jourBref(parLot[nom].du)} au ${jourBref(parLot[nom].au)}</span></span>
-          <button class="ocr-btn ocr-btn--fantome ocr-btn--petit dgr" data-annulot="${esc(nom)}"
-            style="white-space:nowrap">Annuler…</button>
-        </div>`).join('')}
-    </div>` : ''}`;
-
-  brancherRetourDirection();
-  let mn;
-  $('#impTexte').addEventListener('input', e => {
-    importTexte = e.target.value;
-    clearTimeout(mn);
-    mn = setTimeout(() => { if (onglet === 'import') { const y = window.scrollY; vueImport().then(() => window.scrollTo(0, y)); } }, 400);
-  });
-  $('#impModele').addEventListener('click', () => {
-    const b = new Blob(['﻿' + MODELE_IMPORT], { type: 'text/csv;charset=utf-8' });
-    const u = URL.createObjectURL(b);
-    const a2 = document.createElement('a');
-    a2.href = u; a2.download = 'ocr-lavages-a-importer.csv';
-    document.body.appendChild(a2); a2.click(); a2.remove();
-    setTimeout(() => URL.revokeObjectURL(u), 2000);
-  });
-  const go = $('#impGo');
-  if (go) go.addEventListener('click', () => boiteImport(a));
-  $('#vue').querySelectorAll('[data-annulot]').forEach(b =>
-    b.addEventListener('click', () => boiteAnnulerImport(b.dataset.annulot, parLot[b.dataset.annulot])));
-}
-
-function boiteImport(a) {
-  const jours = [...new Set(a.lignes.map(l => l.date))].sort();
-  const v = modale(`
-    <h3 class="ocr-h2">Importer ${a.lignes.length} lavage(s)</h3>
-    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
-      Du <strong>${jourBref(jours[0])}</strong> au <strong>${jourBref(jours[jours.length - 1])}</strong> ·
-      ${OCR.fcfa(a.total)} de chiffre d’affaires sur ${jours.length} journée(s).</p>
-    <div class="ocr-message"><span>ⓘ</span><div>
-      Ces lavages <strong>comptent dans le chiffre d’affaires et dans les statistiques de véhicules</strong>.
-      Ils ne comptent pas dans les temps (ils n'ont pas de chrono) ni dans la caisse du jour.
-      Si tu te trompes, l’import s’annule en un geste.</div></div>
-    <div style="display:flex;gap:9px;margin-top:var(--ocr-e4)">
-      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
-      <div style="flex:1"></div>
-      <button class="ocr-btn ocr-btn--primaire" data-ok>Importer</button></div>`);
-  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
-  v.querySelector('[data-ok]').addEventListener('click', async e => {
-    e.target.disabled = true; e.target.textContent = 'Import en cours…';
-    const { data, error } = await API.importerLavages(a.lignes, null);
-    if (error) { e.target.disabled = false; e.target.textContent = 'Importer'; return toast(error.message, true); }
-    const r = Array.isArray(data) ? data[0] : data;
-    memoVider(); fermerModale(); importTexte = '';
-    toast((r && r.nb_importes ? r.nb_importes : a.lignes.length) + ' lavage(s) repris · lot ' + ((r && r.lot_ref) || ''));
-    vueImport();
-  });
-}
-
-function boiteAnnulerImport(lot, info) {
-  const v = modale(`
-    <h3 class="ocr-h2">Annuler l’import ${esc(lot)}</h3>
-    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
-      Les ${info ? info.n : ''} lavage(s) de ce lot (${info ? OCR.fcfa(info.ca) : ''}) sortiront du chiffre d’affaires
-      et des statistiques. Rien n’est supprimé : ils restent en base, marqués annulés, avec ton nom.</p>
-    <div style="display:flex;gap:9px">
-      <button class="ocr-btn ocr-btn--fantome" data-fermer>Garder</button>
-      <div style="flex:1"></div>
-      <button class="ocr-btn ocr-btn--primaire" data-ok>Annuler l’import</button></div>`);
-  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
-  v.querySelector('[data-ok]').addEventListener('click', async e => {
-    e.target.disabled = true;
-    const { error } = await API.annulerImport(lot);
-    if (error) { e.target.disabled = false; return toast(error.message, true); }
-    memoVider(); fermerModale(); toast('Import annulé'); vueImport();
-  });
-}
 
 /* ==========================================================================
    DIRECTION — le panneau d'Edwin et Guénolé
@@ -10004,8 +9886,11 @@ async function vueDirection() {
       ? filePointage.length + ' en attente d’envoi' : 'Arrivées, pauses, départs'],
     ['catalogue', '▦', 'Marques & modèles', 'Ajouter, corriger les tailles'],
     ['temps', '⏱', 'Contrôle des temps', 'Lavages sans chrono, lavages écartés'],
-    ['cahier', '📓', 'Reprendre le cahier', 'Une journée à la fois, recoupée au total'],
-    ['import', '⤒', 'Reprendre d’anciens lavages', 'Un tableau collé, en une fois'],
+    /* Deux portes vers le passé, et elles ne servent pas au même moment : le
+       cahier se recopie ligne à ligne en regardant le papier ; le tableau se
+       colle quand on l'a déjà sous forme de fichier. Deux titres commençant
+       par « Reprendre » se confondaient — corrigé le 14/08. */
+    ['cahier', '📓', 'Saisir le cahier papier', 'Ligne par ligne, recoupé au total du jour'],
     ['journal', '📜', 'Journal d’activité', 'Qui a fait quoi, quand'],
     ['compte', '🛡', 'Mon compte', 'Mot de passe, double sécurité'],
   ];
@@ -10154,7 +10039,7 @@ async function vueDirection() {
   }));
   $('#vue').querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.dir;
-    if (['bilan', 'cloture', 'journal', 'pointage', 'catalogue', 'temps', 'import', 'cahier'].includes(id))
+    if (['bilan', 'cloture', 'journal', 'pointage', 'catalogue', 'temps', 'cahier'].includes(id))
       return allerOnglet(id);
     if (id === 'objectifs') { const obj = await API.objectifs().catch(() => null); if (obj) boiteObjectifs(obj); return; }
     if (id === 'baies') return allerOnglet('agenda');
