@@ -419,6 +419,131 @@
 }
 
 
+/* ══════════════════════════════════════════════════════════════════════════
+   LE MOUVEMENT (14/08, v59)
+
+   Edwin : « Une première impression waouh, mais sans trop alourdir l'appli, car
+   les appareils Android de mes employés sont parfois modestes. »
+
+   UNE SEULE RÈGLE TECHNIQUE, ET ELLE EXPLIQUE TOUT LE RESTE : on n'anime que
+   « transform » et « opacity ». Ce sont les deux seules propriétés qu'un
+   téléphone traite sur sa puce graphique, sans refaire la mise en page ni
+   repeindre. Animer une largeur, une ombre ou un flou (backdrop-filter) fait
+   travailler le processeur à chaque image — c'est exactement ce qui fait
+   saccader une belle idée sur un Android d'entrée de gamme.
+   Aucun flou, aucune ombre animée, aucune boucle qui tourne en permanence :
+   chaque animation joue UNE fois et s'arrête.
+
+   Trois niveaux, décidés par l'appareil lui-même (voir MOUVEMENT en JS) :
+     · complet   — iPhone d'Edwin, Android récents ;
+     · sobre     — appareil modeste : on garde les fondus, on retire l'éclat
+                   et les décalages ; rien ne « manque », tout est plus court ;
+     · aucun     — réglage système « réduire les animations » : on respecte.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ---- LE RIDEAU D'OUVERTURE ---- */
+#rideau{position:fixed;inset:0;z-index:9999;background:var(--ocr-noir);
+  isolation:isolate;   /* le fond du rideau devient la toile du fondu « screen » */
+  display:grid;place-items:center;opacity:1;
+  transition:opacity .30s cubic-bezier(.4,0,.2,1)}
+#rideau.parti{opacity:0;pointer-events:none}
+.rid-bloc{display:flex;flex-direction:column;align-items:center;gap:16px;
+  padding:0 24px;text-align:center}
+.rid-em{position:relative;width:78px;height:78px;overflow:hidden;border-radius:20px;
+  animation:ridEm .44s cubic-bezier(.2,.8,.3,1) both}
+/* L'emblème est un PNG sur fond noir : posé sur le rideau, son cadre se voyait
+   comme une tuile plus claire. « screen » laisse tomber le noir et ne garde que
+   la lumière — le trait semble tracé à même l'écran. C'est une opération de
+   composition, faite par la puce graphique, sur un seul élément de 78 px. */
+.rid-em img{width:100%;height:100%;object-fit:contain;display:block;
+  mix-blend-mode:screen}
+/* La « brillance » : une lame de lumière qui traverse l'emblème. UNE fois.
+   C'est un translateX sur un petit élément — le coût d'une image qui bouge,
+   pas celui d'un dégradé recalculé. */
+.rid-em i{position:absolute;top:-45%;left:-70%;width:42%;height:190%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);
+  animation:ridEclat .46s cubic-bezier(.4,0,.2,1) .16s both}
+.rid-fil{width:66px;height:1px;
+  background:linear-gradient(90deg,transparent,var(--ocr-rouge),transparent);
+  animation:ridFil .40s cubic-bezier(.2,.8,.3,1) .08s both}
+/* Le nom monte derrière une fenêtre : c'est le geste de marque, et il ne coûte
+   qu'un translateY dans un cadre qui déborde. */
+.rid-mot{overflow:hidden;height:1.3em}
+.rid-mot span{display:block;font:300 18px/1.3 var(--ocr-titre);letter-spacing:.36em;
+  color:var(--ocr-blanc);padding-left:.36em;
+  animation:ridMonte .42s cubic-bezier(.2,.8,.3,1) .12s both}
+.rid-sig{font:500 9px/1.4 var(--ocr-titre);letter-spacing:.40em;color:var(--ocr-argent-2);
+  padding-left:.40em;animation:ridDoux .34s ease .24s both}
+@keyframes ridEm{from{opacity:0;transform:scale(.84)}}
+@keyframes ridEclat{from{transform:translateX(0) rotate(16deg)}
+                    to{transform:translateX(420%) rotate(16deg)}}
+@keyframes ridFil{from{opacity:0;transform:scaleX(0)}}
+@keyframes ridMonte{from{transform:translateY(110%)}}
+@keyframes ridDoux{from{opacity:0;transform:translateY(5px)}}
+
+/* Appareil modeste : on garde l'apparition, on retire ce qui se remarque le
+   moins et coûte le plus. Le rendu reste soigné, il est simplement plus sec. */
+/* LE RIDEAU BREF — la vingtième ouverture de la journée.
+   Une cérémonie qu'on subit trente fois par jour n'est plus une cérémonie,
+   c'est un péage. Quand l'app a été ouverte il y a moins de trois heures, il
+   ne reste que l'emblème et un fondu : on ne perd pas la marque, on perd
+   l'attente. */
+.rid-bref .rid-fil,.rid-bref .rid-mot,.rid-bref .rid-sig,.rid-bref .rid-em i{display:none}
+.rid-bref .rid-em{animation:ridDoux .22s ease both}
+/* Le fondu de sortie aussi : c'est lui qui portait tout le coût du rideau bref
+   (mesuré — 300 ms de fondu sur 240 ms de geste, l'inverse du bon sens). */
+#rideau.rid-bref{transition-duration:.16s}
+
+.mouv-sobre .rid-em i{display:none}
+.mouv-sobre .rid-mot span{animation:ridDoux .38s ease .12s both}
+.mouv-sobre .rid-em{animation-duration:.38s}
+
+/* ---- L'ÉCRAN QUI ENTRE ---- */
+/* 150 ms, 6 px : assez pour que l'œil comprenne qu'on a changé de page, trop
+   court pour qu'on l'attende. Jamais sur un rafraîchissement automatique —
+   voir rendre(discret) : faire clignoter l'écran de quelqu'un qui lit est la
+   pire chose qu'une animation puisse faire. */
+#vue.entre{animation:ecranEntre .15s cubic-bezier(.2,.8,.3,1)}
+@keyframes ecranEntre{from{opacity:0;transform:translateY(6px)}}
+.mouv-sobre #vue.entre{animation:ecranEntreSobre .12s ease}
+@keyframes ecranEntreSobre{from{opacity:0}}
+
+/* ---- LA RÉPONSE AU DOIGT ---- */
+/* Un bouton qui s'enfonce de 3 % sous le doigt : c'est la micro-animation qui
+   change le plus la sensation, et elle ne coûte rien. Uniquement sur appui,
+   jamais au survol (un doigt laisse le :hover collé — leçon du 13/08). */
+.ocr-btn:active:not(:disabled){transform:scale(.972)}
+.ocr-chip:active{transform:scale(.96)}
+.fiche:active,.tuile:active{transform:scale(.995)}
+.tuile{transition:transform var(--ocr-transition)}
+
+/* ---- L'ATTENTE A UNE FORME ---- */
+/* Un rond qui tourne dit « attends ». Un squelette dit « voilà ce qui arrive »
+   — et l'écran paraît déjà là. Le reflet est un translateX derrière une
+   fenêtre : compositable, donc gratuit. Sur appareil modeste, il devient une
+   simple respiration d'opacité. */
+.squelette{display:grid;gap:var(--ocr-e3);padding:2px 0}
+.sq-tuiles{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--ocr-e3)}
+.sq{position:relative;overflow:hidden;background:var(--ocr-surface);
+  border:1px solid var(--ocr-filet);border-radius:var(--ocr-r-m)}
+.sq::after{content:'';position:absolute;top:0;bottom:0;left:-60%;width:45%;
+  background:linear-gradient(90deg,transparent,rgba(244,244,245,.055),transparent);
+  animation:sqReflet 1.25s cubic-bezier(.4,0,.2,1) infinite}
+@keyframes sqReflet{to{transform:translateX(360%)}}
+.sq-tuiles .sq{height:74px}
+.sq-carte{height:96px}
+.sq-carte.grand{height:150px}
+.mouv-sobre .sq::after{animation:sqDouce 1.4s ease-in-out infinite;left:0;width:100%;
+  background:rgba(244,244,245,.04)}
+@keyframes sqDouce{0%,100%{opacity:.25}50%{opacity:.7}}
+
+@media (prefers-reduced-motion:reduce){
+  #rideau *{animation:none!important}
+  #vue.entre{animation:none}
+  .sq::after{animation:none}
+  .ocr-btn:active:not(:disabled),.ocr-chip:active,.fiche:active,.tuile:active{transform:none}
+}
+
 /* ---- propre à la caisse ---- */
 html,body{margin:0;padding:0;min-height:100dvh}
 body{padding-bottom:env(safe-area-inset-bottom)}
@@ -680,6 +805,18 @@ body.texte-tresgrand{zoom:1.2}
 </style>
 </head>
 <body class="ocr">
+
+<!-- LE RIDEAU D'OUVERTURE — premier élément de la page, donc premier peint.
+     Il occupe le temps que l'application met à s'ouvrir au lieu de le laisser
+     vide : ce n'est pas une attente ajoutée, c'est une attente habitée. -->
+<div id="rideau" aria-hidden="true">
+  <div class="rid-bloc">
+    <div class="rid-em"><img src="data:image/png;base64,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" alt=""><i></i></div>
+    <div class="rid-fil"></div>
+    <div class="rid-mot"><span>OCR BRILLANCE</span></div>
+    <div class="rid-sig">LA PERFECTION DU DÉTAIL</div>
+  </div>
+</div>
 
 <div id="bandeau"></div>
 
@@ -3259,7 +3396,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v58';
+const VERSION = 'v59';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -3375,6 +3512,32 @@ if ('serviceWorker' in navigator && !MODE_DEMO &&
   document.addEventListener('visibilitychange', () => { if (!document.hidden) demanderVersion(); });
   navigator.serviceWorker.addEventListener('controllerchange', demanderVersion);
 }
+/* ── LE NIVEAU DE MOUVEMENT (14/08) ───────────────────────────────────────
+   On ne demande pas à Edwin de choisir : l'appareil le dit lui-même.
+     · deviceMemory ≤ 2 Go ou 4 cœurs ou moins → « sobre » ;
+     · réglage système « réduire les animations » → on n'anime plus rien.
+   Ces deux indications sont absentes sur iOS (Safari ne les expose pas) : un
+   iPhone tombe donc dans « complet », ce qui est exactement ce qu'on veut. */
+const MOUVEMENT = (() => {
+  try {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return 'aucun';
+  } catch (ex) { /* vieux navigateur */ }
+  const mem = navigator.deviceMemory, cpu = navigator.hardwareConcurrency;
+  if ((mem && mem <= 2) || (cpu && cpu <= 4)) return 'sobre';
+  return 'complet';
+})();
+if (MOUVEMENT === 'sobre') document.documentElement.classList.add('mouv-sobre');
+const anime = () => MOUVEMENT !== 'aucun';
+
+/* Le squelette : ce qui arrive, pas un rond qui tourne. Le second argument
+   dessine la rangée de tuiles des écrans qui en ont une. */
+const squelette = (cartes, tuiles) =>
+  '<div class="squelette">' +
+  (tuiles ? '<div class="sq-tuiles">' + '<div class="sq"></div>'.repeat(4) + '</div>' : '') +
+  Array.from({ length: cartes || 3 },
+    (_, i) => '<div class="sq sq-carte' + (i === 0 ? ' grand' : '') + '"></div>').join('') +
+  '</div>';
+
 // Double authentification exigée pour ces rôles (décision du 11 août).
 const ROLES_2FA = ['direction', 'comptable', 'manager'];
 
@@ -4370,6 +4533,54 @@ const API = {
     .eq('id', id),
 };
 
+/* ── LE RIDEAU SE LÈVE ─────────────────────────────────────────────────────
+   Il ne RETARDE rien : il est retiré dès que l'application est prête. Mais on
+   ne coupe pas une animation en plein vol — si tout est prêt en 200 ms, on
+   attend la fin du geste. Sur un appareil modeste, l'application met de toute
+   façon plus longtemps que le rideau : il disparaît sans qu'on l'attende. */
+/* Le rideau apparaît au PREMIER PIXEL peint, pas quand ce script est lu — il
+   y a 700 Ko entre les deux. On compte donc à partir de là, sinon on ajoute
+   son propre temps de lecture à l'attente qu'on prétend occuper. */
+function debutRideau() {
+  try {
+    const e = performance.getEntriesByType('paint').find(x => x.name === 'first-contentful-paint');
+    if (e) return e.startTime;
+  } catch (ex) { /* navigateur sans Paint Timing (Safari ancien) */ }
+  return 0;
+}
+/* LA CÉRÉMONIE SE MÉRITE. Mesuré sur processeur bridé, le rideau complet
+   ajoute environ 850 ms à CHAQUE ouverture. Pour la première du matin, c'est
+   la marque. Pour la vingtième, c'est un péage — et Samuel ouvre l'application
+   des dizaines de fois par jour.
+   Donc : geste complet si l'app n'a pas été ouverte depuis plus de trois
+   heures (le matin, après la pause, sur un téléphone neuf) ; sinon l'emblème
+   et un fondu, le temps d'un battement de cil. */
+const RIDEAU_CEREMONIE = (() => {
+  if (!anime()) return false;
+  try {
+    const v = JSON.parse(localStorage.getItem(CLE_ACTIVITE) || 'null');
+    if (!v || !v.t) return true;                          // premier lancement
+    return (Date.now() - v.t) > 3 * 3600 * 1000;
+  } catch (ex) { return true; }
+})();
+if (!RIDEAU_CEREMONIE) {
+  const r0 = document.getElementById('rideau');
+  if (r0) r0.classList.add('rid-bref');
+}
+const RIDEAU_GESTE = !RIDEAU_CEREMONIE ? 240 : (MOUVEMENT === 'sobre' ? 340 : 540);
+function leverLeRideau() {
+  const r = document.getElementById('rideau');
+  if (!r) return;
+  const maintenant = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const reste = Math.max(0, debutRideau() + RIDEAU_GESTE - maintenant);
+  setTimeout(() => {
+    r.classList.add('parti');
+    // retiré du document : plus un pixel, plus une couche graphique
+    setTimeout(() => { if (r.parentNode) r.parentNode.removeChild(r); },
+      r.classList.contains('rid-bref') ? 180 : 320);
+  }, reste);
+}
+
 /* ---------- connexion ---------- */
 $('#formConnexion').addEventListener('submit', async e => {
   e.preventDefault();
@@ -5134,12 +5345,23 @@ async function rendre(discret) {
   const tour = ++tourRendu;
   const yAvant = discret ? window.scrollY : 0;
   marquerActivite();   // chaque écran affiché repousse le verrouillage
+  /* L'écran entre par le bas, très légèrement. JAMAIS sur un rafraîchissement
+     automatique : faire clignoter la page de quelqu'un qui lit est la pire
+     chose qu'une animation puisse faire (retour du 12/08 sur les sauts
+     d'écran). On relance l'animation en retirant puis remettant la classe. */
+  const vueEl = $('#vue');
+  if (!discret && anime() && vueEl) {
+    vueEl.classList.remove('entre');
+    void vueEl.offsetWidth;          // force la reprise de l'animation
+    vueEl.classList.add('entre');
+  }
 
   // 1 · réponse immédiate au doigt, sans attendre le réseau
   peindreOnglets();
   let sablier = null;
   if (!discret) sablier = setTimeout(() => {
-    if (tour === tourRendu) $('#vue').innerHTML = '<div class="vide"><span class="tourne"></span></div>';
+    if (tour === tourRendu) $('#vue').innerHTML =
+      squelette(3, ['journee', 'direction', 'bilan', 'cloture'].includes(onglet));
   }, 180);
 
   // 2 · tout ce dont l'en-tête a besoin, en un seul aller-retour parallèle
@@ -11329,6 +11551,7 @@ async function vueJournal() {
     return;
   }
   brancherRecuperation();
+  leverLeRideau();
   const { data } = await sb.auth.getSession();
   if (data && data.session) {
     if (sessionPerimee()) {
