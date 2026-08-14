@@ -1392,6 +1392,8 @@ const MARQUES = [
       camionnette: ['Super Ace', 'Ace'] } },
   { nom: 'Iveco', gab: { camionnette: ['Daily', 'Eurocargo'] } },
   // motos et tricycles — l'essentiel du parc deux-roues béninois
+  // Ehu Motors en tête : c'est le partenaire, son parc passe tous les jours.
+  { nom: 'Ehu Motors', moto: true, gab: { moto: ['Élégance', 'Citadine', 'Finesse', 'Nova', 'Sport', 'Djabi', 'Dynastie'] } },
   { nom: 'Haojue', moto: true, gab: { moto: ['DK 150', 'Lucky 110', 'HJ 125', 'TR 150', 'KA 150'] } },
   { nom: 'Bajaj', moto: true, gab: { moto: ['Boxer', 'Boxer 100', 'Boxer 150', 'Pulsar', 'CT 100', 'Discover', 'RE (tricycle)'] } },
   { nom: 'Sanili', moto: true, gab: { moto: ['SL 125', 'SL 150', 'Star'] } },
@@ -1443,7 +1445,29 @@ function poserCatalogue(lignes) {
   CATA_SOURCE.forEach(l => ajouter(String(l.marque || '').trim(), String(l.modele || '').trim(),
                                    l.gabarit, true));
   MARQUES.forEach(m => Object.keys(m.gab).forEach(g => m.gab[g].forEach(mo => ajouter(m.nom, mo, g, false))));
-  CATALOGUE = [...parMarque.values()].map(m => ({ ...m, modeles: Object.values(m.gab).flat() }));
+  /* L'ORDRE DES MODÈLES PROPOSÉS COMPTE (13/08) : au comptoir on regarde les
+     huit premières pastilles, pas les vingt-cinq. La base renvoie ses lignes
+     dans un ordre quelconque — on remet donc l'ordre du socle : les tailles
+     du plus courant au plus rare, et dans chaque taille l'ordre choisi à la
+     main (Corolla avant 4Runner, parce que c'est ce qui arrive à l'atelier).
+     Un modèle ajouté par l'atelier passe après, par ordre alphabétique. */
+  const RANG_GAB = ['petite', 'berline', 'grandsuv', 'camionnette', 'moto'];
+  const rangSocle = new Map();
+  let n = 0;
+  MARQUES.forEach(m => Object.keys(m.gab).forEach(g => m.gab[g].forEach(mo =>
+    rangSocle.set(clefTexte(m.nom) + '|' + clefTexte(mo), n++))));
+  const rang = (nom, mo) => {
+    const r = rangSocle.get(clefTexte(nom) + '|' + clefTexte(mo));
+    return r === undefined ? Infinity : r;
+  };
+  CATALOGUE = [...parMarque.values()].map(m => {
+    const ordre = [...RANG_GAB.filter(g => m.gab[g]), ...Object.keys(m.gab).filter(g => !RANG_GAB.includes(g))];
+    const modeles = ordre.flatMap(g => m.gab[g].slice().sort((a, b) => {
+      const ra = rang(m.nom, a), rb = rang(m.nom, b);
+      return ra === rb ? String(a).localeCompare(String(b), 'fr') : ra - rb;
+    }));
+    return { ...m, modeles };
+  });
   return CATALOGUE;
 }
 const catalogue = () => CATALOGUE;
@@ -1837,6 +1861,9 @@ function creerClientDemo() {
   // Rodrigue, employé Ehu Motors : sa remise le suit, moto du showroom ou sa voiture.
   D.clients.push({ id: 'c9', nom: 'Rodrigue Sènou', telephone: '+229 01 44 66 20 09', entreprise_id: 'ehu' });
   D.vehicules.push({ id: 'v9', client_id: 'c9', gabarit: 'moto', marque: 'Haojue', modele: 'DK 150', immatriculation: '2FB9408' });
+  // Bienvenu vient souvent avec plusieurs motos du showroom : c'est LUI le cas
+  // fréquent du raccourci « ◆ Parc Ehu Motors » (13/08).
+  D.clients.push({ id: 'c10', nom: 'Bienvenu Agbo', telephone: '+229 01 44 66 20 10', entreprise_id: 'ehu' });
 
   const lier = p => ({
     ...p,
@@ -1891,10 +1918,14 @@ function creerClientDemo() {
     return Object.values(g).map(o => ({ journee: o.journee, prestation: o.prestation, gabarit: o.gabarit,
       nombre: o.nombre, minutes_moyennes: Math.round(o.somme / o.nombre), minutes_max: o.minutes_max }));
   };
+  /* « Fini », c'est terminé — ou livré pour les lavages d'avant le 14/08,
+     quand cette troisième étape existait encore. Même mot en base. */
+  const FINI = ['pret', 'livre'];
+
   /* Les lavages qui manquent aux moyennes, et pourquoi (13/08). */
   const lavagesSansMesure = () => D.passages
     .filter(p => !p.annule && (p.hors_mesure ||
-      (p.statut_atelier === 'livre' && (!p.heure_debut || !p.heure_fin))))
+      (FINI.includes(p.statut_atelier) && (!p.heure_debut || !p.heure_fin))))
     .map(p => {
       const l = D.passage_lignes.find(x => x.passage_id === p.id && x.type === 'prestation') || {};
       const v = D.vehicules.find(x => x.id === p.vehicule_id) || {};
@@ -1930,7 +1961,7 @@ function creerClientDemo() {
 
   const fidelite = () => {
     const g = {};
-    D.passages.filter(p => p.statut_atelier === 'livre' && !p.annule).forEach(p => {
+    D.passages.filter(p => FINI.includes(p.statut_atelier) && !p.annule).forEach(p => {
       const c = D.clients.find(x => x.id === p.client_id); if (!c) return;
       const o = g[c.id] || (g[c.id] = { client_id: c.id, nom: c.nom, telephone: c.telephone,
                                         tampons: 0, passages: 0, dernier_passage: p.journee });
@@ -1988,6 +2019,28 @@ function creerClientDemo() {
     return Object.values(g);
   };
 
+  /* LAVAGES SANS PLAQUE (13/08) — copie fidèle de la vue v_sans_plaque :
+     le parc d'un partenaire et les lavages repris du cahier en sont exclus,
+     chez eux l'absence de plaque n'est pas un oubli. */
+  const sansPlaque = () => D.passages
+    .filter(p => !p.annule && !p.parc_partenaire && (p.origine || 'caisse') !== 'import')
+    .filter(p => {
+      const v = p.vehicule_id ? D.vehicules.find(x => x.id === p.vehicule_id) : null;
+      return !v || !v.immatriculation;
+    })
+    .map(p => {
+      const c = D.clients.find(x => x.id === p.client_id) || {};
+      const se = D.employes.find(x => x.id === p.saisi_par) || {};
+      const ve = D.employes.find(x => x.id === p.sans_plaque_valide_par) || {};
+      const l = D.passage_lignes.find(x => x.passage_id === p.id && x.type === 'prestation') || {};
+      return { id: p.id, reference: p.reference, journee: p.journee, gabarit: p.gabarit,
+               montant_total: p.montant_total, heure_arrivee: p.heure_arrivee,
+               sans_plaque_motif: p.sans_plaque_motif || null,
+               sans_plaque_valide_le: p.sans_plaque_valide_le || null,
+               valide_par: ve.nom || '', saisi_par_nom: se.nom || '',
+               client: c.nom || null, prestation_nom: l.libelle || null };
+    });
+
   /* Qui est venu du parc partenaire, avec combien de véhicules (13/08). */
   const parcPartenaire = () => {
     const g = {};
@@ -2030,6 +2083,7 @@ function creerClientDemo() {
       if (table === 'v_lavages_sans_mesure')  return lavagesSansMesure();
       if (table === 'v_lavages_chronometres') return lavagesChronometres();
       if (table === 'v_parc_partenaire')      return parcPartenaire();
+      if (table === 'v_sans_plaque')          return sansPlaque();
       if (table === 'passages')          return D.passages.map(lier);
       if (table === 'vehicules')         return D.vehicules.map(v =>
         ({ ...v, clients: D.clients.find(c => c.id === v.client_id) || null }));
@@ -2155,8 +2209,9 @@ function creerClientDemo() {
     ocr_creer_client_entreprise(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp) throw new Error('Accès réservé au personnel');
-      if (!['direction', 'comptable'].includes(emp.role))
-        throw new Error('Seuls la direction et le comptable rattachent un employé à une entreprise partenaire');
+      // Samuel enrôle au comptoir (Edwin, 13/08)
+      if (!['direction', 'comptable', 'manager'].includes(emp.role))
+        throw new Error('Accès réservé au manager et à la direction');
       const ent = D.entreprises.find(x => x.id === a.p_entreprise);
       if (!ent) throw new Error('Entreprise introuvable');
       if (!String(a.p_nom || '').trim()) throw new Error('Le nom est obligatoire');
@@ -2488,8 +2543,15 @@ function creerClientDemo() {
         p.statut_atelier = 'en_cours'; p.heure_debut = p.heure_debut || h;
       } else if (a.p_vers === 'pret' && p.statut_atelier === 'en_cours') {
         p.statut_atelier = 'pret'; p.heure_fin = p.heure_fin || h;
+      } else if (a.p_vers === 'pret' && p.statut_atelier === 'attente') {
+        /* Le chrono n'a jamais tourné : on termine avec un motif, sans inventer
+           d'heures (14/08). C'est la porte de sortie promise à Samuel. */
+        if (!String(a.p_motif || '').trim()) throw new Error('MOTIF_REQUIS : le chrono n\'a pas été lancé, il faut dire pourquoi');
+        p.statut_atelier = 'pret'; p.sans_chrono_motif = String(a.p_motif).trim();
+        D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+          quoi: 'Lavage ' + p.reference + ' terminé sans chrono — ' + p.sans_chrono_motif, entite: 'passage', entite_id: p.id });
       } else if (a.p_vers === 'livre' && p.statut_atelier === 'attente') {
-        // le chrono n'a jamais tourné : on livre avec un motif, sans inventer d'heures
+        // conservé pour l'historique : cet enchaînement existait avant le 14/08
         if (!String(a.p_motif || '').trim()) throw new Error('MOTIF_REQUIS : le chrono n\'a pas été lancé, il faut dire pourquoi');
         p.statut_atelier = 'livre'; p.heure_livraison = h; p.sans_chrono_motif = String(a.p_motif).trim();
         D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
@@ -2672,7 +2734,12 @@ function creerClientDemo() {
         montant_brut: brut, remise, montant_total: brut - remise,
         statut_atelier: 'attente', statut_paiement: 'impaye', mode_paiement: null,
         equipe: a.p_equipe || [], saisi_par: emp ? emp.id : null,
-        quantite: q, parc_partenaire: parc });
+        quantite: q, parc_partenaire: parc,
+        /* Sans plaque et hors parc partenaire : on garde POURQUOI. La base met
+           « Non précisé » plutôt que rien — un trou se perd, une phrase se lit. */
+        sans_plaque_motif: !plaque && !parc
+          ? (String(a.p_motif_sans_plaque || '').trim() || 'Non précisé') : null,
+        sans_plaque_valide_par: null, sans_plaque_valide_le: null });
       lignes.forEach(l => D.passage_lignes.push({ id: uid(), passage_id: id, ...l }));
       if (a.p_reservation) {
         const resa = D.reservations.find(x => x.reference === String(a.p_reservation).toUpperCase().trim());
@@ -2788,12 +2855,31 @@ function creerClientDemo() {
                            traitee_par: emp.id, traitee_le: new Date().toISOString() }));
       return [{ reference: p.reference }];
     },
+    /* La direction confirme, en un appui, tous les lavages sans plaque du jour. */
+    ocr_valider_sans_plaque(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp || !['comptable', 'direction'].includes(emp.role))
+        throw new Error('Seules la direction et la comptabilité valident les lavages sans plaque');
+      const cibles = sansPlaque().filter(r => r.journee === a.p_journee && !r.sans_plaque_valide_le);
+      cibles.forEach(r => {
+        const p = D.passages.find(x => x.id === r.id);
+        p.sans_plaque_valide_par = emp.id;
+        p.sans_plaque_valide_le = new Date().toISOString();
+      });
+      if (cibles.length) D.journal.push({ id: uid(), quand: new Date().toISOString(),
+        qui: emp.id, qui_nom: emp.nom,
+        quoi: cibles.length + ' lavage(s) sans plaque validé(s) pour le ' + a.p_journee,
+        entite: 'journee', entite_id: null });
+      return cibles.length;
+    },
     ocr_cloturer_journee(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
       if (!emp || !['comptable', 'direction'].includes(emp.role))
         throw new Error('Seuls le comptable et la direction peuvent clôturer');
       const bloq = D.anomalies.filter(x => x.journee === a.p_date && x.gravite === 'critique' && !x.traitee).length;
       if (bloq) throw new Error(bloq + ' anomalie(s) critique(s) non traitée(s)');
+      const sp = sansPlaque().filter(r => r.journee === a.p_date && !r.sans_plaque_valide_le).length;
+      if (sp) throw new Error(sp + ' lavage(s) sans plaque à valider avant de clôturer');
       const j = D.journees.find(x => x.date === a.p_date) || { date: a.p_date };
       Object.assign(j, { statut: 'validee', valide_par: emp.id, valide_le: new Date().toISOString(), totaux: totaux(a.p_date) });
       if (!D.journees.includes(j)) D.journees.push(j);
@@ -2847,7 +2933,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v42';
+const VERSION = 'v45';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -2961,6 +3047,10 @@ if ('serviceWorker' in navigator && !MODE_DEMO &&
 const ROLES_2FA = ['direction', 'comptable', 'manager'];
 
 let sb, moi = null, equipe = [], onglet = 'saisie', enCours = false;
+/* Les entreprises qui ont une remise (Ehu Motors…). Chargées une fois à la
+   connexion : le raccourci « parc » de la Saisie est le geste le plus
+   fréquent de la journée, il ne doit pas attendre une requête. */
+let PARTENAIRES = [];
 let jourVu = auj();                          // jour affiché dans Journée et Clôture
 
 const decaleJour = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toLocaleDateString('en-CA'); };
@@ -3092,9 +3182,36 @@ async function chargerParc() {
 const parcDe = (gabarit) => (PARC ? (gabarit === 'moto' ? PARC.moto : PARC.auto)
                                   : { marques: [], modeles: {} });
 
-function optionsListe(valeurs) {
-  return [...new Set(valeurs.filter(Boolean))].slice(0, 200)
-    .map(v => '<option value="' + esc(v) + '"></option>').join('');
+/* ══════════════════════════════════════════════════════════════════════════
+   LES SUGGESTIONS SONT DES PASTILLES, PLUS UNE <datalist> (13/08)
+
+   « Quand je vais dans Modèle après avoir mis Toyota, je ne vois pas de
+     modèle. Mais si je n'ai pas mis Toyota, je vois des modèles. » — Edwin,
+   sur iPhone. Les listes natives <datalist> sont invisibles ou capricieuses
+   selon le téléphone : sur iOS elles apparaissent dans une barre minuscule
+   au-dessus du clavier, et elles ne se rafraîchissent pas toujours quand on
+   remplace leurs options. On ne peut pas construire une caisse dessus.
+
+   Et elles coûtaient cher : 160 <option> réécrites à CHAQUE frappe.
+   Désormais : huit pastilles au maximum, qu'on dessine nous-mêmes, toujours
+   visibles, tapables au doigt. La saisie libre reste possible — une marque
+   absente s'écrit quand même.
+   ══════════════════════════════════════════════════════════════════════════ */
+const SUGG_MAX = 8;
+function zoneSuggestions(el) {
+  if (!el) return null;
+  const label = el.closest('label') || el;
+  const hote = label.parentNode;
+  // une zone PAR champ : marque et modèle ne doivent pas s'écraser l'une l'autre
+  let z = hote.querySelector(':scope > .sugg-mm[data-pour="' + el.id + '"]');
+  if (!z) {
+    z = document.createElement('div');
+    z.className = 'sugg-mm';
+    z.dataset.pour = el.id;
+    z.style.cssText = 'grid-column:1 / -1;display:flex;gap:6px;flex-wrap:wrap;margin:7px 0 0';
+    hote.insertBefore(z, label.nextSibling);
+  }
+  return z;
 }
 
 /* Branche un couple de champs marque/modèle. `gabarit()` est une fonction :
@@ -3124,16 +3241,9 @@ function brancherMarqueModele(elMarque, elModele, gabarit, apres, poserGabarit) 
   if (!elMarque && !elModele) return;
   // Une seule paire de listes par couple de champs, réutilisée : l'écran de
   // Saisie se redessine à chaque frappe, on ne veut pas empiler des listes.
-  const cle = (elMarque ? elMarque.id : 'x') + '-' + (elModele ? elModele.id : 'x');
-  const idM = 'dlm-' + cle, idD = 'dld-' + cle;
-  const trouver = (id) => {
-    let d = document.getElementById(id);
-    if (!d) { d = document.createElement('datalist'); d.id = id; document.body.appendChild(d); }
-    return d;
-  };
-  const dlM = trouver(idM), dlD = trouver(idD);
-  if (elMarque) { elMarque.setAttribute('list', idM); elMarque.setAttribute('autocomplete', 'off'); }
-  if (elModele) { elModele.setAttribute('list', idD); elModele.setAttribute('autocomplete', 'off'); }
+  if (elMarque) { elMarque.removeAttribute('list'); elMarque.setAttribute('autocomplete', 'off'); }
+  if (elModele) { elModele.removeAttribute('list'); elModele.setAttribute('autocomplete', 'off'); }
+  const zoneM = zoneSuggestions(elMarque), zoneD = zoneSuggestions(elModele);
 
   const gab = () => (typeof gabarit === 'function' ? gabarit() : gabarit);
 
@@ -3168,11 +3278,67 @@ function brancherMarqueModele(elMarque, elModele, gabarit, apres, poserGabarit) 
     });
   };
 
-  const peindre = () => {
+  /* Filtre « commence par », puis « contient » : on tape « toy » et Toyota
+     arrive en premier, on tape « cruis » et Land Cruiser sort quand même. */
+  const filtrer = (liste, saisi) => {
+    const k = OCR.clefTexte(saisi || '');
+    const u = [...new Set(liste.filter(Boolean))];
+    if (!k) return u.slice(0, SUGG_MAX);
+    const debut = u.filter(x => OCR.clefTexte(x).startsWith(k));
+    const dedans = u.filter(x => !OCR.clefTexte(x).startsWith(k) && OCR.clefTexte(x).includes(k));
+    return [...debut, ...dedans].slice(0, SUGG_MAX);
+  };
+  const pastilles = (zone, liste, choisir) => {
+    if (!zone) return;
+    // exactement la même valeur déjà écrite : rien à proposer
+    const html = liste.map(v => `<button type="button" class="ocr-chip sugg-v"
+      style="padding:7px 12px;font-size:13px">${esc(v)}</button>`).join('');
+    if (zone.dataset.h === html) return;      // on ne réécrit que si ça change
+    zone.dataset.h = html;
+    zone.innerHTML = html;
+    zone.querySelectorAll('.sugg-v').forEach((b, i) => b.addEventListener('click', () => choisir(liste[i])));
+  };
+  /* UNE SEULE zone visible à la fois : celle du champ qu'on est en train de
+     remplir. Deux listes de pastilles côte à côte, on ne saurait plus laquelle
+     on touche. */
+  const vide = z => { if (z && z.dataset.h !== '') { z.dataset.h = ''; z.innerHTML = ''; } };
+  const exact = (l, v) => l.length === 1 && OCR.clefTexte(l[0]) === OCR.clefTexte(v);
+  const listeM = () => {
     const parc = parcDe(gab());
-    dlM.innerHTML = optionsListe([...OCR.marques(gab()), ...parc.marques]);
+    return filtrer([...OCR.marques(gab()), ...parc.marques], elMarque.value.trim());
+  };
+  const listeD = () => {
+    const parc = parcDe(gab());
     const ma = elMarque ? elMarque.value : '';
-    dlD.innerHTML = optionsListe([...OCR.modeles(ma, gab()), ...(parc.modeles[OCR.marqueCanon(ma, gab())] || [])]);
+    return filtrer([...OCR.modeles(ma, gab()), ...(parc.modeles[OCR.marqueCanon(ma, gab())] || [])],
+                   elModele.value.trim());
+  };
+  const peindreM = () => {
+    if (!elMarque) return;
+    const l = listeM();
+    pastilles(zoneM, exact(l, elMarque.value.trim()) ? [] : l, x => {
+      elMarque.value = x;
+      vide(zoneM); deduire();
+      if (elModele) { elModele.focus(); peindreD(); }
+      if (apres) apres();
+    });
+    vide(zoneD);
+  };
+  const peindreD = () => {
+    if (!elModele) return;
+    const l = listeD();
+    pastilles(zoneD, exact(l, elModele.value.trim()) ? [] : l, x => {
+      elModele.value = x;
+      vide(zoneD); deduire();
+      if (apres) apres();
+    });
+    vide(zoneM);
+  };
+  // au repos : on propose là où il reste quelque chose à remplir
+  const peindre = () => {
+    if (elMarque && !elMarque.value.trim()) peindreM();
+    else if (elModele && !elModele.value.trim()) peindreD();
+    else { vide(zoneM); vide(zoneD); }
   };
   peindre();
   chargerParc().then(peindre);
@@ -3191,18 +3357,24 @@ function brancherMarqueModele(elMarque, elModele, gabarit, apres, poserGabarit) 
     majApprentissage(ma, mo, gab(), !g);
   };
   if (elMarque) {
-    elMarque.addEventListener('input', peindre);
+    // à la frappe on ne redessine QUE les pastilles — jamais tout l'écran
+    elMarque.addEventListener('focus', peindreM);
+    elMarque.addEventListener('input', peindreM);
     elMarque.addEventListener('change', () => {
       elMarque.value = OCR.marqueCanon(elMarque.value, gab());
       peindre(); deduire();
       if (apres) apres();
     });
   }
-  if (elModele) elModele.addEventListener('change', () => {
-    elModele.value = OCR.modeleCanon(elMarque ? elMarque.value : '', elModele.value, gab());
-    deduire();
-    if (apres) apres();
-  });
+  if (elModele) {
+    elModele.addEventListener('focus', peindreD);
+    elModele.addEventListener('input', peindreD);
+    elModele.addEventListener('change', () => {
+      elModele.value = OCR.modeleCanon(elMarque ? elMarque.value : '', elModele.value, gab());
+      peindreD(); deduire();
+      if (apres) apres();
+    });
+  }
   return peindre;   // à rappeler quand le gabarit change
 }
 
@@ -3688,6 +3860,22 @@ const API = {
     const { data } = await sb.from('v_parc_partenaire').select('*').gte('journee', du);
     return data || [];
   },
+  /* SANS PLAQUE (13/08) — « il faut juste qu'il mette un motif, et que Guénolé
+     ou moi valide lors de la clôture » (Edwin). Le parc d'un partenaire et les
+     lavages repris de l'ancien cahier en sont exclus : chez eux, l'absence de
+     plaque n'est pas un oubli, c'est la règle. */
+  async sansPlaque(jour) {
+    const { data } = await sb.from('v_sans_plaque').select('*')
+      .eq('journee', jour).order('heure_arrivee');
+    return data || [];
+  },
+  validerSansPlaque: jour => sb.rpc('ocr_valider_sans_plaque', { p_journee: jour }),
+  /* Les entreprises partenaires — celles qui ont une remise négociée. */
+  async partenaires() {
+    const { data } = await sb.from('entreprises').select('id,nom,remise_pct')
+      .gt('remise_pct', 0).order('nom');
+    return data || [];
+  },
   async lavagesChronometres(du) {
     const { data } = await sb.from('v_lavages_chronometres').select('*')
       .gte('journee', du).order('journee', { ascending: false });
@@ -3802,8 +3990,14 @@ async function demarrer() {
     toast('Ce compte n’est rattaché à aucun employé.', true);
     return;
   }
-  equipe = await API.equipe();
-  REGLAGES = await API.reglages().catch(() => null);
+  /* Trois requêtes qui n'ont aucune raison de s'attendre : en série, elles
+     coûtaient trois allers-retours avant le premier écran. */
+  const [eq, rg, pt] = await Promise.all([
+    API.equipe(),
+    API.reglages().catch(() => null),
+    API.partenaires().catch(() => []),
+  ]);
+  equipe = eq; REGLAGES = rg; PARTENAIRES = pt;
   $('#connexion').classList.add('masque');
   $('#appli').classList.remove('masque');
   $('#quiNom').textContent = moi.nom;
@@ -4407,7 +4601,15 @@ const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque:
                gabaritManuel: false, gabaritDeduit: null, gabaritDesaccord: null,   // taille : choisie, déduite, ou en désaccord
                prestation: null, options: [], equipe: [], remise: 0, motifRemise: '', manuel: 0,
                quantite: 1,       // plusieurs véhicules identiques (parc Ehu Motors)
+               sansChrono: false, motifSansChrono: '',   // lavage déjà fait, saisi après coup
                note: '', reservation: null };
+
+/* « 1 lavage », « 3 lavages » — jamais « 1 lavage(s) ». Une parenthèse de
+   politesse grammaticale sur chaque écran finit par donner l'air d'un
+   formulaire administratif ; l'app parle comme on parle. */
+function pluriel(n, singulier, plurielMot) {
+  return n + ' ' + (n > 1 ? (plurielMot || singulier + 's') : singulier);
+}
 
 /* « 3 motos », « 3 véhicules » — le mot juste, au pluriel quand il le faut. */
 function lotTexte(q, gabarit) {
@@ -4489,6 +4691,19 @@ async function vueSaisie(j) {
   $('#vue').innerHTML = `
   ${form.reservation ? `<div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e4)"><span>◷</span><div>
     <strong>Rendez-vous ${esc(form.reservation)}</strong><br>Fiche pré-remplie — le rendez-vous sera marqué honoré à l'enregistrement.</div></div>` : ''}
+  ${/* LE PARC D'UN PARTENAIRE, EN TROIS APPUIS (13/08) — « pour Ehu Motors il
+       faut que ça soit plus simple car ce sera fréquent » (Edwin). Le chemin
+       normal demande une plaque et un numéro ; ici il n'y a ni l'une ni
+       l'autre, juste un employé et un nombre de motos. On lui donne sa
+       propre porte, et elle ne s'affiche que sur une fiche encore vierge. */''}
+  ${PARTENAIRES.length && !form.clientTrouve && !form.immat && !form.reservation ? `
+  <div class="ocr-carte" style="margin-bottom:var(--ocr-e4);padding:var(--ocr-e4);border-color:rgba(214,32,30,.30)">
+    <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+      <span class="ocr-mini" style="color:var(--ocr-texte)">Un parc partenaire est au comptoir ?</span>
+      ${PARTENAIRES.map(P => `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
+        data-parc="${P.id}">◆ Parc ${esc(P.nom)}</button>`).join('')}
+    </div>
+  </div>` : ''}
   <div class="deux">
     <div>
       <!-- LA PLAQUE D'ABORD (13/08) : c'est le seul repère qui ne change pas,
@@ -4638,7 +4853,31 @@ async function vueSaisie(j) {
         <input class="ocr-saisie" id="fMotifRemise" value="${esc(form.motifRemise || '')}"
                placeholder="Geste commercial, reprise d’un défaut…">
         <span class="ocr-aide">Toute remise manuelle est justifiée et inscrite au journal.</span></label>` : ''}
-      <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Observation</span>
+      ${/* DÉJÀ LAVÉ, SANS CHRONO (14/08) — « il doit être capable de saisir des
+           véhicules sans passer par commencer et fin, mais il doit aussi
+           justifier pourquoi » (Edwin). Le cas courant : l'atelier est débordé,
+           la voiture est lavée, et la saisie se fait après coup. Refuser
+           reviendrait à faire inventer des heures — donc on accepte, et on
+           écrit pourquoi. */''}
+      <div style="margin-top:var(--ocr-e4)">
+        <button class="ocr-chip" data-sc aria-pressed="${form.sansChrono}">⏱ Déjà lavé — sans chrono</button>
+      </div>
+      ${form.sansChrono ? `
+      <div class="ocr-carte" style="padding:var(--ocr-e4);margin-top:var(--ocr-e3);border-color:rgba(245,166,35,.38)">
+        <p class="ocr-mini" style="margin:0 0 9px">Le véhicule entrera directement en
+          <strong style="color:var(--ocr-blanc)">terminé</strong>, sans ▶ ni ✓. Il compte normalement
+          dans le chiffre d’affaires, mais il sera absent des moyennes de temps — et la direction
+          lira le motif dans Contrôle des temps.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">
+          ${MOTIFS_DEJA_LAVE.map(([court, texte], i) => `<button class="ocr-chip" data-scm="${i}"
+            aria-pressed="${form.motifSansChrono === texte}">${esc(court)}</button>`).join('')}
+        </div>
+        <label class="ocr-champ" style="margin-bottom:0">
+          <span class="ocr-label" style="color:var(--ocr-rouge-texte)">Pourquoi le chrono n’a pas tourné — obligatoire</span>
+          <input class="ocr-saisie" id="fMotifSansChrono" value="${esc(form.motifSansChrono)}"
+                 placeholder="En deux mots"></label>
+      </div>` : ''}
+      <label class="ocr-champ" style="margin-bottom:0;margin-top:var(--ocr-e4)"><span class="ocr-label">Observation</span>
         <textarea class="ocr-saisie" id="fNote" rows="2" placeholder="Rayure signalée sur l’aile avant droite…">${esc(form.note)}</textarea></label>
 
       <div class="total-collant">
@@ -4735,7 +4974,8 @@ async function vueSaisie(j) {
     vueSaisie(j);
     toast('Taille : ' + (OCR.gabarit(g) || {}).nom + ' (d’après ' + quoi + ')');
   });
-  ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note', 'fMotifRemise:motifRemise'].forEach(p => {
+  ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note', 'fMotifRemise:motifRemise',
+   'fMotifSansChrono:motifSansChrono'].forEach(p => {
     const [id, k] = p.split(':');
     const el = $('#' + id); if (el) el.addEventListener('input', e => { form[k] = e.target.value; });
   });
@@ -4800,6 +5040,17 @@ async function vueSaisie(j) {
     i === -1 ? form.options.push(id) : form.options.splice(i, 1);
     vueSaisie(j);
   }));
+  const bsc = $('#vue').querySelector('[data-sc]');
+  if (bsc) bsc.addEventListener('click', () => {
+    form.sansChrono = !form.sansChrono;
+    if (!form.sansChrono) form.motifSansChrono = '';
+    vueSaisie(j);
+  });
+  $('#vue').querySelectorAll('[data-scm]').forEach(b => b.addEventListener('click', () => {
+    form.motifSansChrono = MOTIFS_DEJA_LAVE[Number(b.dataset.scm)][1]; vueSaisie(j);
+  }));
+  $('#vue').querySelectorAll('[data-parc]').forEach(b => b.addEventListener('click', () =>
+    boiteParcPartenaire(PARTENAIRES.find(x => x.id === b.dataset.parc), j)));
   $('#btnEnregistrer').addEventListener('click', enregistrer);
 }
 
@@ -4812,7 +5063,20 @@ async function enregistrer() {
   // le serveur la refuse aussi, ceci n'est que le message aimable.
   if (Number(form.remise) > 0 && !String(form.motifRemise || '').trim())
     return toast('Indique le motif de la remise — il est inscrit au journal.', true);
+  if (form.sansChrono && !String(form.motifSansChrono || '').trim())
+    return toast('Dis pourquoi le chrono n’a pas tourné — sinon ce lavage devient illisible dans un mois.', true);
   if (!navigator.onLine) return toast('Hors ligne — impossible d’enregistrer.', true);
+
+  /* PAS DE PLAQUE (13/08) — « ça peut arriver, il faut juste qu'il mette un
+     motif » (Edwin). On n'interdit rien : on demande une ligne, en un appui,
+     et la direction tranchera à la clôture. Le parc d'un partenaire n'a pas
+     de plaque par nature : on ne lui pose pas la question. */
+  const parcPart = !!(partenaireDe(form.clientTrouve) && !OCR.plaque(form.immat));
+  let motifSP = null;
+  if (!OCR.plaque(form.immat) && !parcPart) {
+    motifSP = await demanderMotifSansPlaque();
+    if (motifSP === null) return;          // il préfère aller chercher la plaque
+  }
 
   const p = OCR.prestation(form.prestation);
   const lignes = [];
@@ -4840,16 +5104,30 @@ async function enregistrer() {
       p_reservation: form.reservation,
       p_quantite: T.q,
       // parc du partenaire : des motos d'Ehu, pas le véhicule de l'employé
-      p_parc: !!(partenaireDe(form.clientTrouve) && !OCR.plaque(form.immat)),
+      p_parc: parcPart,
+      p_motif_sans_plaque: motifSP,
     });
     if (error) throw error;
     const r = Array.isArray(data) ? data[0] : data;
+    /* Lavage déjà fait : on le solde tout de suite, avec son motif. Si ce
+       deuxième appel échoue, le passage existe et reste « à démarrer » — la
+       fiche du jour propose alors « Terminé sans chrono… ». On le dit. */
+    let scRate = null;
+    if (form.sansChrono) {
+      const { error: e2 } = await API.avancer(r.id, 'pret', String(form.motifSansChrono).trim());
+      if (e2) scRate = e2.message;
+    }
     const sansClient = !form.tel && !(form.clientTrouve && form.clientTrouve.id);
     toast(r.reference + ' enregistré · ' + (T.q > 1 ? T.q + ' véhicules · ' : '') + OCR.fcfa(r.montant_total) +
-      (sansClient && form.immat ? ' — fiche « Véhicule ' + form.immat +' » à compléter' : ''));
+      (sansClient && form.immat ? ' — fiche « Véhicule ' + form.immat +' » à compléter' : '') +
+      (motifSP ? ' — sans plaque, à valider à la clôture' : '') +
+      (form.sansChrono && !scRate ? ' — terminé, sans chrono' : ''));
+    if (scRate) toast('Enregistré, mais resté « à démarrer » : ' + scRate +
+      ' — solde-le avec « Terminé sans chrono… » sur la fiche du jour.', true);
     Object.assign(form, { quantite: 1, tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
                           vehTrouve: null,
                           prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0,
+                          sansChrono: false, motifSansChrono: '',
                           note: '', reservation: null });
     onglet = 'journee';
     await rendre();
@@ -4864,8 +5142,16 @@ async function enregistrer() {
 /* ==========================================================================
    JOURNÉE
    ========================================================================== */
+/* DEUX ÉTAPES, PLUS TROIS (14/08) — « la livraison n'est pas nécessaire »
+   (Edwin). ▶ Commencer, ✓ Terminé, c'est fini : le troisième bouton demandait
+   un geste de plus pour une information dont personne ne se servait — et il
+   laissait des voitures « prêtes » toute la soirée alors qu'elles étaient
+   parties. « livre » reste connu de l'app : l'historique le porte encore, et
+   il s'affiche « Terminé » comme les autres. */
 const ETAT_ATELIER = { attente: ['À démarrer', 'neutre'], en_cours: ['En cours', 'marque'],
-                       pret: ['Prêt', 'neutre'], livre: ['Livré', 'succes'] };
+                       pret: ['Terminé', 'succes'], livre: ['Terminé', 'succes'] };
+const FINI = ['pret', 'livre'];
+const estFini = p => FINI.includes(p.statut_atelier);
 
 /* Minutes entre deux heures 'HH:MM:SS' — le chrono des lavages. */
 function minutesEntre(a, b) {
@@ -4896,6 +5182,11 @@ function ligneChrono(p) {
   }
   const reel = minutesEntre(p.heure_debut, p.heure_fin);
   if (reel == null) return '';
+  /* Démarré et terminé dans la même minute : ce n'est pas un lavage rapide,
+     c'est un chrono qui n'a pas tourné (essai, double appui). L'afficher en
+     vert « dans les temps » était un mensonge — vu chez Edwin le 13/08. */
+  if (reel <= 0) return '<span class="ocr-mini" style="color:var(--ocr-ambre)">' +
+    '⏱ chrono non tenu — ▶ et ✓ appuyés dans la même minute. Ce lavage ne compte pas dans les temps.</span>';
   const ton = ref == null ? '' : reel <= ref ? 'color:var(--ocr-vert)' : reel > ref * 1.25 ? 'color:var(--ocr-ambre)' : '';
   return `<span class="ocr-mini" style="${ton}">⏱ ${reel} min de lavage${ref != null ? ' · prévu ' + ref : ''}${
     ref != null && reel <= ref ? ' ✓' : ref != null && reel > ref * 1.25 ? ' ⚠' : ''}</span>`;
@@ -4974,6 +5265,14 @@ async function vueJournee(j) {
   }));
   $('#vue').querySelectorAll('[data-sanschrono]').forEach(b =>
     b.addEventListener('click', () => boiteSansChrono(b.dataset.sanschrono, b.dataset.ref)));
+  $('#vue').querySelectorAll('[data-horsmesurej]').forEach(b =>
+    b.addEventListener('click', () => boiteHorsMesure(b.dataset.horsmesurej, () => rendre())));
+  $('#vue').querySelectorAll('[data-remesurej]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { error } = await API.mesurePassage(b.dataset.remesurej, false, null);
+    if (error) { b.disabled = false; return toast(error.message, true); }
+    memoVider(); toast('Remis dans les mesures'); rendre();
+  }));
   $('#vue').querySelectorAll('[data-encaisser]').forEach(b =>
     b.addEventListener('click', () => boiteEncaissement(b.dataset.encaisser, Number(b.dataset.montant))));
   $('#vue').querySelectorAll('[data-annuler]').forEach(b =>
@@ -5017,21 +5316,24 @@ function ficheePassage(p, verrou) {
     ${p.hors_mesure ? `<div class="ocr-mini" style="margin-top:5px;color:var(--ocr-argent-2)">
       ⊘ Hors mesure de temps${p.mesure_motif ? ' — ' + esc(p.mesure_motif) : ''}</div>` : ''}
     ${!p.hors_mesure && p.sans_chrono_motif ? `<div class="ocr-mini" style="margin-top:5px;color:var(--ocr-ambre)">
-      ⏱ Livré sans chrono — ${esc(p.sans_chrono_motif)}</div>` : ''}
+      ⏱ Terminé sans chrono — ${esc(p.sans_chrono_motif)}</div>` : ''}
     ${verrou ? '' : `<div class="actions">
       ${p.statut_atelier === 'attente' ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
         data-avance="${p.id}" data-vers="en_cours">▶ Commencer</button>` : ''}
-      ${/* La voiture est partie sans qu'on ait appuyé sur ▶ : avant, l'app
-            restait bloquée sur « à démarrer » et le lavage ne pouvait pas être
-            livré. Maintenant on peut, avec un motif — et sans inventer d'heures. */''}
+      ${/* La voiture est partie sans qu'on ait appuyé sur ▶ : l'app restait
+            bloquée sur « à démarrer ». Maintenant on la solde, avec un motif —
+            et sans inventer d'heures. */''}
       ${p.statut_atelier === 'attente' ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
-        data-sanschrono="${p.id}" data-ref="${esc(p.reference)}">Livré sans chrono…</button>` : ''}
+        data-sanschrono="${p.id}" data-ref="${esc(p.reference)}">Terminé sans chrono…</button>` : ''}
       ${p.statut_atelier === 'en_cours' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
         data-avance="${p.id}" data-vers="pret">✓ Lavage terminé</button>` : ''}
-      ${p.statut_atelier === 'pret' ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
-        data-avance="${p.id}" data-vers="livre">Marquer livré</button>` : ''}
       ${!paye ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
         data-encaisser="${p.id}" data-montant="${p.montant_total}">Encaisser</button>` : ''}
+      ${peutCloturer() && p.heure_debut && p.heure_fin ? (p.hors_mesure
+        ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-remesurej="${p.id}"
+             style="color:var(--ocr-argent-2)">Remettre dans les mesures</button>`
+        : `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-horsmesurej="${p.id}"
+             style="color:var(--ocr-argent-2)">⊘ Hors mesure…</button>`) : ''}
       ${(!paye || peutCloturer()) ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit"
         data-annuler="${p.id}" data-ref="${esc(p.reference)}" data-paye="${paye ? 1 : 0}"
         style="margin-left:auto;color:var(--ocr-argent-2)">Annuler…</button>` : ''}
@@ -5111,8 +5413,8 @@ function calculerAnomalies(ps) {
   ps.forEach(p => {
     if (p.annule) return;                    // un véhicule annulé ne compte plus
     const c = p.clients || {};
-    if (p.statut_atelier === 'livre' && p.statut_paiement === 'impaye')
-      out.push({ cle: 'impaye-' + p.id, gravite: 'critique', titre: 'Véhicule livré sans encaissement',
+    if (estFini(p) && p.statut_paiement === 'impaye')
+      out.push({ cle: 'impaye-' + p.id, gravite: 'critique', titre: 'Véhicule rendu sans encaissement',
         detail: p.reference + ' · ' + (c.nom || 'client') + ' · ' + OCR.fcfa(p.montant_total) + ' non encaissés.',
         passage_id: p.id });
     if (p.remise > 0 && p.montant_brut > 0 && p.remise / p.montant_brut > OCR.CONFIG.seuilRemiseAlerte
@@ -5140,7 +5442,9 @@ function calculerAnomalies(ps) {
 
 async function vueCloture(j) {
   const d = jourVu;
-  const [T, ps] = await Promise.all([API.totaux(d), API.passages(d)]);
+  const [T, ps, sansP] = await Promise.all([
+    API.totaux(d), API.passages(d), API.sansPlaque(d).catch(() => [])]);
+  const aValider = sansP.filter(x => !x.sans_plaque_valide_le);
 
   if (j.statut === 'ouverte' && ps.length) {
     const calc = calculerAnomalies(ps).map(a => ({ ...a, journee: d }));
@@ -5185,17 +5489,52 @@ async function vueCloture(j) {
       // liste ce qui a échappé aux trois boutons — pas bloquant, mais visible,
       // pour que la discussion sur les temps parte de données complètes.
       const vivants = ps.filter(p => !p.annule);
-      const pasLivres = vivants.filter(p => p.statut_atelier !== 'livre');
-      const sansChrono = vivants.filter(p => p.statut_atelier === 'livre' && (!p.heure_debut || !p.heure_fin));
-      if (!pasLivres.length && !sansChrono.length) return '';
+      const pasFinis = vivants.filter(p => !estFini(p));
+      const sansChrono = vivants.filter(p => estFini(p) && (!p.heure_debut || !p.heure_fin));
+      if (!pasFinis.length && !sansChrono.length) return '';
       const nomV = p => [(p.vehicules || {}).marque, (p.vehicules || {}).modele].filter(Boolean).join(' ')
                      || (p.vehicules || {}).immatriculation || p.reference;
       return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(245,166,35,.42)">
         <div class="ocr-surtitre">Chrono des lavages — à surveiller</div>
-        ${pasLivres.length ? `<p class="ocr-petit" style="margin:10px 0 0">🚗 <strong>${pasLivres.length} véhicule(s) pas encore livré(s)</strong> :
-          ${esc(pasLivres.map(nomV).join(', '))} — Commencer → Terminé → Livré avant de clôturer.</p>` : ''}
-        ${sansChrono.length ? `<p class="ocr-petit" style="margin:10px 0 0">⏱ <strong>${sansChrono.length} livré(s) sans chrono complet</strong> :
+        ${pasFinis.length ? `<p class="ocr-petit" style="margin:10px 0 0">🚗 <strong>${
+          pluriel(pasFinis.length, 'véhicule')} pas encore terminé${pasFinis.length > 1 ? 's' : ''}</strong> :
+          ${esc(pasFinis.map(nomV).join(', '))} — ▶ Commencer puis ✓ Terminé, ou « Terminé sans chrono… ».</p>` : ''}
+        ${sansChrono.length ? `<p class="ocr-petit" style="margin:10px 0 0">⏱ <strong>${sansChrono.length} terminé(s) sans chrono complet</strong> :
           ${esc(sansChrono.map(nomV).join(', '))} — les boutons ▶ / ✓ n'ont pas été appuyés, ces lavages ne compteront pas dans les temps du Bilan.</p>` : ''}
+      </div>`;
+    })()}
+
+    ${(() => {
+      /* SANS PLAQUE — À VALIDER (13/08). Le travail ne s'est pas arrêté parce
+         qu'une plaque manquait ; c'est ici, une fois par jour, que la direction
+         confirme. Un appui pour toute la journée : sinon personne ne le ferait. */
+      if (!sansP.length) return '';
+      const quoi = r => (r.prestation_nom || 'Lavage') + ' · ' +
+        ((OCR.gabarit(r.gabarit) || {}).court || r.gabarit || '');
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:${
+        aValider.length ? 'rgba(245,166,35,.42)' : 'rgba(46,160,102,.35)'}">
+        <div class="ocr-surtitre">Lavages sans plaque · ${
+          aValider.length ? aValider.length + ' à valider' : 'tous validés'}</div>
+        <p class="ocr-petit" style="margin:10px 0 var(--ocr-e3)">${aValider.length
+          ? (aValider.length > 1 ? 'Ces véhicules sont repartis' : 'Ce véhicule est reparti') +
+            ' sans qu’on ait pu noter l’immatriculation. Le lavage est bien enregistré et encaissé — il te reste à confirmer que c’est normal. <strong style="color:var(--ocr-blanc)">La clôture attend cette confirmation.</strong>'
+          : 'Confirmés — ils n’empêchent plus la clôture.'}</p>
+        ${sansP.map(r => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block">${esc(r.client || 'Client de passage')}
+              <span class="ocr-mini" style="font-weight:400">· ${esc(quoi(r))}</span></span>
+            <span class="ocr-mini">${esc(r.reference)} · ${OCR.fcfa(r.montant_total)}${
+              r.saisi_par_nom ? ' · saisi par ' + esc(r.saisi_par_nom) : ''}</span>
+            <span class="ocr-mini" style="display:block;color:var(--ocr-argent-2)">Motif : ${
+              esc(r.sans_plaque_motif || 'non précisé')}</span>
+          </span>
+          <span class="ocr-pastille ocr-pastille--${r.sans_plaque_valide_le ? 'succes' : 'marque'}">${
+            r.sans_plaque_valide_le ? '✓ validé' + (r.valide_par ? ' · ' + esc(r.valide_par) : '') : 'à valider'}</span>
+        </div>`).join('')}
+        ${aValider.length ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="btnValiderSP"
+          style="margin-top:var(--ocr-e4)">Valider ${aValider.length > 1 ? 'ces ' : 'ce '}${
+            pluriel(aValider.length, 'lavage')} sans plaque</button>` : ''}
       </div>`;
     })()}
 
@@ -5212,9 +5551,14 @@ async function vueCloture(j) {
       <div class="ocr-h3">Validation de la journée</div>
       <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">${bloquantes
         ? '<strong style="color:var(--ocr-erreur)">' + bloquantes + ' anomalie(s) bloquante(s)</strong> doivent être encaissées ou justifiées.'
+        : aValider.length
+        ? '<strong style="color:var(--ocr-ambre)">' + pluriel(aValider.length, 'lavage') +
+          ' sans plaque</strong> ' + (aValider.length > 1 ? 'attendent' : 'attend') + ' ta confirmation, juste au-dessus.'
         : 'La validation fige définitivement la journée. Plus aucune saisie ne sera possible, y compris depuis la base.'}</p>
-      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnCloturer" ${bloquantes ? 'disabled' : ''}>
-        ${bloquantes ? 'Clôture bloquée' : 'Valider et clôturer la journée'}</button>
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnCloturer" ${bloquantes || aValider.length ? 'disabled' : ''}>
+        ${bloquantes ? 'Clôture bloquée'
+          : aValider.length ? 'Valide d’abord ' + (aValider.length > 1 ? 'les lavages' : 'le lavage') + ' sans plaque'
+          : 'Valider et clôturer la journée'}</button>
     </div>`;
 
   brancherRetourDirection();
@@ -5236,6 +5580,15 @@ async function vueCloture(j) {
       fermerModale(); toast('Justification enregistrée'); rendre();
     });
   }));
+
+  const bsp = $('#btnValiderSP');
+  if (bsp) bsp.addEventListener('click', async () => {
+    bsp.disabled = true; bsp.textContent = 'Validation…';
+    const { error } = await API.validerSansPlaque(d);
+    if (error) { bsp.disabled = false; bsp.textContent = 'Réessayer'; return toast(error.message, true); }
+    toast(pluriel(aValider.length, 'lavage') + ' sans plaque validé' + (aValider.length > 1 ? 's' : '') + ' ✓');
+    rendre();
+  });
 
   const bc = $('#btnCloturer');
   if (bc) bc.addEventListener('click', () => {
@@ -6509,8 +6862,17 @@ async function vueClients() {
     </div>
     <div id="zoneCli"></div>`;
 
+  /* BASCULER Particuliers ↔ Entreprises NE DOIT RIEN RECHARGER (13/08) :
+     « cliquer sur Entreprise prend encore beaucoup de temps ». Ça passait par
+     rendre(), qui rejoue tout le préambule de l'écran et remplace la page par
+     un sablier. Or c'est un simple changement d'onglet interne : on repeint
+     la zone, rien d'autre. */
   $('#vue').querySelectorAll('[data-cvue]').forEach(b => b.addEventListener('click', () => {
-    rech.vue = b.dataset.cvue; rendre();
+    if (rech.vue === b.dataset.cvue) return;
+    rech.vue = b.dataset.cvue;
+    $('#vue').querySelectorAll('[data-cvue]').forEach(x =>
+      x.setAttribute('aria-pressed', x.dataset.cvue === rech.vue));
+    vueClients();
   }));
 
   if (rech.vue === 'pro') return vueEntreprises($('#zoneCli'));
@@ -7341,7 +7703,7 @@ async function vueEntreprises(el) {
         </div>
         ${employesDe(e.id).length ? `<div class="ocr-mini" style="margin-top:4px">
           ${employesDe(e.id).length} employé(s) lié(s) : ${esc(employesDe(e.id).map(c => c.nom).join(', '))}</div>` : ''}
-        ${e.remise_pct > 0 && peutCorrigerFiche() ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--petit"
+        ${e.remise_pct > 0 && peutCorrigerFiche() ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit"
           data-ajoutemp="${e.id}" style="margin-top:var(--ocr-e3)">＋ Ajouter un employé</button>` : ''}
         ${e.remise_pct > 0 ? `<div data-venus="${e.id}"></div>` : ''}
         ${e.contact_nom ? `<div class="ocr-mini" style="margin-top:4px">${esc(e.contact_nom)}${e.contact_role ? ' · ' + esc(e.contact_role) : ''}${e.telephone ? ' · ' + esc(e.telephone) : ''}</div>` : ''}
@@ -7355,7 +7717,6 @@ async function vueEntreprises(el) {
             ', ici OCR Brillance (Station Oryx Saint Michel). Nous proposons un entretien professionnel des véhicules d’entreprise — lavage soigné, suivi et facturation mensuelle groupée. Quand pourrions-nous en parler ?')}">WhatsApp</a>` : ''}
           ${peutCloturer() ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-premise="${e.id}"
             ${e.remise_pct > 0 ? '' : 'style="color:var(--ocr-argent-2)"'}>Remise employés…</button>` : ''}
-          ${peutCloturer() ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-pemploye="${e.id}">＋ Employé</button>` : ''}
           <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-promod="${e.id}" style="margin-left:auto">Modifier</button>
         </div>
       </div>`;
@@ -7402,143 +7763,112 @@ async function vueEntreprises(el) {
   el.querySelectorAll('[data-premise]').forEach(b => b.addEventListener('click', () => {
     boiteRemisePartenaire(liste.find(x => x.id === b.dataset.premise));
   }));
-  el.querySelectorAll('[data-pemploye]').forEach(b => b.addEventListener('click', () => {
-    boiteNouvelEmploye(liste.find(x => x.id === b.dataset.pemploye));
-  }));
   brancherFormEntreprise(el);
 }
 
-/* Créer un employé DEPUIS l'entreprise : il naît déjà rattaché, donc sa remise
-   s'applique dès son premier passage sans que Samuel n'ait rien à faire.
-   Avant, il fallait créer la fiche puis la lier en deux gestes séparés. */
-function boiteNouvelEmploye(e) {
-  let gab = 'berline';
-  const v = modale(`
-    <h3 class="ocr-h2">＋ Employé — ${esc(e.nom)}</h3>
-    <div class="ocr-message ocr-message--succes" style="margin:10px 0 var(--ocr-e4)"><span>◆</span><div>
-      Il sera rattaché à ${esc(e.nom)} dès sa création : sa remise de
-      <strong>${e.remise_pct || 0} %</strong> s'appliquera toute seule à chaque passage,
-      quel que soit le véhicule qu'il amène.</div></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
-      <label class="ocr-champ"><span class="ocr-label">Nom *</span>
-        <input class="ocr-saisie" id="neNom"></label>
-      <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
-        <input class="ocr-saisie" id="neTel" inputmode="tel" value="${INDICATIF}">
-        <span class="ocr-aide">Recommandé — c'est lui qui relie la fidélité.</span></label>
-    </div>
-    <div class="ocr-mini" style="margin:2px 0 8px;letter-spacing:.14em;text-transform:uppercase">Son véhicule (facultatif)</div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
-      ${OCR.GABARITS.map(g => `<button class="ocr-chip" data-negab="${g.id}" aria-pressed="${gab === g.id}">${esc(g.court)}</button>`).join('')}
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
-      <label class="ocr-champ"><span class="ocr-label">Marque</span>
-        <input class="ocr-saisie" id="neMarque"></label>
-      <label class="ocr-champ"><span class="ocr-label">Modèle</span>
-        <input class="ocr-saisie" id="neModele"></label>
-    </div>
-    <label class="ocr-champ"><span class="ocr-label">Immatriculation</span>
-      <input class="ocr-saisie" id="neImmat" placeholder="${OCR.PLAQUE_EXEMPLES.voiture}"></label>
-    <div style="display:grid;grid-template-columns:1fr 2fr;gap:9px">
-      <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
-      <button class="ocr-btn ocr-btn--primaire" data-ok>Créer et rattacher</button></div>`);
-  v.querySelectorAll('[data-negab]').forEach(b => b.addEventListener('click', () => {
-    gab = b.dataset.negab;
-    v.querySelectorAll('[data-negab]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.negab === gab)));
-    if (repeindreNe) repeindreNe();
-    v.querySelector('#neImmat').placeholder = gab === 'moto' ? OCR.PLAQUE_EXEMPLES.moto : OCR.PLAQUE_EXEMPLES.voiture;
-  }));
-  brancherTel(v.querySelector('#neTel'));
-  const repeindreNe = brancherMarqueModele(v.querySelector('#neMarque'), v.querySelector('#neModele'), () => gab);
-  brancherPlaque(v.querySelector('#neImmat'));
-  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
-  v.querySelector('[data-ok]').addEventListener('click', async ev => {
-    const nom = v.querySelector('#neNom').value.trim();
-    if (!nom) return toast('Le nom est obligatoire.', true);
-    ev.target.disabled = true;
-    const { data, error } = await API.creerClientEntreprise({
-      p_entreprise: e.id, p_nom: nom,
-      p_telephone: telPropre(v.querySelector('#neTel').value) || null,
-      p_gabarit: gab,
-      p_marque: v.querySelector('#neMarque').value.trim() || null,
-      p_modele: v.querySelector('#neModele').value.trim() || null,
-      p_immat: OCR.plaque(v.querySelector('#neImmat').value) || null,
-    });
-    if (error) { toast(error.message, true); ev.target.disabled = false; return; }
-    const r = Array.isArray(data) ? data[0] : data;
-    fermerModale();
-    toast(r && r.deja_existant
-      ? nom + ' existait déjà — sa fiche est maintenant rattachée à ' + e.nom + ' ✓'
-      : nom + ' créé et rattaché à ' + e.nom + ' ✓');
-    rendre();
-  });
-}
+/* ══════════════════════════════════════════════════════════════════════════
+   AJOUTER UN EMPLOYÉ PARTENAIRE — UN SEUL BOUTON, UN SEUL GESTE (13/08)
 
-/* La remise employés d'une entreprise partenaire — direction/comptable. */
-/* ENRÔLER UN EMPLOYÉ PARTENAIRE, DEPUIS LA FICHE DE L'ENTREPRISE (13/08)
-   « Il faut que Samuel ait les droits pour ajouter les employés Ehu Motors,
-     là je ne le vois pas chez lui. » — le geste existait, mais il était caché
-   sur la fiche du client et réservé à la direction. Il est maintenant là où on
-   le cherche : sur l'entreprise, et ouvert au manager. */
+   « Pourquoi il y a 2 fois "ajouter un employé" ? » — Edwin. Il y avait en
+   effet deux portes pour la même chose : l'une créait une fiche neuve, l'autre
+   rattachait une fiche existante. Personne ne devrait avoir à choisir entre
+   les deux AVANT de savoir si la personne est déjà cliente.
+
+   Une seule porte maintenant, dans l'ordre où on pense :
+     1. on cherche — s'il est déjà venu, il est déjà client, et le rattacher
+        évite une deuxième fiche pour la même personne ;
+     2. s'il n'y est pas, on le crée ici, nom + téléphone, déjà rattaché.
+   La base tient la règle : un numéro déjà connu rattache la fiche existante
+   au lieu d'en créer une seconde.
+   ══════════════════════════════════════════════════════════════════════════ */
 function boiteAjoutEmploye(e) {
   if (!e) return;
-  let res = [], q = '';
+  let res = [], q = '', cherche = false;
   const v = modale(`
-    <h3 class="ocr-h2">Ajouter un employé — ${esc(e.nom)}</h3>
-    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Cherche-le par son nom ou son numéro.
-      S'il n'existe pas encore, tu le crées ici : il aura la remise ${e.remise_pct} % à chaque passage,
-      sur n'importe quel véhicule.</p>
-    <label class="ocr-champ"><span class="ocr-label">Nom ou numéro</span>
-      <input class="ocr-saisie" id="aeQ" placeholder="Rodrigue, 01 44 66…" autocomplete="off"></label>
-    <div id="aeRes"></div>
-    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:var(--ocr-e4)">Fermer</button>`);
-  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+    <h3 class="ocr-h2">＋ Ajouter un employé — ${esc(e.nom)}</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Il aura la remise
+      <strong>${e.remise_pct} %</strong> à chaque passage, sur n'importe quel véhicule.</p>
 
-  const lier = async (id, nom) => {
-    const { error } = await API.lierEmploye(id, e.id);
-    if (error) return toast(error.message, true);
+    <div class="ocr-mini" style="letter-spacing:.14em;text-transform:uppercase;margin-bottom:6px">
+      1 · Est-il déjà client ?</div>
+    <label class="ocr-champ"><span class="ocr-label">Chercher par nom ou numéro</span>
+      <input class="ocr-saisie" id="aeQ" placeholder="Rodrigue, 01 44 66…" autocomplete="off">
+      <span class="ocr-aide">S'il est déjà venu chez nous, rattache sa fiche — ça évite un doublon.</span></label>
+    <div id="aeRes" style="margin-bottom:var(--ocr-e4)"></div>
+
+    <div class="ocr-mini" style="letter-spacing:.14em;text-transform:uppercase;margin:0 0 6px">
+      2 · Sinon, crée sa fiche</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+      <label class="ocr-champ"><span class="ocr-label">Nom *</span>
+        <input class="ocr-saisie" id="aeNom" autocomplete="off"></label>
+      <label class="ocr-champ"><span class="ocr-label">Téléphone</span>
+        <input class="ocr-saisie" id="aeTel" inputmode="tel" value="${INDICATIF}">
+        <span class="ocr-aide">C'est lui qui le reconnaîtra au comptoir.</span></label>
+    </div>
+    <p class="ocr-mini" style="margin:0 0 var(--ocr-e3)">Son véhicule s'enregistrera tout seul
+      au premier lavage — rien à saisir ici.</p>
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:9px">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Fermer</button>
+      <button class="ocr-btn ocr-btn--primaire" id="aeCreer">Créer et rattacher</button></div>`);
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  brancherTel(v.querySelector('#aeTel'));
+
+  const fini = (nom, existant) => {
     memoVider();
     fermerModale();
-    toast(nom + ' — employé ' + e.nom + ' ✓ remise ' + e.remise_pct + ' % automatique');
+    toast(nom + (existant ? ' — fiche existante rattachée' : ' — employé ' + e.nom) +
+          ' ✓ remise ' + e.remise_pct + ' % automatique');
     rendre();
   };
   const peindre = () => {
     const z = v.querySelector('#aeRes');
     const t = q.trim();
     if (t.length < 2) { z.innerHTML = ''; return; }
-    z.innerHTML = `
-      ${res.length ? res.map(c => `<button class="presta" data-aecli="${c.id}">
-        <span class="coche">${c.entreprise_id === e.id ? '✓' : ''}</span>
-        <span style="min-width:0"><span class="nm">${esc(c.nom)}</span>
-          <span class="du">${esc(telAffiche(c.telephone) || 'sans numéro')}${
-            c.entreprise_id === e.id ? ' · déjà employé' : ''}</span></span></button>`).join('')
-      : '<p class="ocr-mini" style="margin:var(--ocr-e3) 0">Personne à ce nom pour l’instant.</p>'}
-      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="aeCreer" style="margin-top:var(--ocr-e3)">
-        ＋ Créer « ${esc(t)} » et le lier</button>
-      <p class="ocr-mini" style="margin:7px 0 0">Un numéro de téléphone est vivement conseillé : c’est lui
-        qui le reconnaîtra au comptoir.</p>`;
-    z.querySelectorAll('[data-aecli]').forEach(b => b.addEventListener('click', () => {
+    if (cherche) { z.innerHTML = '<p class="ocr-mini" style="margin:8px 0">Recherche…</p>'; return; }
+    z.innerHTML = res.length
+      ? res.map(c => `<button class="presta" data-aecli="${c.id}">
+          <span class="coche">${c.entreprise_id === e.id ? '✓' : ''}</span>
+          <span style="min-width:0"><span class="nm">${esc(c.nom)}</span>
+            <span class="du">${esc(telAffiche(c.telephone) || 'sans numéro')}${
+              c.entreprise_id === e.id ? ' · déjà employé ' + esc(e.nom) : ''}</span></span></button>`).join('')
+      : '<p class="ocr-mini" style="margin:8px 0">Personne à ce nom — crée sa fiche juste en dessous.</p>';
+    z.querySelectorAll('[data-aecli]').forEach(b => b.addEventListener('click', async () => {
       const c = res.find(x => x.id === b.dataset.aecli);
       if (c.entreprise_id === e.id) return toast('Déjà employé ' + e.nom);
-      lier(c.id, c.nom);
+      b.disabled = true;
+      const { error } = await API.lierEmploye(c.id, e.id);
+      if (error) { b.disabled = false; return toast(error.message, true); }
+      fini(c.nom, true);
     }));
-    z.querySelector('#aeCreer').addEventListener('click', async ev => {
-      ev.target.disabled = true;
-      // un numéro seul, un nom seul, ou les deux : ocr_creer_client fait le tri
-      const estTel = /[0-9]/.test(t) && t.replace(/[^0-9]/g, '').length >= 6;
-      try {
-        const r = await API.creerClient(estTel ? { tel: t } : { nom: t });
-        await lier(r.id, estTel ? telAffiche(t) : t);
-      } catch (ex) { ev.target.disabled = false; toast(ex.message, true); }
-    });
   };
   let mn;
   v.querySelector('#aeQ').addEventListener('input', ev => {
     q = ev.target.value;
+    // ce qu'on tape sert aussi à préremplir la création : on ne le retape pas
+    const t = q.trim();
+    const estTel = /[0-9]/.test(t) && t.replace(/[^0-9]/g, '').length >= 6;
+    if (estTel) v.querySelector('#aeTel').value = t;
+    else if (t.length >= 2) v.querySelector('#aeNom').value = t;
     clearTimeout(mn);
+    cherche = true; peindre();
     mn = setTimeout(async () => {
       try { res = await API.chercherClients(q); } catch (ex) { res = []; }
-      peindre();
-    }, 280);
+      cherche = false; peindre();
+    }, 300);
+  });
+
+  v.querySelector('#aeCreer').addEventListener('click', async ev => {
+    const nom = v.querySelector('#aeNom').value.trim();
+    const tel = telPropre(v.querySelector('#aeTel').value);
+    if (!nom) return toast('Le nom est obligatoire.', true);
+    ev.target.disabled = true;
+    const { data, error } = await API.creerClientEntreprise({
+      p_entreprise: e.id, p_nom: nom, p_telephone: tel || null,
+      p_gabarit: null, p_marque: null, p_modele: null, p_immat: null, p_note: null,
+    });
+    if (error) { ev.target.disabled = false; return toast(error.message, true); }
+    const r = Array.isArray(data) ? data[0] : data;
+    fini(nom, !!(r && r.deja_existant));
   });
 }
 
@@ -8165,6 +8495,194 @@ async function vueBilan() {
    être contourné. Donc on enregistre — mais on écrit pourquoi, et la
    direction le voit dans Contrôle des temps.
    ========================================================================== */
+/* ==========================================================================
+   PAS DE PLAQUE — ET ALORS ? (13/08)
+   « Un véhicule est venu faire un lavage express, un gars de passage qui
+     partait dans un autre pays, et on a oublié de rentrer sa plaque […]
+     il faut juste qu'il mette un motif. Et que Guénolé ou moi valide lors de
+     la clôture. Certes l'immatriculation devient importante, mais il faut
+     pas que ça limite l'application. » (Edwin)
+   Donc : jamais de refus. Une ligne d'explication en un appui, et la
+   direction confirme à la clôture. Le motif est écrit au journal.
+   ========================================================================== */
+const MOTIFS_SANS_PLAQUE = [
+  'Client pressé — plaque non relevée',
+  'Client de passage, ne reviendra pas',
+  'Véhicule sans plaque (neuf, en transit)',
+  'Plaque illisible ou absente',
+];
+/* Rend le motif choisi, ou null s'il préfère aller chercher la plaque.
+   Un appui sur une pastille suffit : elle choisit ET enregistre. */
+function demanderMotifSansPlaque() {
+  return new Promise(resolve => {
+    let repondu = false;
+    const rendre_ = m => { if (repondu) return; repondu = true; fermerModale(); resolve(m); };
+    const v = modale(`
+      <h3 class="ocr-h2">Pas de plaque ?</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+        Le lavage sera <strong style="color:var(--ocr-blanc)">enregistré normalement</strong> —
+        rien ne s'arrête. Dis simplement pourquoi : ${esc(peutCloturer() ? 'tu confirmeras' : 'la direction confirmera')}
+        à la clôture de la journée.</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${MOTIFS_SANS_PLAQUE.map((m, i) => `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc"
+          data-msp="${i}" style="text-align:left;justify-content:flex-start">${esc(m)}</button>`).join('')}
+      </div>
+      <label class="ocr-champ" style="margin-top:var(--ocr-e4)"><span class="ocr-label">Autre raison</span>
+        <input class="ocr-saisie" id="mspTexte" placeholder="En deux mots" enterkeyhint="done"></label>
+      <div style="display:flex;gap:9px;margin-top:var(--ocr-e3);align-items:center">
+        <button class="ocr-btn ocr-btn--fantome" data-fermer>J'ai la plaque, j'y retourne</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-ok disabled>Enregistrer</button></div>`);
+    v.addEventListener('click', e => { if (e.target === v) rendre_(null); });
+    v.querySelector('[data-fermer]').addEventListener('click', () => rendre_(null));
+    v.querySelectorAll('[data-msp]').forEach(b => b.addEventListener('click', () =>
+      rendre_(MOTIFS_SANS_PLAQUE[Number(b.dataset.msp)])));
+    v.querySelector('[data-ok]').addEventListener('click', () => {
+      const t = v.querySelector('#mspTexte').value.trim();
+      if (!t) return toast('Touche une raison, ou écris-la en deux mots.', true);
+      rendre_(t);
+    });
+    /* Le bouton rouge ne s'allume qu'une fois la raison écrite : sinon l'œil
+       va sur lui alors que ce sont les quatre choix du dessus qui vont le plus
+       vite. Un bouton éteint dit « ce n'est pas par là ». */
+    const champ = v.querySelector('#mspTexte');
+    champ.addEventListener('input', () => {
+      v.querySelector('[data-ok]').disabled = !champ.value.trim();
+    });
+    champ.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); v.querySelector('[data-ok]').click(); }
+    });
+  });
+}
+
+/* ==========================================================================
+   LE PARC D'UN PARTENAIRE, EN TROIS APPUIS (13/08)
+   « Pour Ehu Motors il faut que ça soit plus simple car ce sera fréquent. »
+   Le chemin normal réclame une plaque et un numéro de téléphone ; ici il n'y
+   a ni l'un ni l'autre — seulement QUI est venu et COMBIEN de motos. Cette
+   fenêtre ne demande donc que ça, applique la remise du partenaire toute
+   seule, et enregistre.
+   ========================================================================== */
+async function boiteParcPartenaire(P, j) {
+  if (!P) return;
+  const emps = await API.employesDe(P.id).catch(() => []);
+  const motos = OCR.PRESTATIONS.filter(x => x.famille === 'moto');
+  const etat = { emp: null, q: 1, presta: (motos[0] || {}).id || 'moto-express', clavier: false };
+  const v = modale('<div id="ppCorps"></div>');
+  const calc = () => {
+    const u = OCR.prix(etat.presta, 'moto') || 0;
+    const brut = u * etat.q;
+    const remise = Math.round(brut * P.remise_pct / 100);
+    return { u, brut, remise, total: brut - remise };
+  };
+  const peindre = () => {
+    const T = calc();
+    v.querySelector('#ppCorps').innerHTML = `
+      <h3 class="ocr-h2">◆ Parc ${esc(P.nom)}</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+        Pas de plaque à saisir : ces motos appartiennent au concessionnaire et peuvent
+        partir chez un client. On note qui est venu, combien de motos, et la remise
+        de ${P.remise_pct} % s'applique toute seule.</p>
+
+      <div class="ocr-label" style="margin-bottom:8px">1 · Qui est venu</div>
+      ${emps.length ? `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+        ${emps.map(e => `<button class="ocr-chip" data-ppe="${e.id}" ${e.telephone ? '' : 'disabled'}
+          aria-pressed="${etat.emp && etat.emp.id === e.id}">${esc(e.nom)}${
+          e.telephone ? '' : ' · sans numéro'}</button>`).join('')}
+      </div>` : `<p class="ocr-mini" style="margin:0 0 var(--ocr-e4);color:var(--ocr-ambre)">
+        Aucun employé ${esc(P.nom)} n'est encore enregistré. Ajoute-le dans
+        Clients › Entreprises › ＋ Ajouter un employé, puis reviens ici.</p>`}
+
+      <div class="ocr-label" style="margin-bottom:8px">2 · Combien de motos</div>
+${/* Six pastilles couvrent la quasi-totalité des passages ; le clavier
+         numérique ne se déplie que si on en demande davantage — sinon il
+         occupe une ligne entière pour rien sur un téléphone. */''}
+      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:var(--ocr-e4)">
+        ${[1, 2, 3, 4, 5, 6].map(k => `<button class="ocr-chip" data-ppq="${k}"
+          aria-pressed="${etat.q === k && !etat.clavier}">${k}</button>`).join('')}
+        ${etat.clavier || etat.q > 6
+          ? `<input class="ocr-saisie" id="ppQ" type="number" min="1" max="50" inputmode="numeric"
+                    value="${etat.q}" style="width:76px;padding:8px 9px;text-align:center">`
+          : `<button class="ocr-chip" data-ppplus aria-label="Plus de 6 motos">＋</button>`}
+      </div>
+
+      <div class="ocr-label" style="margin-bottom:8px">3 · Le lavage</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:var(--ocr-e4)">
+        ${motos.map(m => `<button class="ocr-chip" data-ppp="${m.id}"
+          aria-pressed="${etat.presta === m.id}">${esc(m.nom)} · ${OCR.fcfa(OCR.prix(m.id, 'moto'))}</button>`).join('')}
+      </div>
+
+      <div class="ocr-carte" style="padding:var(--ocr-e4);margin-bottom:var(--ocr-e4)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="ocr-mini">${etat.q} × ${OCR.fcfa(T.u)} − ${P.remise_pct} %</span>
+          <span style="font:700 20px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(T.total)}</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:9px;align-items:center">
+        <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-ppok ${etat.emp ? '' : 'disabled'}>
+          ${etat.emp ? 'Enregistrer · ' + OCR.fcfa(T.total) : 'Choisis qui est venu'}</button>
+      </div>`;
+    lier();
+  };
+  const lier = () => {
+    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+    v.querySelectorAll('[data-ppe]').forEach(b => b.addEventListener('click', () => {
+      etat.emp = emps.find(e => e.id === b.dataset.ppe); peindre();
+    }));
+    v.querySelectorAll('[data-ppq]').forEach(b => b.addEventListener('click', () => {
+      etat.q = Number(b.dataset.ppq); etat.clavier = false; peindre();
+    }));
+    const bp = v.querySelector('[data-ppplus]');
+    if (bp) bp.addEventListener('click', () => {
+      etat.clavier = true; peindre();
+      const c = v.querySelector('#ppQ'); if (c) { c.focus(); c.select(); }
+    });
+    v.querySelectorAll('[data-ppp]').forEach(b => b.addEventListener('click', () => {
+      etat.presta = b.dataset.ppp; peindre();
+    }));
+    const cq = v.querySelector('#ppQ');
+    if (cq) cq.addEventListener('change', e => {
+      etat.q = Math.max(1, Math.min(50, Number(e.target.value) || 1));
+      etat.clavier = etat.q > 6; peindre();
+    });
+    v.querySelector('[data-ppok]').addEventListener('click', () => {
+      if (!etat.emp) return;
+      /* On remplit la fiche de saisie et on laisse le chemin habituel faire le
+         reste : même enregistrement, même journal, même remise partenaire. */
+      Object.assign(form, {
+        tel: etat.emp.telephone || '', nom: etat.emp.nom,
+        clientTrouve: { id: etat.emp.id, nom: etat.emp.nom, telephone: etat.emp.telephone,
+                        entreprise_id: P.id, entreprises: { nom: P.nom, remise_pct: P.remise_pct } },
+        vehsClient: [], parPlaque: false, vehTrouve: null,
+        gabarit: 'moto', gabaritManuel: true, gabaritDeduit: null, gabaritDesaccord: null,
+        marque: '', modele: '', immat: '',
+        prestation: etat.presta, options: [], remise: 0, motifRemise: '', manuel: 0,
+        sansChrono: false, motifSansChrono: '',
+        quantite: etat.q, note: '', reservation: null,
+      });
+      fermerModale();
+      enregistrer();
+    });
+  };
+  peindre();
+}
+
+/* Saisie après coup : le lavage est déjà fait quand on l'enregistre. Ce n'est
+   pas la même histoire qu'un chrono oublié en cours de route — d'où deux
+   listes. */
+/* Deux mots sur la pastille, la phrase entière dans le champ : au comptoir on
+   vise une cible courte, mais c'est la phrase que la direction relira dans
+   trois mois. Les deux ne servent pas la même personne. */
+const MOTIFS_DEJA_LAVE = [
+  ['Atelier débordé',      'Atelier débordé — saisi après coup'],
+  ['Commencé avant',       'Lavage commencé avant la saisie'],
+  ['Client pressé',        'Client pressé, véhicule repris tout de suite'],
+  ['Téléphone ou réseau',  'Panne de téléphone ou de réseau'],
+];
+
 const MOTIFS_SANS_CHRONO = [
   'Chrono oublié au démarrage',
   'Lavage commencé avant la saisie',
@@ -8173,7 +8691,7 @@ const MOTIFS_SANS_CHRONO = [
 ];
 function boiteSansChrono(id, ref) {
   const v = modale(`
-    <h3 class="ocr-h2">Livrer sans chrono</h3>
+    <h3 class="ocr-h2">Terminer sans chrono</h3>
     <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
       Les boutons ▶ et ✓ n’ont pas été appuyés : <strong>ce lavage n'aura pas de temps</strong>.
       Il compte normalement dans le chiffre d’affaires, mais il sera absent des moyennes
@@ -8186,7 +8704,7 @@ function boiteSansChrono(id, ref) {
     <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
       <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
       <div style="flex:1"></div>
-      <button class="ocr-btn ocr-btn--primaire" data-ok>Livrer ${esc(ref || '')}</button></div>`);
+      <button class="ocr-btn ocr-btn--primaire" data-ok>Terminer ${esc(ref || '')}</button></div>`);
   v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
   v.querySelectorAll('[data-msc]').forEach(b => b.addEventListener('click', () => {
     v.querySelector('#mscTexte').value = MOTIFS_SANS_CHRONO[Number(b.dataset.msc)];
@@ -8196,10 +8714,10 @@ function boiteSansChrono(id, ref) {
     const motif = v.querySelector('#mscTexte').value.trim();
     if (!motif) return toast('Le motif est obligatoire.', true);
     e.target.disabled = true;
-    const { error } = await API.avancer(id, 'livre', motif);
+    const { error } = await API.avancer(id, 'pret', motif);
     if (error) { e.target.disabled = false; return toast(error.message, true); }
     fermerModale();
-    toast('Livré — signalé sans chrono');
+    toast('Terminé — signalé sans chrono');
     rendre();
   });
 }
@@ -8318,7 +8836,7 @@ async function vueControleTemps() {
   }));
 }
 
-function boiteHorsMesure(id) {
+function boiteHorsMesure(id, apres) {
   const v = modale(`
     <h3 class="ocr-h2">Sortir ce lavage des mesures</h3>
     <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
@@ -8345,7 +8863,8 @@ function boiteHorsMesure(id) {
     e.target.disabled = true;
     const { error } = await API.mesurePassage(id, true, motif);
     if (error) { e.target.disabled = false; return toast(error.message, true); }
-    memoVider(); fermerModale(); toast('Sorti des mesures'); vueControleTemps();
+    memoVider(); fermerModale(); toast('Sorti des mesures — le prix ne bouge pas');
+    if (apres) apres(); else vueControleTemps();
   });
 }
 
@@ -8697,7 +9216,7 @@ async function vueDirection() {
       <div class="tuile"><div class="lab">CA aujourd’hui</div><div class="val">${OCR.fcfa(tot.ca || 0)}</div>
         <div class="sub">${tot.vehicules || 0} véhicule(s)${panier ? ' · panier ' + OCR.fcfa(panier) : ''}</div></div>
       <div class="tuile"><div class="lab">Dans l’atelier</div><div class="val">${enCoursV.length}</div>
-        <div class="sub">${enCoursV.length ? 'en cours de lavage' : 'aucun lavage en cours'}${attentes.length ? ' · ' + attentes.length + ' à démarrer' : ''}${prets.length ? ' · ' + prets.length + ' prêt(s)' : ''}</div></div>
+        <div class="sub">${enCoursV.length ? 'en cours de lavage' : 'aucun lavage en cours'}${attentes.length ? ' · ' + attentes.length + ' à démarrer' : ''}${prets.length ? ' · ' + prets.length + ' terminé(s)' : ''}</div></div>
       <div class="tuile"><div class="lab">Encaissé</div><div class="val">${OCR.fcfa(tot.encaisse || 0)}</div>
         <div class="sub" style="${tot.impaye ? 'color:var(--ocr-erreur)' : ''}">${tot.impaye ? OCR.fcfa(tot.impaye) + ' à encaisser' : 'rien en attente'}</div></div>
       <div class="tuile"><div class="lab">Sur place</div><div class="val">${presents.length}</div>
