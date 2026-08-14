@@ -1019,7 +1019,14 @@ function porteursPourCouvrir(chargesFixes, carnetId, gabaritId) {
    ───────────────────────────────────────────────────────────── */
 const CONFIG = {
   ouvertureMin:  9 * 60,   // 09:00
-  fermetureMin: 21 * 60,   // 21:00 — le dernier lavage doit FINIR à 21 h
+  fermetureMin: 19 * 60,   // 19:00 — le dernier lavage doit FINIR à la fermeture
+  /* L'atelier ouvre à 9 h et ferme à 19 h (Edwin, 14/08). L'équipe, elle,
+     arrive AVANT : entre 8 h 30 et 9 h, pour préparer. Et elle repart après le
+     nettoyage — d'où l'absence d'heure de départ attendue : elle se constate,
+     elle ne se prescrit pas. */
+  arriveeDebut: 8 * 60 + 30,
+  arriveeFin:   9 * 60,
+  pauseMin:     45,        // une pause par jour, obligatoire — jamais bloquante
   pasCreneau:   30,        // grille de réservation, en minutes
   battementMin: 15,        // sortie/entrée véhicule entre deux prestations
   baies:        2,         // 2 véhicules lavés en simultané
@@ -1094,7 +1101,7 @@ const hm2min = s => { const a = s.split(':').map(Number); return a[0] * 60 + a[1
 /**
  * Heures de DÉBUT possibles : le lavage doit être TERMINÉ à la fermeture.
  * Le battement est appliqué à l'occupation de la baie, pas au dernier créneau
- * (le rangement peut déborder après 21 h).
+ * (le rangement peut déborder après l'heure de fermeture).
  */
 function creneaux(prestationId, gabaritId) {
   const d = duree(prestationId, gabaritId);
@@ -1709,7 +1716,12 @@ function creerClientDemo() {
     journees: [{ date: jourCourant, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null }],
     passages: [], passage_lignes: [], paiements: [], anomalies: [], journal: [],
     reservations: [], entreprises: [], pointages: [], absences: [],
-    reglages: [{ id: 1, lat: null, lng: null, rayon_m: 150 }],
+    /* Horaires et pause obligatoire : en base depuis le 14/08, pour qu'ils se
+       corrigent sans republier l'application. */
+    reglages: [{ id: 1, lat: null, lng: null, rayon_m: 150,
+                 ouverture: '09:00:00', fermeture: '19:00:00',
+                 arrivee_debut: '08:30:00', arrivee_fin: '09:00:00', pause_min: 45 }],
+    demandes: [],
     // Catalogue des véhicules : semé depuis le socle, comme la vraie base.
     modeles_vehicules: OCR.MARQUES.flatMap(m => Object.keys(m.gab).flatMap(g =>
       m.gab[g].map(mo => ({ id: 'cat-' + OCR.clefTexte(m.nom) + '-' + OCR.clefTexte(mo),
@@ -2084,6 +2096,11 @@ function creerClientDemo() {
       if (table === 'v_lavages_chronometres') return lavagesChronometres();
       if (table === 'v_parc_partenaire')      return parcPartenaire();
       if (table === 'v_sans_plaque')          return sansPlaque();
+      if (table === 'v_demandes')             return D.demandes.map(d => ({
+        ...d,
+        demande_par_nom: (D.employes.find(e => e.id === d.demande_par) || {}).nom || '',
+        traite_par_nom: (D.employes.find(e => e.id === d.traite_par) || {}).nom || '',
+      }));
       if (table === 'passages')          return D.passages.map(lier);
       if (table === 'vehicules')         return D.vehicules.map(v =>
         ({ ...v, clients: D.clients.find(c => c.id === v.client_id) || null }));
@@ -2878,6 +2895,48 @@ function creerClientDemo() {
                            traitee_par: emp.id, traitee_le: new Date().toISOString() }));
       return [{ reference: p.reference }];
     },
+    /* Demander la réouverture : une porte fermée montre toujours sa sonnette. */
+    ocr_demander_reouverture(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!String(a.p_motif || '').trim()) throw new Error('Dis ce qu\'il faut ajouter à cette journée');
+      const j = D.journees.find(x => x.date === a.p_journee);
+      if (!j || j.statut === 'ouverte')
+        throw new Error('Cette journée est déjà ouverte — tu peux saisir directement');
+      if (j.statut === 'fermee')
+        throw new Error('Cette journée vient de l\'ancien cahier : elle ne se réouvre pas');
+      const deja = D.demandes.find(d => d.type === 'reouverture'
+        && d.journee === a.p_journee && d.statut === 'attente');
+      if (deja) return [{ id: deja.id, deja: true }];
+      const id = uid();
+      D.demandes.push({ id, type: 'reouverture', journee: a.p_journee,
+        motif: String(a.p_motif).trim(), demande_par: emp.id,
+        demande_le: new Date().toISOString(), statut: 'attente',
+        traite_par: null, traite_le: null, reponse: null });
+      D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Demande de réouverture du ' + a.p_journee + ' — ' + String(a.p_motif).trim(),
+        entite: 'journee' });
+      return [{ id, deja: false }];
+    },
+    ocr_repondre_demande(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls le comptable et la direction répondent aux demandes');
+      const d = D.demandes.find(x => x.id === a.p_demande);
+      if (!d) throw new Error('Demande introuvable');
+      if (d.statut !== 'attente') throw new Error('Cette demande a déjà reçu une réponse');
+      if (a.p_accepter) {
+        const qui = (D.employes.find(e => e.id === d.demande_par) || {}).nom || '?';
+        RPC.ocr_reouvrir_journee({ p_date: d.journee, p_motif: 'Demande de ' + qui + ' : ' + d.motif });
+      }
+      Object.assign(d, { statut: a.p_accepter ? 'acceptee' : 'refusee', traite_par: emp.id,
+        traite_le: new Date().toISOString(), reponse: String(a.p_reponse || '').trim() || null });
+      D.journal.unshift({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Demande de réouverture du ' + d.journee + (a.p_accepter ? ' ACCEPTÉE' : ' refusée'),
+        entite: 'journee' });
+      return [{ statut: d.statut, jour: d.journee }];
+    },
     /* Réouvrir une journée signée : seuls ceux qui signent peuvent défaire une
        signature, et jamais sans dire pourquoi (14/08). */
     ocr_reouvrir_journee(a) {
@@ -2976,7 +3035,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v46';
+const VERSION = 'v47';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -3915,6 +3974,17 @@ const API = {
   validerSansPlaque: jour => sb.rpc('ocr_valider_sans_plaque', { p_journee: jour }),
   reouvrirJournee: (jour, motif) =>
     sb.rpc('ocr_reouvrir_journee', { p_date: jour, p_motif: motif }),
+  demanderReouverture: (jour, motif) =>
+    sb.rpc('ocr_demander_reouverture', { p_journee: jour, p_motif: motif }),
+  repondreDemande: (id, ok, reponse) =>
+    sb.rpc('ocr_repondre_demande', { p_demande: id, p_accepter: ok, p_reponse: reponse || null }),
+  /* Les demandes en attente — c'est ce compteur qui allume la pastille du
+     panneau Direction. Court TTL : une demande qui arrive doit se voir. */
+  async demandesEnAttente() {
+    const { data } = await sb.from('v_demandes').select('*')
+      .eq('statut', 'attente').order('demande_le');
+    return data || [];
+  },
   /* Les entreprises partenaires — celles qui ont une remise négociée. */
   async partenaires() {
     const { data } = await sb.from('entreprises').select('id,nom,remise_pct')
@@ -4046,7 +4116,7 @@ async function demarrer() {
   $('#connexion').classList.add('masque');
   $('#appli').classList.remove('masque');
   $('#quiNom').textContent = moi.nom;
-  $('#quiRole').textContent = enInterim() ? 'remplace le manager aujourd’hui' : moi.role;
+  $('#quiRole').textContent = enInterim() ? 'remplace le manager aujourd’hui' : libelleRole(moi.role);
   // Edwin et Guénolé atterrissent sur le pilotage : ouvrir l'app = savoir où on en est.
   onglet = peutCloturer() ? 'direction' : 'saisie';
   majBoucler();
@@ -4057,6 +4127,18 @@ async function demarrer() {
   // Le catalogue des marques et modèles, versé dans le socle (sans bloquer).
   chargerCatalogue();
 }
+
+/* Le nom du rôle en base ne change pas — tous les contrôles s'appuient dessus,
+   ici comme dans la base. Mais « comptable » décrit mal ce que Guénolé fait :
+   il tient les finances ET les ressources humaines (Edwin, 14/08). On affiche
+   donc le métier, on garde la clé technique. */
+const ROLE_LIBELLE = {
+  direction:  'direction',
+  comptable:  'direction financière & RH',
+  manager:    'manager d’atelier',
+  technicien: 'technicien',
+};
+const libelleRole = r => ROLE_LIBELLE[r] || r || '';
 
 const peutCloturer = () => moi && (moi.role === 'comptable' || moi.role === 'direction');
 /* L'onglet « maison » de chacun : celui où le geste retour ramène, et celui
@@ -4261,12 +4343,20 @@ async function boiteCompte() {
       <span id="zoneAvatar">${avatar(moi, 56)}</span>
       <div style="min-width:0">
         <div style="font-weight:600">${esc(moi.nom)}</div>
-        <div class="ocr-mini">${esc(moi.role)}</div>
+        <div class="ocr-mini">${esc(libelleRole(moi.role))}</div>
         <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-photo style="margin-top:6px;padding-left:0">
           ${moi.photo ? 'Changer ma photo' : 'Ajouter ma photo'}</button>
         <input type="file" accept="image/*" id="fichierPhoto" style="display:none">
       </div>
     </div>
+
+    ${/* Le numéro sert à l'équipe et aux relances : sans lui, une fiche
+         employé est incomplète. Il se corrige ici, par l'intéressé. */''}
+    <div class="ocr-surtitre">Mon numéro</div>
+    <label class="ocr-champ" style="margin-top:var(--ocr-e3)"><span class="ocr-label">Téléphone</span>
+      <input class="ocr-saisie" id="monTel" inputmode="tel" value="${esc(telAffiche(moi.telephone) || '')}">
+      <span class="ocr-aide">Visible par l’équipe. Sert à te joindre, jamais transmis aux clients.</span></label>
+    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-tel style="margin-bottom:var(--ocr-e5)">Enregistrer mon numéro</button>
 
     <div class="ocr-surtitre">Mot de passe</div>
     <label class="ocr-champ" style="margin-top:var(--ocr-e3)"><span class="ocr-label">Nouveau mot de passe</span>
@@ -4318,6 +4408,18 @@ async function boiteCompte() {
     fPhoto.value = '';
   });
 
+  v.querySelector('[data-tel]').addEventListener('click', async e => {
+    const tel = telPropre(v.querySelector('#monTel').value);
+    e.target.disabled = true;
+    const { error } = await sb.from('employes').update({ telephone: tel || null }).eq('id', moi.id);
+    e.target.disabled = false;
+    if (error) return toast(error.message, true);
+    moi.telephone = tel || null;
+    const i = equipe.findIndex(x => x.id === moi.id);
+    if (i > -1) equipe[i] = { ...equipe[i], telephone: moi.telephone };
+    memoVider();
+    toast(tel ? 'Numéro enregistré' : 'Numéro effacé');
+  });
   v.querySelector('[data-mdp]').addEventListener('click', async e => {
     const m1 = v.querySelector('#mdpNouveau').value, m2 = v.querySelector('#mdpConfirme').value;
     if (m1.length < 8) return toast('8 caractères minimum.', true);
@@ -5259,8 +5361,7 @@ async function enregistrer() {
     await rendre();
   } catch (ex) {
     const m = ex.message || 'Enregistrement impossible';
-    if (/JOURNEE_SIGNEE/.test(m))
-      toast(m.replace('JOURNEE_SIGNEE : ', '') + '. Rien n’est perdu : garde cet écran ouvert.', true);
+    if (/JOURNEE_SIGNEE/.test(m)) boiteDemanderReouverture(form.jour, m);
     else toast(m, true);
   } finally {
     enCours = false;
@@ -5571,8 +5672,9 @@ function calculerAnomalies(ps) {
 
 async function vueCloture(j) {
   const d = jourVu;
-  const [T, ps, sansP] = await Promise.all([
-    API.totaux(d), API.passages(d), API.sansPlaque(d).catch(() => [])]);
+  const [T, ps, sansP, ptsJ] = await Promise.all([
+    API.totaux(d), API.passages(d), API.sansPlaque(d).catch(() => []),
+    API.pointagesJour(d).catch(() => [])]);
   const aValider = sansP.filter(x => !x.sans_plaque_valide_le);
 
   if (j.statut === 'ouverte' && ps.length) {
@@ -5680,6 +5782,37 @@ async function vueCloture(j) {
         ${aValider.length ? `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="btnValiderSP"
           style="margin-top:var(--ocr-e4)">Valider ${aValider.length > 1 ? 'ces ' : 'ce '}${
             pluriel(aValider.length, 'lavage')} sans plaque</button>` : ''}
+      </div>`;
+    })()}
+
+    ${(() => {
+      /* L'ÉQUIPE, À LA CLÔTURE (14/08) — départs non pointés et pauses non
+         prises. Rien de bloquant : « si ils ne la prennent pas c'est pas grave
+         à mon niveau, mais on doit voir quelque part qu'ils n'ont pas pris de
+         pause » (Edwin). C'est ici qu'on le voit, une fois par jour. */
+      const lignes = ptsJ.map(pt => ({ pt, ecarts: ecartsPointage(pt) }))
+                         .filter(x => x.ecarts.length);
+      const absents = equipePointage().filter(e =>
+        !ptsJ.some(x => x.employe_id === e.id && x.arrivee) &&
+        !(e.repos_jour != null && e.repos_jour === jourSemaineDe(d)));
+      if (!lignes.length && !absents.length) return '';
+      const nomDe = id => (equipe.find(e => e.id === id) || {}).nom || '—';
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
+        <div class="ocr-surtitre">L’équipe ce jour-là</div>
+        <p class="ocr-mini" style="margin:9px 0 var(--ocr-e3)">Pour information — rien de tout ceci
+          n’empêche de clôturer.</p>
+        ${lignes.map(({ pt, ecarts }) => `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--ocr-sep)">
+          <span style="min-width:0;flex:1">
+            <span style="font-weight:600;display:block">${esc(nomDe(pt.employe_id))}
+              <span class="ocr-mini" style="font-weight:400">· ${heureCourte(pt.arrivee) || '—'}${
+                pt.depart ? ' → ' + heureCourte(pt.depart) : ''}</span></span>
+            ${ecarts.map(x => '<span style="display:block">' + pastilleEcart(x) + '</span>').join('')}
+          </span>
+        </div>`).join('')}
+        ${absents.length ? `<p class="ocr-petit" style="margin:10px 0 0">
+          <span style="color:var(--ocr-ambre)">⚠ Jamais pointé ce jour-là :</span>
+          ${esc(absents.map(e => e.nom).join(', '))}.</p>` : ''}
       </div>`;
     })()}
 
@@ -5982,6 +6115,48 @@ function minutesPauses(p) {
   }, 0);
 }
 const pauseEnCours = p => pausesDe(p).find(x => !x.fin) || null;
+
+/* ── LES RÈGLES DE LA JOURNÉE (14/08) ──────────────────────────────────────
+   « Les horaires d'ouverture c'est 9 h – 19 h. Les employés doivent être là
+     entre 8 h 30 et 9 h pour débuter la journée. Et après ils finissent après
+     avoir fait le nettoyage. » — « Une pause par jour est obligatoire 45 min.
+     Si ils ne la prennent pas c'est pas grave mon niveau, mais on doit voir
+     quelque part qu'ils n'ont pas pris de pause. » (Edwin)
+   Donc : rien ne bloque jamais un pointage. Tout se VOIT.
+   Les valeurs viennent des réglages en base — modifiables sans republier. */
+const REGLE = () => ({
+  arriveeFin: (REGLAGES && REGLAGES.arrivee_fin) ? OCR.hm2min(String(REGLAGES.arrivee_fin).slice(0, 5))
+                                                 : OCR.CONFIG.arriveeFin,
+  arriveeDebut: (REGLAGES && REGLAGES.arrivee_debut) ? OCR.hm2min(String(REGLAGES.arrivee_debut).slice(0, 5))
+                                                     : OCR.CONFIG.arriveeDebut,
+  pause: (REGLAGES && REGLAGES.pause_min != null) ? Number(REGLAGES.pause_min) : OCR.CONFIG.pauseMin,
+  ouverture: (REGLAGES && REGLAGES.ouverture) ? String(REGLAGES.ouverture).slice(0, 5) : '09:00',
+  fermeture: (REGLAGES && REGLAGES.fermeture) ? String(REGLAGES.fermeture).slice(0, 5) : '19:00',
+});
+
+/* Ce qui cloche dans une journée pointée — chaque anomalie porte son mot.
+   Le jour EN COURS ne reproche rien : la pause n'est pas « non prise »
+   à 10 h du matin, elle est simplement « pas encore prise ». */
+function ecartsPointage(pt) {
+  const R = REGLE(), out = [];
+  if (!pt || !pt.arrivee) return out;
+  const enCours = pt.jour === auj() && !pt.depart;
+  const arr = OCR.hm2min(heureCourte(pt.arrivee));
+  if (arr != null && arr > R.arriveeFin)
+    out.push({ cle: 'retard', mot: 'arrivé à ' + heureCourte(pt.arrivee) +
+      ' (attendu avant ' + OCR.min2hm(R.arriveeFin) + ')', ton: 'ambre' });
+  const pz = minutesPauses(pt);
+  if (!enCours) {
+    if (pz === 0) out.push({ cle: 'sans-pause', mot: 'aucune pause prise', ton: 'ambre' });
+    else if (pz < R.pause) out.push({ cle: 'pause-courte',
+      mot: 'pause de ' + fmtDuree(pz) + ' (' + R.pause + ' min attendues)', ton: 'ambre' });
+  }
+  if (!pt.depart && pt.jour < auj())
+    out.push({ cle: 'sans-depart', mot: 'départ jamais pointé', ton: 'rouge' });
+  return out;
+}
+const pastilleEcart = e => '<span class="ocr-mini" style="color:var(--ocr-' +
+  (e.ton === 'rouge' ? 'erreur' : 'ambre') + ')">⚠ ' + esc(e.mot) + '</span>';
 /* Heures travaillées = présence − pauses. C'est ce chiffre qui compte. */
 const minutesPointage = p => (p && p.arrivee && p.depart)
   ? Math.max(0, OCR.hm2min(heureCourte(p.depart)) - OCR.hm2min(heureCourte(p.arrivee)) - minutesPauses(p))
@@ -6330,12 +6505,13 @@ function boiteCorrectionPointage(emp, p, d) {
    correction. */
 async function vuePointage() {
   const jePointe = equipePointage().some(e => e.id === moi.id);
-  const [mes, obj, totJour, sigJour, ptsJour] = await Promise.all([
+  const [mes, obj, totJour, sigJour, ptsJour, ptsMois] = await Promise.all([
     jePointe ? API.pointagesPeriode(debutMois(), auj(), moi.id) : Promise.resolve([]),
     API.objectifs().catch(() => null),
     API.totaux(auj()),
     API.signaturesDepuis(auj()).catch(() => []),
     peutCorriger() ? API.pointagesJour(auj()).catch(() => []) : Promise.resolve([]),
+    peutCorriger() ? API.pointagesPeriode(debutMois(), auj(), null).catch(() => []) : Promise.resolve([]),
   ]);
   const auJour = mes.find(x => x.jour === auj());
   const duree = minutesPointage(auJour);
@@ -6373,7 +6549,12 @@ async function vuePointage() {
           : auJour.depart ? 'Journée de ' + fmtDuree(duree) + ' — bonne soirée !'
           : enPause ? '☕ En pause depuis ' + heureCourte(enPause.debut)
           : 'Présent — bon travail !'}
-        ${auJour && minutesPauses(auJour) > 0 ? '<br><span class="ocr-mini">Pauses du jour : ' + fmtDuree(minutesPauses(auJour)) + '</span>' : ''}
+        ${auJour && minutesPauses(auJour) > 0
+          ? '<br><span class="ocr-mini">Pause du jour : ' + fmtDuree(minutesPauses(auJour)) +
+            ' sur ' + REGLE().pause + ' min' + (minutesPauses(auJour) >= REGLE().pause ? ' ✓' : '') + '</span>'
+          : auJour && auJour.arrivee && !auJour.depart
+          ? '<br><span class="ocr-mini">Pause de ' + REGLE().pause + ' min à prendre dans la journée</span>' : ''}
+        ${auJour ? ecartsPointage(auJour).map(x => '<br>' + pastilleEcart(x)).join('') : ''}
       </div>
       ${!auJour || !auJour.arrivee
         ? `<button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-pointer="arrivee" style="font-size:16px;padding:16px">🟢 J’arrive</button>`
@@ -6382,13 +6563,17 @@ async function vuePointage() {
              : `<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-pause="debut" style="font-size:16px;padding:16px;margin-bottom:9px">☕ Je prends ma pause</button>`) : ''}
            <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-pointer="depart" style="font-size:16px;padding:16px">
             ${auJour.depart ? 'Je repars (remplace ' + heureCourte(auJour.depart) + ')' : '🔴 Je pars'}</button>`}
-      <p class="ocr-mini" style="margin:12px 0 0">${navigator.onLine
+      <p class="ocr-mini" style="margin:12px 0 0">Atelier ouvert de ${REGLE().ouverture} à ${REGLE().fermeture} ·
+        équipe attendue entre ${OCR.min2hm(REGLE().arriveeDebut)} et ${OCR.min2hm(REGLE().arriveeFin)}.
+        Le départ se pointe après le nettoyage.</p>
+      <p class="ocr-mini" style="margin:8px 0 0">${navigator.onLine
         ? 'L’heure enregistrée est celle du serveur, pas celle du téléphone.' +
           (REGLAGES && REGLAGES.lat != null ? ' Le pointage vérifie que tu es à l’atelier.' : '')
         : '📶 Hors ligne — ton pointage est gardé avec son heure exacte et partira tout seul.'}</p>
     </div>` : ''}
 
     ${peutCorriger() ? carteEquipePointage(ptsJour) : ''}
+    ${peutCorriger() ? carteEquipeMois(ptsMois) : ''}
 
     ${obj && (obj.jour.ca || obj.jour.signatures) ? `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
       <div class="ocr-surtitre">Objectif du jour — toute l’équipe</div>
@@ -6428,6 +6613,45 @@ async function vuePointage() {
   if (retour) brancherRetourDirection();
 }
 
+/* ── L'ÉQUIPE SUR LE MOIS (14/08) ──────────────────────────────────────────
+   Guénolé est directeur financier ET ressources humaines : il lui faut le mois
+   entier en un écran, pas une ligne par jour à recomposer de tête. Jours
+   travaillés, heures, retards, journées sans pause — et les départs jamais
+   pointés, qui rendent les heures fausses. */
+function carteEquipeMois(pts) {
+  const R = REGLE();
+  const lignes = equipePointage().map(e => {
+    const p = pts.filter(x => x.employe_id === e.id && x.arrivee);
+    const heures = p.reduce((s, x) => s + (minutesPointage(x) || 0), 0);
+    const compte = cle => p.filter(x => ecartsPointage(x).some(y => y.cle === cle)).length;
+    return { e, jours: p.length, heures,
+             retards: compte('retard'),
+             sansPause: compte('sans-pause') + compte('pause-courte'),
+             sansDepart: compte('sans-depart') };
+  }).filter(l => l.jours || l.sansDepart);
+  if (!lignes.length) return '';
+  return `<div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+    <div class="ocr-surtitre">L’équipe ce mois</div>
+    <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Depuis le 1er du mois. Les heures excluent
+      les pauses. Une journée sans départ pointé ne compte aucune heure — c’est ce qu’il faut corriger
+      en premier.</p>
+    ${lignes.map(l => `
+      <div style="display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
+        ${avatar(l.e, 34)}
+        <span style="min-width:0;flex:1">
+          <span style="font-weight:600;display:block">${esc(l.e.nom)}</span>
+          <span class="ocr-mini">${pluriel(l.jours, 'jour')} · ${fmtDuree(l.heures)}</span>
+          ${l.sansDepart ? '<span class="ocr-mini" style="display:block;color:var(--ocr-erreur)">⚠ ' +
+            pluriel(l.sansDepart, 'départ') + ' jamais pointé' + (l.sansDepart > 1 ? 's' : '') + '</span>' : ''}
+          ${l.retards ? '<span class="ocr-mini" style="display:block;color:var(--ocr-ambre)">' +
+            pluriel(l.retards, 'arrivée') + ' après ' + OCR.min2hm(R.arriveeFin) + '</span>' : ''}
+          ${l.sansPause ? '<span class="ocr-mini" style="display:block;color:var(--ocr-ambre)">' +
+            pluriel(l.sansPause, 'journée') + ' sans les ' + R.pause + ' min de pause</span>' : ''}
+        </span>
+      </div>`).join('')}
+  </div>`;
+}
+
 /* La carte du manager : toute l'équipe, chacun avec ses boutons. Pointer pour
    quelqu'un est inscrit au journal au nom de celui qui appuie. */
 function carteEquipePointage(pts) {
@@ -6439,7 +6663,8 @@ function carteEquipePointage(pts) {
       <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" id="btnAbsences">Absences</button>
     </div>
     <p class="ocr-mini" style="margin:8px 0 var(--ocr-e3)">Quelqu’un a oublié de pointer ? Fais-le pour lui —
-      c’est enregistré à ton nom.</p>
+      c’est enregistré à ton nom. Arrivée attendue entre ${OCR.min2hm(REGLE().arriveeDebut)} et
+      ${OCR.min2hm(REGLE().arriveeFin)} · pause de ${REGLE().pause} min par jour.</p>
     ${equipePointage().map(e => {
       const enRepos = e.repos_jour != null && e.repos_jour === js;
       const abs = absenceDe(e.id);
@@ -6460,6 +6685,9 @@ function carteEquipePointage(pts) {
           <span style="font-weight:600;display:block">${esc(e.nom)}${e.id === moi.id ? ' <span class="ocr-mini">(moi)</span>' : ''}
             ${marque ? '<span class="ocr-pastille ocr-pastille--alerte" style="margin-left:6px">hors ligne</span>' : ''}</span>
           <span class="ocr-mini">${esc(etat)}</span>
+          ${/* Ce qui manque se voit sur la ligne de l'employé, pas dans un
+               rapport que personne n'ouvre (Edwin, 14/08). */''}
+          ${ecartsPointage(p).map(x => '<span style="display:block">' + pastilleEcart(x) + '</span>').join('')}
         </span>
         <span style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
           ${abs ? '' : !p || !p.arrivee
@@ -8930,6 +9158,36 @@ const MOTIFS_RETARD = [
   ['Oubli de saisie',      'Lavage fait, saisie oubliée'],
 ];
 
+/* Une porte fermée doit toujours montrer la sonnette. Quand la journée est
+   signée, on ne laisse pas Samuel devant un refus : on lui donne le geste
+   suivant, et la direction voit la demande dès son prochain écran. */
+function boiteDemanderReouverture(jour, message) {
+  const v = modale(`
+    <h3 class="ocr-h2">Journée déjà signée</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">
+      ${esc(String(message || '').replace('JOURNEE_SIGNEE : ', ''))}<br><br>
+      Tu peux <strong style="color:var(--ocr-blanc)">demander sa réouverture</strong> : la demande
+      apparaît tout de suite sur l'écran de la direction, avec ton nom et ce que tu veux ajouter.</p>
+    <label class="ocr-champ"><span class="ocr-label" style="color:var(--ocr-rouge-texte)">Ce qu’il faut ajouter — obligatoire</span>
+      <input class="ocr-saisie" id="drMotif" placeholder="2 lavages Express oubliés le 12/08"></label>
+    <div style="display:flex;gap:9px;align-items:center">
+      <button class="ocr-btn ocr-btn--fantome" data-fermer>Plus tard</button>
+      <div style="flex:1"></div>
+      <button class="ocr-btn ocr-btn--primaire" data-ok disabled>Envoyer la demande</button></div>`);
+  const c = v.querySelector('#drMotif');
+  c.addEventListener('input', () => { v.querySelector('[data-ok]').disabled = !c.value.trim(); });
+  v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true; e.target.textContent = 'Envoi…';
+    const { data, error } = await API.demanderReouverture(jour, c.value.trim());
+    if (error) { e.target.disabled = false; e.target.textContent = 'Réessayer'; return toast(error.message, true); }
+    const r = Array.isArray(data) ? data[0] : data;
+    fermerModale();
+    toast(r && r.deja ? 'Une demande était déjà en attente pour ce jour — la direction l’a.'
+                      : 'Demande envoyée — la direction la voit sur son écran.');
+  });
+}
+
 function boiteJourPasse(j) {
   const propositions = [1, 2, 3].map(k => decaleJour(auj(), -k));
   const v = modale(`
@@ -9453,6 +9711,10 @@ async function vueDirection() {
     API.totauxDepuis(decaleJour(d, -13)),
     API.journal(6),
   ]);
+  /* Les demandes en attente passent AVANT le chiffre d'affaires sur cet écran :
+     quelqu'un est bloqué et attend une réponse, c'est plus urgent que de savoir
+     combien on a fait ce matin. */
+  const demandes = await API.demandesEnAttente().catch(() => []);
 
   const actifs = ps.filter(p => !p.annule);
   const enCoursV = actifs.filter(p => p.statut_atelier === 'en_cours');
@@ -9500,6 +9762,21 @@ async function vueDirection() {
   ];
 
   $('#vue').innerHTML = `
+    ${demandes.length ? `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(245,166,35,.55)">
+      <div class="ocr-surtitre" style="color:var(--ocr-ambre)">${pluriel(demandes.length, 'demande')} en attente</div>
+      ${demandes.map(x => `
+        <div style="padding:11px 0;border-bottom:1px solid var(--ocr-sep)">
+          <div style="font-weight:600">${esc(x.demande_par_nom)} demande la réouverture du ${jourLong(x.journee)}</div>
+          <div class="ocr-petit" style="margin:4px 0 2px">« ${esc(x.motif)} »</div>
+          <div class="ocr-mini">Demandé le ${jourBref(String(x.demande_le).slice(0, 10))} à ${
+            esc(String(x.demande_le).slice(11, 16))}</div>
+          <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap">
+            <button class="ocr-btn ocr-btn--primaire ocr-btn--petit" data-dok="${x.id}">Réouvrir la journée</button>
+            <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-dno="${x.id}"
+              style="color:var(--ocr-argent-2)">Refuser…</button>
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:var(--ocr-e3)">
       <div class="ocr-surtitre">Pilotage</div>
       <span style="flex:1"></span>
@@ -9599,6 +9876,33 @@ async function vueDirection() {
 
   const bo = $('#btnObjectifs');
   if (bo) bo.addEventListener('click', () => boiteObjectifs(obj));
+  $('#vue').querySelectorAll('[data-dok]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true; b.textContent = 'Réouverture…';
+    const { error } = await API.repondreDemande(b.dataset.dok, true, null);
+    if (error) { b.disabled = false; b.textContent = 'Réessayer'; return toast(error.message, true); }
+    toast('Journée réouverte — l’équipe peut saisir. Pense à resigner ensuite.');
+    memoVider(); rendre();
+  }));
+  $('#vue').querySelectorAll('[data-dno]').forEach(b => b.addEventListener('click', () => {
+    const v = modale(`<h3 class="ocr-h2">Refuser la demande</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Ta réponse est conservée et visible
+        par celui qui a demandé. Dis-lui quoi faire à la place.</p>
+      <label class="ocr-champ"><span class="ocr-label">Réponse</span>
+        <input class="ocr-saisie" id="dnoTexte" placeholder="Saisis-les sur aujourd’hui, on régularisera"></label>
+      <div style="display:flex;gap:9px;align-items:center">
+        <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-ok>Refuser</button></div>`);
+    v.querySelector('[data-fermer]').addEventListener('click', fermerModale);
+    v.querySelector('[data-ok]').addEventListener('click', async e => {
+      e.target.disabled = true;
+      const { error } = await API.repondreDemande(b.dataset.dno, false,
+        v.querySelector('#dnoTexte').value.trim() || null);
+      if (error) { e.target.disabled = false; return toast(error.message, true); }
+      fermerModale(); toast('Demande refusée — la réponse est enregistrée');
+      memoVider(); rendre();
+    });
+  }));
   $('#vue').querySelectorAll('[data-dir]').forEach(b => b.addEventListener('click', async () => {
     const id = b.dataset.dir;
     if (['bilan', 'cloture', 'journal', 'pointage', 'catalogue', 'temps', 'import'].includes(id))
