@@ -3289,6 +3289,12 @@ function creerClientDemo() {
       if (bloq) throw new Error(bloq + ' anomalie(s) critique(s) non traitée(s)');
       const sp = sansPlaque().filter(r => r.journee === a.p_date && !r.sans_plaque_valide_le).length;
       if (sp) throw new Error(sp + ' lavage(s) sans plaque à valider avant de clôturer');
+      /* Comme le déclencheur trg_cloture_chrono en base (14/08) : on ne signe
+         pas une journée dont un véhicule est encore « à démarrer ». */
+      const enCoursJ = D.passages.filter(x => x.journee === a.p_date && !x.annule
+        && !['pret', 'livre'].includes(x.statut_atelier)).length;
+      if (enCoursJ) throw new Error(enCoursJ + ' lavage(s) pas encore terminé(s) — chaque véhicule doit être ' +
+        '« Terminé », ou soldé par « Terminé sans chrono… » avec son motif, avant de clôturer');
       const j = D.journees.find(x => x.date === a.p_date) || { date: a.p_date };
       /* La note de clôture est ce qui distingue une journée « vérifiée et vide »
          d'une journée « pas encore faite » — la base la garde depuis toujours,
@@ -3456,7 +3462,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v62';
+const VERSION = 'v63';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -6550,6 +6556,9 @@ async function vueCloture(j) {
     const calc = calculerAnomalies(ps).map(a => ({ ...a, journee: d }));
     if (calc.length) { const { error } = await API.poserAnomalies(calc); if (error) console.warn(error); }
   }
+  /* Les lavages pas encore terminés : calculés ici parce que DEUX cartes en
+     dépendent — celle du chrono et celle de la signature. */
+  const pasFinisCl = ps.filter(x => !x.annule && !estFini(x));
   const anos = (await API.anomalies(d)).sort((a, b) =>
     (a.traitee - b.traitee) || (a.gravite === 'critique' ? -1 : 1));
   const bloquantes = anos.filter(a => !a.traitee && a.gravite === 'critique').length;
@@ -6610,11 +6619,22 @@ async function vueCloture(j) {
       if (!pasFinis.length && !sansChrono.length) return '';
       const nomV = p => [(p.vehicules || {}).marque, (p.vehicules || {}).modele].filter(Boolean).join(' ')
                      || (p.vehicules || {}).immatriculation || p.reference;
-      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:rgba(245,166,35,.42)">
-        <div class="ocr-surtitre">Chrono des lavages — à surveiller</div>
-        ${pasFinis.length ? `<p class="ocr-petit" style="margin:10px 0 0">🚗 <strong>${
-          pluriel(pasFinis.length, 'véhicule')} pas encore terminé${pasFinis.length > 1 ? 's' : ''}</strong> :
-          ${esc(pasFinis.map(nomV).join(', '))} — ▶ Commencer puis ✓ Terminé, ou « Terminé sans chrono… ».</p>` : ''}
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:${
+        pasFinis.length ? 'rgba(232,82,78,.5)' : 'rgba(245,166,35,.42)'}">
+        <div class="ocr-surtitre">Chrono des lavages${pasFinis.length ? ' — à finir avant de signer' : ' — à surveiller'}</div>
+        ${/* BLOQUANT depuis le 14/08 (Edwin : « il ne faut pas qu'on puisse
+             clôturer si on n'a pas terminé aussi les timings »). Un lavage
+             était resté « à démarrer » 421 minutes, et la journée a quand même
+             été signée : un avertissement qu'on peut franchir n'est pas une
+             règle. Bloquer est acceptable ICI, et seulement ici, parce que la
+             sortie tient en un appui — « Terminé sans chrono… », avec motif. */''}
+        ${pasFinis.length ? `<p class="ocr-petit" style="margin:10px 0 var(--ocr-e3)">⛔ <strong
+          style="color:var(--ocr-erreur)">${pluriel(pasFinis.length, 'véhicule')} pas encore terminé${
+          pasFinis.length > 1 ? 's' : ''}</strong> : ${esc(pasFinis.map(nomV).join(', '))}.<br>
+          Sur l’écran Journée : ▶ Commencer puis ✓ Terminé — ou « Terminé sans chrono… » si le chrono
+          n’a jamais tourné. <strong style="color:var(--ocr-blanc)">La clôture attend ${
+          pasFinis.length > 1 ? 'ces véhicules' : 'ce véhicule'}.</strong></p>
+          <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="btnVersJourneeCl">Aller les solder</button>` : ''}
         ${sansChrono.length ? `<p class="ocr-petit" style="margin:10px 0 0">⏱ <strong>${sansChrono.length} terminé(s) sans chrono complet</strong> :
           ${esc(sansChrono.map(nomV).join(', '))} — les boutons ▶ / ✓ n'ont pas été appuyés, ces lavages ne compteront pas dans les temps du Bilan.</p>` : ''}
       </div>`;
@@ -6783,16 +6803,20 @@ async function vueCloture(j) {
         ${a.traitee ? '' : '<div class="ac"><button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-justifier="' + a.id + '">Justifier</button></div>'}
       </div>`).join('') : '<div class="ocr-carte vide">Aucune anomalie détectée.</div>'}
 
-    <div class="ocr-carte" style="margin-top:var(--ocr-e5);border-color:${bloquantes ? 'rgba(232,82,78,.45)' : 'rgba(214,32,30,.35)'}">
+    <div class="ocr-carte" style="margin-top:var(--ocr-e5);border-color:${bloquantes || pasFinisCl.length ? 'rgba(232,82,78,.45)' : 'rgba(214,32,30,.35)'}">
       <div class="ocr-h3">Validation de la journée</div>
-      <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">${bloquantes
+      <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">${pasFinisCl.length
+        ? '<strong style="color:var(--ocr-erreur)">' + pluriel(pasFinisCl.length, 'lavage') +
+          ' pas encore terminé</strong> — un véhicule « à démarrer » depuis des heures fausse tous les temps du Bilan. Solde-le, même sans chrono, et reviens.'
+        : bloquantes
         ? '<strong style="color:var(--ocr-erreur)">' + bloquantes + ' anomalie(s) bloquante(s)</strong> doivent être encaissées ou justifiées.'
         : aValider.length
         ? '<strong style="color:var(--ocr-ambre)">' + pluriel(aValider.length, 'lavage') +
           ' sans plaque</strong> ' + (aValider.length > 1 ? 'attendent' : 'attend') + ' ta confirmation, juste au-dessus.'
         : 'La validation fige définitivement la journée. Plus aucune saisie ne sera possible, y compris depuis la base.'}</p>
-      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnCloturer" ${bloquantes || aValider.length ? 'disabled' : ''}>
-        ${bloquantes ? 'Clôture bloquée'
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnCloturer" ${bloquantes || aValider.length || pasFinisCl.length ? 'disabled' : ''}>
+        ${pasFinisCl.length ? 'Termine d’abord ' + (pasFinisCl.length > 1 ? 'les lavages' : 'le lavage')
+          : bloquantes ? 'Clôture bloquée'
           : aValider.length ? 'Valide d’abord ' + (aValider.length > 1 ? 'les lavages' : 'le lavage') + ' sans plaque'
           : 'Valider et clôturer la journée'}</button>
     </div>`;
@@ -6800,6 +6824,8 @@ async function vueCloture(j) {
   brancherRetourDirection();
   brancherJour();
   brancherFinDeJournee(d);
+  const bvj = $('#btnVersJourneeCl');
+  if (bvj) bvj.addEventListener('click', () => allerOnglet('journee'));
   $('#vue').querySelectorAll('[data-justifier]').forEach(b => b.addEventListener('click', () => {
     const v = modale(`<h3 class="ocr-h2">Justifier</h3>
       <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">La justification est horodatée et conservée.</p>
