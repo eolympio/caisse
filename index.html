@@ -442,21 +442,28 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ---- LE RIDEAU D'OUVERTURE ---- */
-#rideau{position:fixed;inset:0;z-index:9999;background:var(--ocr-noir);
+/* LE RIDEAU NE SUIT PAS LE THÈME (14/08, v62). Il prenait --ocr-noir, qui vaut
+   #F5F5F6 en thème clair : le fond devenait blanc et la tuile noire de
+   l'emblème flottait au milieu, seule. Un écran de marque n'est pas un écran
+   d'application — il est noir laqué dans les deux thèmes, comme le logo. */
+#rideau{position:fixed;inset:0;z-index:9999;background:#0A0A0B;
   isolation:isolate;   /* le fond du rideau devient la toile du fondu « screen » */
   display:grid;place-items:center;opacity:1;
   transition:opacity .30s cubic-bezier(.4,0,.2,1)}
 #rideau.parti{opacity:0;pointer-events:none}
 .rid-bloc{display:flex;flex-direction:column;align-items:center;gap:16px;
   padding:0 24px;text-align:center}
+/* L'emblème est un PNG sur fond noir : posé sur le rideau, sa tuile se voyait
+   comme un rectangle plus clair. « screen » laisse tomber le noir et ne garde
+   que la lumière — le trait semble tracé à même l'écran.
+   Le fondu est porté par le CADRE, pas par l'image : sur l'image, il se
+   heurtait au contexte d'empilement créé par overflow + border-radius, et la
+   tuile restait visible. C'est une opération de composition, faite par la puce
+   graphique, sur un seul élément de 78 px. */
 .rid-em{position:relative;width:78px;height:78px;overflow:hidden;border-radius:20px;
+  mix-blend-mode:screen;
   animation:ridEm .44s cubic-bezier(.2,.8,.3,1) both}
-/* L'emblème est un PNG sur fond noir : posé sur le rideau, son cadre se voyait
-   comme une tuile plus claire. « screen » laisse tomber le noir et ne garde que
-   la lumière — le trait semble tracé à même l'écran. C'est une opération de
-   composition, faite par la puce graphique, sur un seul élément de 78 px. */
-.rid-em img{width:100%;height:100%;object-fit:contain;display:block;
-  mix-blend-mode:screen}
+.rid-em img{width:100%;height:100%;object-fit:contain;display:block}
 /* La « brillance » : une lame de lumière qui traverse l'emblème. UNE fois.
    C'est un translateX sur un petit élément — le coût d'une image qui bouge,
    pas celui d'un dégradé recalculé. */
@@ -470,10 +477,10 @@
    qu'un translateY dans un cadre qui déborde. */
 .rid-mot{overflow:hidden;height:1.3em}
 .rid-mot span{display:block;font:300 18px/1.3 var(--ocr-titre);letter-spacing:.36em;
-  color:var(--ocr-blanc);padding-left:.36em;
+  color:#F4F4F5;padding-left:.36em;
   animation:ridMonte .42s cubic-bezier(.2,.8,.3,1) .12s both}
-.rid-sig{font:500 9px/1.4 var(--ocr-titre);letter-spacing:.40em;color:var(--ocr-argent-2);
-  padding-left:.40em;animation:ridDoux .34s ease .24s both}
+.rid-sig{font:500 9px/1.4 var(--ocr-titre);letter-spacing:.40em;
+  color:#6E7075;padding-left:.40em;animation:ridDoux .34s ease .24s both}
 @keyframes ridEm{from{opacity:0;transform:scale(.84)}}
 @keyframes ridEclat{from{transform:translateX(0) rotate(16deg)}
                     to{transform:translateX(420%) rotate(16deg)}}
@@ -488,8 +495,13 @@
    c'est un péage. Quand l'app a été ouverte il y a moins de trois heures, il
    ne reste que l'emblème et un fondu : on ne perd pas la marque, on perd
    l'attente. */
-.rid-bref .rid-fil,.rid-bref .rid-mot,.rid-bref .rid-sig,.rid-bref .rid-em i{display:none}
-.rid-bref .rid-em{animation:ridDoux .22s ease both}
+.rid-bref .rid-fil,.rid-bref .rid-sig,.rid-bref .rid-em i{display:none}
+/* Un emblème seul au milieu d'un écran, ce n'est pas une marque, c'est un
+   fichier perdu (constat d'Edwin le 14/08, capture à l'appui). La version
+   brève garde donc l'emblème ET le nom — elle enlève la chorégraphie, pas
+   l'identité : tout entre d'un seul fondu, en 220 ms. */
+.rid-bref .rid-em,.rid-bref .rid-mot span{animation:ridDoux .22s ease both}
+.rid-bref .rid-bloc{gap:14px}
 /* Le fondu de sortie aussi : c'est lui qui portait tout le coût du rideau bref
    (mesuré — 300 ms de fondu sur 240 ms de geste, l'inverse du bon sens). */
 #rideau.rid-bref{transition-duration:.16s}
@@ -3444,7 +3456,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v61';
+const VERSION = 'v62';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
