@@ -1046,6 +1046,26 @@ const CONFIG = {
    ───────────────────────────────────────────────────────────── */
 const gabarit    = id => GABARITS.find(g => g.id === id) || null;
 const prestation = id => PRESTATIONS.find(p => p.id === id) || null;
+
+/* ── QUOI PROPOSER POUR CE VÉHICULE (14/08) ────────────────────────────────
+   « Lorsqu'on choisit une voiture dans la saisie, je ne comprends pas pourquoi
+     on voit encore les lavages motos, sur devis — ce n'est pas bon. » (Edwin)
+   Un lavage moto n'a rien à faire devant une berline, et l'inverse non plus.
+   Les afficher « Sur devis » laissait croire qu'on pouvait les vendre.
+   La CAMIONNETTE, elle, garde les lavages voiture : leur prix se négocie au
+   cas par cas, mais le service existe — Samuel doit pouvoir l'enregistrer.
+   La famille « devis » (moteur, polissage, céramique) n'est plus proposée nulle
+   part : ces services ne sont pas encore vendus, et ils encombraient chaque
+   écran. Pour les remettre : leur donner la famille 'lavage' et des prix. */
+function prestationsPour(gabaritId) {
+  const moto = gabaritId === 'moto';
+  return PRESTATIONS.filter(p => p.famille !== 'devis' && (p.famille === 'moto') === moto);
+}
+/* Celles qui ont un PRIX FERME — pour ce qui se réserve et s'encaisse d'avance
+   (agenda, app cliente). On ne fait pas payer un acompte sur un devis. */
+function prestationsTarifees(gabaritId) {
+  return prestationsPour(gabaritId).filter(p => prix(p.id, gabaritId) != null);
+}
 const option     = id => OPTIONS.find(o => o.id === id) || null;
 const service    = id => SERVICES.find(s => s.id === id) || null;
 
@@ -1665,6 +1685,7 @@ const API = {
   fcfa, prix, prixTexte, prixDes,
   duree, dureeTexte, dureeFourchette,
   min2hm, hm2min, creneaux, occupation,
+  prestationsPour, prestationsTarifees,
   optionsPour, total, acompte,
   carnet, prixCarnet, prixCarnetUnite, economieCarnet,
   recetteMensuelleCarnet, heuresCarnet, porteursPourCouvrir,
@@ -3083,7 +3104,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v52';
+const VERSION = 'v53';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -4934,7 +4955,6 @@ async function vueSaisie(j) {
   }
   const T = totalForm();
   const opts = form.prestation ? OCR.optionsPour(form.prestation) : [];
-  const familles = [['lavage', 'Lavages voiture'], ['moto', 'Motos'], ['devis', 'Sur devis']];
 
   $('#vue').innerHTML = `
   ${form.reservation ? `<div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e4)"><span>◷</span><div>
@@ -5097,19 +5117,18 @@ async function vueSaisie(j) {
     <div class="ocr-carte">
       <div class="ocr-surtitre">3 · Prestation</div>
       <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Tarif ${esc(OCR.gabarit(form.gabarit).nom)}</p>
-      ${familles.map(([f, titre]) => {
-        const l = OCR.PRESTATIONS.filter(p => p.famille === f);
-        if (!l.length) return '';
-        return `<div class="ocr-mini" style="margin:var(--ocr-e4) 0 8px;letter-spacing:.16em;text-transform:uppercase">${titre}</div>` +
-          l.map(p => {
-            const prix = OCR.prix(p.id, form.gabarit);
-            return `<button class="presta" data-presta="${p.id}" aria-pressed="${form.prestation === p.id}">
-              <span class="coche">${form.prestation === p.id ? '✓' : ''}</span>
-              <span style="min-width:0"><span class="nm">${esc(p.nom)}</span>
-                <span class="du">${esc(OCR.dureeTexte(OCR.duree(p.id, form.gabarit)) || OCR.dureeFourchette(p.id))}</span></span>
-              <span class="pr" ${prix == null ? 'style="color:var(--ocr-argent-2);font-weight:500"' : ''}>${OCR.fcfa(prix)}</span>
-            </button>`;
-          }).join('');
+      ${/* Seulement ce qui s'applique à CE véhicule (14/08) : plus de lavages
+           motos devant une berline, plus de « sur devis » qu'on ne vend pas.
+           Sans titre de famille — la liste est homogène, il n'y a plus rien à
+           distinguer. */''}
+      ${OCR.prestationsPour(form.gabarit).map(p => {
+        const prix = OCR.prix(p.id, form.gabarit);
+        return `<button class="presta" data-presta="${p.id}" aria-pressed="${form.prestation === p.id}">
+          <span class="coche">${form.prestation === p.id ? '✓' : ''}</span>
+          <span style="min-width:0"><span class="nm">${esc(p.nom)}</span>
+            <span class="du">${esc(OCR.dureeTexte(OCR.duree(p.id, form.gabarit)) || OCR.dureeFourchette(p.id))}</span></span>
+          <span class="pr" ${prix == null ? 'style="color:var(--ocr-argent-2);font-weight:500"' : ''}>${OCR.fcfa(prix)}</span>
+        </button>`;
       }).join('')}
 
       ${opts.length ? `<div class="ocr-mini" style="margin:var(--ocr-e5) 0 8px;letter-spacing:.16em;text-transform:uppercase">Options</div>` +
@@ -5316,8 +5335,14 @@ async function vueSaisie(j) {
   $('#vue').querySelectorAll('[data-gab]').forEach(b => b.addEventListener('click', () => {
     form.gabarit = b.dataset.gab;
     form.gabaritManuel = true; form.gabaritDeduit = null; form.gabaritDesaccord = null;   // le choix de l'humain gagne
-    if (form.prestation && OCR.prix(form.prestation, form.gabarit) === null &&
-        OCR.prestation(form.prestation).famille !== 'devis') { /* on garde, ce sera un devis */ }
+    /* Passer d'une voiture à une moto (ou l'inverse) rend la prestation choisie
+       impossible : elle disparaît de la liste, mais elle resterait dans le total
+       et se vendrait « sur devis ». On l'oublie — un choix qu'on ne voit plus
+       ne doit pas continuer à compter. Un lavage voiture reste valable sur une
+       camionnette : là, seul le prix se négocie. */
+    if (form.prestation && !OCR.prestationsPour(form.gabarit).some(x => x.id === form.prestation)) {
+      form.prestation = null; form.options = []; form.manuel = 0;
+    }
     vueSaisie(j);
   }));
   $('#vue').querySelectorAll('[data-presta]').forEach(b => b.addEventListener('click', () => {
@@ -7113,7 +7138,7 @@ async function vueAgenda() {
   const estAuj = d === auj();
   const libres = rdvOuvert ? creneauxLibres(resas, rdvForm.prestation, rdvForm.gabarit, d, nbActives) : [];
 
-  const prestasRdv = OCR.PRESTATIONS.filter(p => p.famille !== 'devis' && OCR.prix(p.id, rdvForm.gabarit) != null);
+  const prestasRdv = OCR.prestationsTarifees(rdvForm.gabarit);
 
   $('#vue').innerHTML = `
     <div class="barre-jour">
@@ -9183,7 +9208,7 @@ function demanderMotifSansPlaque() {
 async function boiteParcPartenaire(P, j) {
   if (!P) return;
   const emps = await API.employesDe(P.id).catch(() => []);
-  const motos = OCR.PRESTATIONS.filter(x => x.famille === 'moto');
+  const motos = OCR.prestationsPour('moto');
   /* PLUSIEURS TYPES DE LAVAGE DANS LA MÊME VENUE (14/08) — « certaines motos
      peuvent venir pour le lavage express et d'autres lavage signature, donc si
      par exemple il y a 3 motos, 2 en express 1 en signature, on doit pouvoir le
@@ -9468,7 +9493,7 @@ async function vueCahier() {
 
       <div class="ocr-label" style="margin:var(--ocr-e4) 0 8px">Prestation</div>
       <div style="display:flex;gap:7px;flex-wrap:wrap">
-        ${OCR.PRESTATIONS.map(x => `<button class="ocr-chip" data-cp="${x.id}"
+        ${OCR.prestationsPour(cahier.gabarit).map(x => `<button class="ocr-chip" data-cp="${x.id}"
           aria-pressed="${cahier.presta === x.id}">${esc(x.nom.replace(/^Lavage /, ''))}</button>`).join('')}
       </div>
 
