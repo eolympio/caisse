@@ -1978,12 +1978,14 @@ function creerClientDemo() {
 
   const fidelite = () => {
     const g = {};
-    D.passages.filter(p => FINI.includes(p.statut_atelier) && !p.annule).forEach(p => {
+    /* Express voiture ET moto = ½ tampon ; le parc partenaire ne cumule pas
+       (14/08) — copie fidèle de v_fidelite. */
+    D.passages.filter(p => FINI.includes(p.statut_atelier) && !p.annule && !p.parc_partenaire).forEach(p => {
       const c = D.clients.find(x => x.id === p.client_id); if (!c) return;
       const o = g[c.id] || (g[c.id] = { client_id: c.id, nom: c.nom, telephone: c.telephone,
                                         tampons: 0, passages: 0, dernier_passage: p.journee });
       D.passage_lignes.filter(l => l.passage_id === p.id && l.type === 'prestation').forEach(l => {
-        o.tampons += l.code === 'express' ? 0.5 : 1; o.passages++;
+        o.tampons += ['express', 'moto-express'].includes(l.code) ? 0.5 : 1; o.passages++;
       });
       if (p.journee > o.dernier_passage) o.dernier_passage = p.journee;
     });
@@ -3081,7 +3083,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v51';
+const VERSION = 'v52';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -8581,6 +8583,16 @@ function vueFicheClient() {
   const part = Math.min(100, Math.round(tampons / seuil * 100));
   const wa = numWhatsApp(c.telephone);
   const jd = joursDepuis(f ? f.dernier_passage : null);
+  /* LE CADEAU EST NOMMÉ (14/08, Edwin : « je veux être sûr que c'est le 10e
+     passage qui est gratuit en signature »). Un Signature de SON véhicule :
+     une moto gagne un Signature moto, une berline un Signature berline. Le
+     cadeau reste ainsi proportionnel à ce que le client a dépensé — ~10 %
+     dans les deux cas. On prend la taille de son véhicule le plus récent. */
+  const gabCadeau = (vs[0] || {}).gabarit || 'berline';
+  const prestaCadeau = gabCadeau === 'moto' ? 'moto-signature' : 'signature';
+  const cadeauNom = (OCR.prestation(prestaCadeau) || {}).nom || 'Lavage Signature';
+  const cadeauPrix = OCR.prix(prestaCadeau, gabCadeau);
+  const cadeauTxt = cadeauNom + (cadeauPrix != null ? ' · ' + OCR.fcfa(cadeauPrix) : '');
 
   // segments : lisibles d'un coup d'œil, calculés — jamais stockés
   const badges = [];
@@ -8590,11 +8602,12 @@ function vueFicheClient() {
   if (depense >= 50000) badges.push(['★ VIP', 'marque']);
   else if (ps.length >= 5) badges.push(['Fidèle', 'succes']);
   if (jd != null && jd > 30) badges.push(['À relancer · ' + jd + ' j', 'erreur']);
-  if (reste === 0 && ps.length) badges.push(['★ Lavage offert dû', 'succes']);
+  if (reste === 0 && ps.length) badges.push(['★ ' + cadeauNom + ' offert — à donner', 'succes']);
 
   // message de relance : personnalisé, avec la carotte de la fidélité
-  const resteTxt = reste > 0 && reste <= 3 ? ' Il ne vous manque que ' + String(reste).replace('.5', '½') +
-    ' passage(s) avant votre lavage offert !' : '';
+  const resteTxt = reste === 0 ? ' Bonne nouvelle : votre ' + cadeauNom + ' offert vous attend !'
+    : reste <= 3 ? ' Il ne vous manque que ' + String(reste).replace('.5', '½') +
+      ' lavage(s) avant votre ' + cadeauNom + ' offert !' : '';
   const msgRelance = 'Bonjour ' + (c.nom || '') + ', ici OCR Brillance ✦ Cela fait un moment que votre ' +
     ((vs[0] || {}).marque || 'véhicule') + ' ne nous a pas rendu visite.' + resteTxt +
     ' Nous sommes à la Station Oryx Saint Michel, 9 h – 21 h, 7 j/7. À très bientôt !';
@@ -8655,7 +8668,8 @@ function vueFicheClient() {
       <div class="tuile"><div class="lab">Total dépensé</div><div class="val">${OCR.fcfa(depense)}</div>
         <div class="sub">Ticket moyen ${OCR.fcfa(ps.length ? Math.round(depense / ps.length) : 0)}</div></div>
       <div class="tuile"><div class="lab">Fidélité</div><div class="val">${tampons.toFixed(1).replace('.0', '')} / ${seuil}</div>
-        <div class="sub">${reste === 0 ? '★ Lavage offert à donner' : reste.toFixed(1).replace('.0', '') + ' avant le cadeau'}</div></div>
+        <div class="sub">${reste === 0 ? '★ ' + esc(cadeauNom) + ' offert'
+          : reste.toFixed(1).replace('.0', '').replace('.5', '½') + ' avant le cadeau'}</div></div>
       <div class="tuile"><div class="lab">Véhicules</div><div class="val">${vs.length}</div>
         <div class="sub">${esc(vs.map(v => v.immatriculation).filter(Boolean).join(' · ') || '—')}</div></div>
     </div>
@@ -8666,7 +8680,11 @@ function vueFicheClient() {
         <div style="height:100%;width:${part}%;background:${reste === 0 ? 'var(--ocr-succes)' : 'var(--ocr-rouge)'};
                     border-radius:999px;transition:width .4s"></div>
       </div>
-      <p class="ocr-mini" style="margin:9px 0 0">Un Signature ou mieux = 1 tampon · un Express = ½ tampon.</p>
+      <p class="ocr-petit" style="margin:11px 0 0">${reste === 0
+        ? '<strong style="color:var(--ocr-vert)">★ Le 10ᵉ est offert : ' + esc(cadeauTxt) + '</strong>'
+        : 'Au 10ᵉ tampon : <strong style="color:var(--ocr-blanc)">' + esc(cadeauTxt) + ' offert</strong>'}</p>
+      <p class="ocr-mini" style="margin:6px 0 0">Signature, Deep ou Pack = 1 tampon · Express = ½ tampon —
+        voiture comme moto. Les lavages d'un parc partenaire ne comptent pas : ils ont déjà leur remise.</p>
     </div>
 
     <div class="ocr-carte" style="margin-bottom:var(--ocr-e4)">
