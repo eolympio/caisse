@@ -3259,7 +3259,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v56';
+const VERSION = 'v58';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -3377,6 +3377,43 @@ if ('serviceWorker' in navigator && !MODE_DEMO &&
 }
 // Double authentification exigée pour ces rôles (décision du 11 août).
 const ROLES_2FA = ['direction', 'comptable', 'manager'];
+
+/* ── LE VERROUILLAGE APRÈS INACTIVITÉ (14/08) ──────────────────────────────
+   Edwin : « À chaque fois que je ferme l'app et que je la rouvre, ça me
+   reconnecte automatiquement […] après combien de temps on doit vraiment se
+   reconnecter ? J'ai mis le 2FA et des fois c'est embêtant de le refaire. »
+
+   Deux besoins qui tirent en sens contraire, tranchés avec lui : on entre sans
+   rien taper tant qu'on s'est servi de l'app récemment ; au-delà, mot de passe
+   et code à six chiffres.
+     · équipe (manager, techniciens) : 12 h — en pratique une fois le matin,
+       et plus jamais de la journée ;
+     · direction et comptabilité : 4 h — ces comptes-là ouvrent la caisse, les
+       exports et les mots de passe de tout le monde.
+   Un téléphone oublié quelque part le soir n'ouvre pas l'atelier le lendemain.
+
+   Le compteur est posé sur CE téléphone, pas sur le serveur : c'est un
+   verrouillage d'appareil, pas une expiration de session. Il ne remplace pas
+   la sécurité de Supabase, il s'ajoute devant. */
+const CLE_ACTIVITE = 'ocr-derniere-activite';
+const limiteInactivite = r => (['direction', 'comptable'].includes(r) ? 4 : 12) * 60;
+function marquerActivite() {
+  if (MODE_DEMO || !moi) return;
+  try {
+    localStorage.setItem(CLE_ACTIVITE,
+      JSON.stringify({ t: Date.now(), l: limiteInactivite(moi.role) }));
+  } catch (ex) { /* navigation privée : on ne verrouille pas, faute de mémoire */ }
+}
+function sessionPerimee() {
+  if (MODE_DEMO) return false;
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(CLE_ACTIVITE) || 'null'); } catch (ex) { return false; }
+  /* Jamais marqué (première ouverture après la mise à jour, ou navigation
+     privée) : on laisse entrer et on posera le repère juste après. Verrouiller
+     par défaut punirait tout le monde le jour de la mise en ligne. */
+  if (!v || !v.t) return false;
+  return (Date.now() - v.t) > (Number(v.l) || 720) * 60000;
+}
 
 let sb, moi = null, equipe = [], onglet = 'saisie', enCours = false;
 /* Les entreprises qui ont une remise (Ehu Motors…). Chargées une fois à la
@@ -4493,6 +4530,7 @@ async function demarrer() {
     onglet = 'saisie';
     setTimeout(() => toast('Ta saisie en cours a été retrouvée — rien n’est perdu.'), 600);
   }
+  marquerActivite();
   majBoucler();
   await rendre();
   // Des pointages attendaient le réseau depuis la dernière session : on les
@@ -4701,7 +4739,8 @@ function boiteReglages() {
 }
 
 /* « Mon compte » : mot de passe pour tout le monde, double sécurité pour
-   les rôles concernés. */
+   les rôles concernés, et la règle de reconnexion — écrite noir sur blanc,
+   parce qu'une app qui redemande un code sans prévenir passe pour cassée. */
 async function boiteCompte() {
   const avecMFA = !MODE_DEMO && ROLES_2FA.includes(moi.role);
   let actif = null;
@@ -4724,12 +4763,24 @@ async function boiteCompte() {
       <span id="zoneAvatar">${avatar(moi, 56)}</span>
       <div style="min-width:0">
         <div style="font-weight:600">${esc(moi.nom)}</div>
-        <div class="ocr-mini">${esc(libelleRole(moi.role))}</div>
+        <div class="ocr-mini">${esc(metier(moi))}</div>
         <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-photo style="margin-top:6px;padding-left:0">
           ${moi.photo ? 'Changer ma photo' : 'Ajouter ma photo'}</button>
         <input type="file" accept="image/*" id="fichierPhoto" style="display:none">
       </div>
     </div>
+
+    ${/* La règle de reconnexion, écrite noir sur blanc : une application qui
+         redemande un code sans prévenir passe pour cassée, et on finit par
+         croire que le compte a un problème. */''}
+    <div class="ocr-message" style="margin-bottom:var(--ocr-e4)"><span>🔒</span><div>
+      <strong>Reconnexion</strong> — tu rentres sans rien taper tant que tu te sers de
+      l’application. Après <strong style="color:var(--ocr-blanc)">${
+        Math.round(limiteInactivite(moi.role) / 60)} h</strong> sans y toucher, elle
+      redemande ton mot de passe${ROLES_2FA.includes(moi.role) ? ' et ton code à six chiffres' : ''}.
+      ${['direction', 'comptable'].includes(moi.role)
+        ? 'Ce délai est plus court pour ton compte : il ouvre la caisse et les accès de l’équipe.'
+        : ''}</div></div>
 
     ${/* Le numéro sert à l'équipe et aux relances : sans lui, une fiche
          employé est incomplète. Il se corrige ici, par l'intéressé. */''}
@@ -4940,7 +4991,24 @@ function rafraichirSansDeranger() {
 }
 window.__ocrRafraichir = rafraichirSansDeranger;   // testable
 setInterval(rafraichirSansDeranger, 300000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) rafraichirSansDeranger(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { marquerActivite(); return; }   // on note l'heure en partant
+  /* Au retour : si l'app est restée fermée plus longtemps que la limite du
+     rôle, on redemande tout. Sinon on rafraîchit simplement les données. */
+  if (moi && sessionPerimee()) return verrouiller();
+  marquerActivite();
+  rafraichirSansDeranger();
+});
+
+async function verrouiller() {
+  await sb.auth.signOut();
+  moi = null;
+  try { localStorage.removeItem(CLE_ACTIVITE); } catch (ex) { /* rien à nettoyer */ }
+  $('#modales').innerHTML = '';
+  $('#appli').classList.add('masque');
+  $('#connexion').classList.remove('masque');
+  toast('Reconnecte-toi : l’application est restée fermée un moment.');
+}
 
 /* ---------- écrans secondaires : fiche client, formulaires ----------
    Ils vivent DANS un onglet (ils remplacent son contenu) mais se comportent
@@ -5065,6 +5133,7 @@ async function rendre(discret) {
   // sous les yeux de quelqu'un en train de lire l'écran (retour du 12/08).
   const tour = ++tourRendu;
   const yAvant = discret ? window.scrollY : 0;
+  marquerActivite();   // chaque écran affiché repousse le verrouillage
 
   // 1 · réponse immédiate au doigt, sans attendre le réseau
   peindreOnglets();
@@ -5867,7 +5936,7 @@ async function vueJournee(j) {
       <div class="jg-lateral">
         ${obj ? carteObjectifs(obj, moisRows, sigRows) : ''}
         ${carteEquipe(pts, d)}
-        ${carteFinDeJournee(j, pts, d)}
+        ${carteFinDeJournee(j, pts, d, false)}
       </div>
       <div class="jg-principal">
         ${ps.length ? ps.map(p => ficheePassage(p, verrou)).join('') :
@@ -6178,28 +6247,7 @@ async function vueCloture(j) {
       </div>`;
     })()}
 
-    ${(() => {
-      /* LA FERMETURE DU CAR WASH, À LA CLÔTURE (14/08). Elle ne bloque pas —
-         mais elle est la première chose que Guénolé lit, parce qu'elle dit si
-         la journée est vraiment finie ou si l'équipe est encore au travail. */
-      const ferme = !!j.ferme_le;
-      const par = (equipe.find(e => e.id === j.ferme_par) || {}).nom || '';
-      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:${
-        ferme ? 'rgba(46,160,102,.35)' : 'rgba(245,166,35,.42)'}">
-        <div class="ocr-surtitre">Fin de journée</div>
-        ${ferme
-          ? `<p class="ocr-petit" style="margin:10px 0 0">✓ <strong style="color:var(--ocr-blanc)">Car wash
-              fermé à ${esc(String(j.ferme_le).slice(11, 16))}</strong>${par ? ' par ' + esc(par) : ''}.
-              ${j.ferme_note ? '<br><span class="ocr-mini">« ' + esc(j.ferme_note) + ' »</span>' : ''}</p>`
-          : `<p class="ocr-petit" style="margin:10px 0 0"><span style="color:var(--ocr-ambre)">⚠ Fermeture
-              non déclarée.</span> ${d === auj()
-                ? 'L’équipe est peut-être encore au travail — un extra, un rangement qui traîne.'
-                : 'Personne n’a dit que le car wash avait fermé ce jour-là.'}
-              Tu peux clôturer quand même : ce sera écrit sur la journée.</p>
-             ${peutFermer() ? '<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="btnFermerCw" ' +
-               'style="margin-top:var(--ocr-e3)">🔻 Fermer le car wash maintenant</button>' : ''}`}
-      </div>`;
-    })()}
+    ${carteFinDeJournee(j, ptsJ, d, true)}
 
     ${(() => {
       /* L'ÉQUIPE, À LA CLÔTURE (14/08) — départs non pointés et pauses non
@@ -6330,12 +6378,16 @@ async function vueCloture(j) {
       /* « C'est écrit sur la journée » : la clôture emporte l'état de la
          fermeture, pour qu'on le retrouve des mois plus tard sans avoir à
          recouper le journal. */
-      const { error } = await API.cloturer({ p_date: d, p_note: j.ferme_le
-        ? 'Car wash fermé à ' + String(j.ferme_le).slice(11, 16) +
-          ((equipe.find(e => e.id === j.ferme_par) || {}).nom
-            ? ' par ' + (equipe.find(e => e.id === j.ferme_par) || {}).nom : '') +
-          (j.ferme_note ? ' — ' + j.ferme_note : '')
-        : 'Fermeture du car wash non déclarée' });
+      const ouvJ = ouvertureDuJour(ptsJ);
+      const { error } = await API.cloturer({ p_date: d, p_note: [
+        ouvJ ? 'Ouvert à ' + ouvJ.heure + (ouvJ.qui ? ' (' + ouvJ.qui + ')' : '') : 'Aucun pointage ce jour-là',
+        j.ferme_le
+          ? 'fermé à ' + String(j.ferme_le).slice(11, 16) +
+            ((equipe.find(e => e.id === j.ferme_par) || {}).nom
+              ? ' par ' + (equipe.find(e => e.id === j.ferme_par) || {}).nom : '') +
+            (j.ferme_note ? ' — ' + j.ferme_note : '')
+          : 'fermeture du car wash non déclarée',
+      ].join(' · ') });
       if (error) { toast(error.message, true); e.target.disabled = false; return; }
       fermerModale(); toast('Journée clôturée et signée ✓'); rendre();
     });
@@ -6805,26 +6857,63 @@ const jourSemaineDe = d => new Date(d + 'T12:00').getDay();
    oublié un bouton, c'est un coup de téléphone pour rien. */
 const peutFermer = () => moi && ['manager', 'comptable', 'direction'].includes(roleEffectif());
 
-function carteFinDeJournee(j, pts, d) {
-  if (!peutFermer() || j.statut !== 'ouverte') return '';
+/* L'OUVERTURE NE SE DÉCLARE PAS — ELLE SE CONSTATE (14/08, v57)
+   Edwin, à ma question sur un bouton « ouvrir » : « automatique, au premier
+   pointage ». Il a raison, et c'est la bonne asymétrie :
+     · la FERMETURE répond à une question que Guénolé se pose vraiment
+       (« la journée est-elle finie, puis-je signer ? ») — elle mérite un geste ;
+     · l'OUVERTURE ne répond à aucune question : quelqu'un est là, l'atelier
+       est ouvert. Un bouton de plus n'aurait rien appris à personne, et se
+       serait fait oublier — or un avertissement qu'on oublie affaiblit tous
+       les autres.
+   Donc : aucune colonne, aucun bouton, aucune migration. L'heure d'ouverture
+   EST la première arrivée pointée du jour. Elle vaut aussi pour le passé, sans
+   rien reconstituer. */
+function ouvertureDuJour(pts) {
+  const arr = (pts || []).filter(x => x.arrivee)
+    .sort((a, b) => (heureCourte(a.arrivee) < heureCourte(b.arrivee) ? -1 : 1));
+  if (!arr.length) return null;
+  return { heure: heureCourte(arr[0].arrivee),
+           qui: (equipe.find(e => e.id === arr[0].employe_id) || {}).nom || '' };
+}
+
+function carteFinDeJournee(j, pts, d, cloture) {
+  if (!cloture && (!peutFermer() || j.statut !== 'ouverte')) return '';
   const ferme = !!j.ferme_le;
   const heure = ferme ? String(j.ferme_le).slice(11, 16) : '';
   const par = (equipe.find(e => e.id === j.ferme_par) || {}).nom || '';
+  const ouv = ouvertureDuJour(pts);
+  const amplitude = (ouv && ferme) ? OCR.hm2min(heure) - OCR.hm2min(ouv.heure) : null;
   /* Qui n'a pas encore pointé son départ : « l'atelier doit fermer quand il
      n'y a plus d'employés ». On ne l'empêche pas — on le montre. */
   const encore = pts.filter(x => x.arrivee && !x.depart)
     .map(x => (equipe.find(e => e.id === x.employe_id) || {}).nom).filter(Boolean);
   return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:${
-    ferme ? 'rgba(46,160,102,.40)' : 'rgba(214,32,30,.30)'}">
-    <div class="ocr-surtitre">Fin de journée</div>
+    ferme ? 'rgba(46,160,102,.40)' : cloture ? 'rgba(245,166,35,.42)' : 'rgba(214,32,30,.30)'}">
+    <div class="ocr-surtitre">La journée</div>
+
+    ${ouv ? `<p class="ocr-petit" style="margin:10px 0 0">🟢 <strong style="color:var(--ocr-blanc)">Atelier
+      ouvert depuis ${esc(ouv.heure)}</strong>${ouv.qui ? ' — première arrivée : ' + esc(ouv.qui) : ''}.</p>`
+    : `<p class="ocr-petit" style="margin:10px 0 0"><span style="color:var(--ocr-ambre)">⚠ Personne n’a
+      pointé ${d === auj() ? 'ce matin' : 'ce jour-là'}</span> — pour l’application, l’atelier n’a pas ouvert.</p>`}
+
     ${ferme ? `
-      <p class="ocr-petit" style="margin:10px 0 0">✓ <strong style="color:var(--ocr-blanc)">Car wash fermé
-        à ${esc(heure)}</strong>${par ? ' par ' + esc(par) : ''}.</p>
+      <p class="ocr-petit" style="margin:8px 0 0">✓ <strong style="color:var(--ocr-blanc)">Car wash fermé
+        à ${esc(heure)}</strong>${par ? ' par ' + esc(par) : ''}${
+        amplitude > 0 ? ' · <span class="ocr-mini">' + fmtDuree(amplitude) + ' d’ouverture</span>' : ''}.</p>
       ${j.ferme_note ? `<p class="ocr-mini" style="margin:6px 0 0">« ${esc(j.ferme_note)} »</p>` : ''}
-      <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" id="btnRouvrirCw"
-        style="margin-top:var(--ocr-e3);color:var(--ocr-argent-2)">On rouvre finalement…</button>`
+      ${cloture ? '' : `<button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" id="btnRouvrirCw"
+        style="margin-top:var(--ocr-e3);color:var(--ocr-argent-2)">On rouvre finalement…</button>`}`
+    : cloture ? `
+      <p class="ocr-petit" style="margin:8px 0 0"><span style="color:var(--ocr-ambre)">⚠ Fermeture non
+        déclarée.</span> ${d === auj()
+          ? 'L’équipe est peut-être encore au travail — un extra, un rangement qui traîne.'
+          : 'Personne n’a dit que le car wash avait fermé ce jour-là.'}
+        Tu peux clôturer quand même : ce sera écrit sur la journée.</p>
+      ${peutFermer() ? '<button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" id="btnFermerCw" ' +
+        'style="margin-top:var(--ocr-e3)">🔻 Fermer le car wash maintenant</button>' : ''}`
     : `
-      <p class="ocr-petit" style="margin:10px 0 var(--ocr-e3)">L’atelier ne ferme pas à heure fixe :
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e3)">L’atelier ne ferme pas à heure fixe :
         la journée se termine quand le dernier part. Quand tout est rangé, dis-le ici —
         <strong style="color:var(--ocr-blanc)">Guénolé le verra à la clôture</strong>.</p>
       ${encore.length ? `<p class="ocr-mini" style="margin:0 0 var(--ocr-e3);color:var(--ocr-ambre)">
@@ -7819,7 +7908,31 @@ const rech = { q: '', liste: null, cherche: false, fiche: null, veh: null,
 let cliNouveau = null;   // brouillon de fiche client en cours de création
 
 const dateFr = d => { const [a, m, j] = String(d || '').split('-'); return j ? j + '/' + m : (d || '—'); };
-const numWhatsApp = t => String(t || '').replace(/\D/g, '').replace(/^0+/, '');
+/* LE NUMÉRO TEL QUE WHATSAPP L'ATTEND : indicatif pays + numéro national,
+   sans « + » ni espaces.
+   Au Bénin, depuis le 30 novembre 2024 (réforme ARCEP, notifiée à l'UIT), le
+   « 01 » FAIT PARTIE du numéro et se compose AUSSI depuis l'étranger :
+       +229 01 97 45 48 12  →  2290197454812
+   Deux pièges corrigés le 14/08, tous deux silencieux — le lien s'ouvrait,
+   WhatsApp répondait « numéro invalide », et personne ne savait pourquoi :
+     · l'ancien code retirait les zéros de tête. C'est l'habitude des pays qui
+       ont un préfixe interurbain à jeter (le 0 français). Le Bénin n'en a pas :
+       ce 0 fait partie du numéro. Un numéro saisi sans indicatif était donc
+       amputé.
+     · les numéros enregistrés AVANT la réforme n'ont que 8 chiffres après 229.
+       On leur remet le 01 à la volée, sinon le contact reste introuvable. */
+function numWhatsApp(t) {
+  let d = String(t || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);         // 00229… → 229…
+  if (!d) return '';
+  if (d.startsWith('229')) {                      // indicatif béninois donné
+    const n = d.slice(3);
+    return '229' + (n.length === 8 ? '01' + n : n);
+  }
+  if (/^01\d{8}$/.test(d)) return '229' + d;      // 01 97 45 48 12, sans indicatif
+  if (/^\d{8}$/.test(d))   return '22901' + d;    // ancien format à 8 chiffres
+  return d;                                       // étranger, déjà complet
+}
 const joursDepuis = d => d ? Math.round((new Date(auj() + 'T12:00') - new Date(d + 'T12:00')) / 86400000) : null;
 /* Tous les numéros sont béninois : afficher « +229 » sur chaque ligne mange la
    place du véhicule pour une information que personne ne lit. On l'enlève à
@@ -10942,8 +11055,9 @@ function peindreFicheAcces(v, e) {
 
     <label class="ocr-champ"><span class="ocr-label">Numéro de connexion</span>
       <input class="ocr-saisie" id="acTel" type="tel" inputmode="tel"
-             value="${esc(e.telephone || '')}" placeholder="+229 01 97 45 48 12">
-      <span class="ocr-aide">C’est ce qu’il tapera dans le champ du haut, à la connexion.</span></label>
+             value="${esc(e.telephone || '')}" placeholder="01 97 45 48 12">
+      <span class="ocr-aide">Tape-le comme au Bénin, en commençant par 01 — l’indicatif
+        se met tout seul. C’est ce qu’il tapera à la connexion.</span></label>
 
     <label class="ocr-champ"><span class="ocr-label">Nouveau mot de passe</span>
       <input class="ocr-saisie" id="acMdp" type="text" autocomplete="off" autocapitalize="off"
@@ -10957,7 +11071,15 @@ function peindreFicheAcces(v, e) {
       <div style="flex:1"></div>
       <button class="ocr-btn ocr-btn--primaire" id="acSauver">Enregistrer</button>
     </div>`;
-  brancherTel(z.querySelector('#acTel'));
+  /* PAS de brancherTel ici (Edwin, 14/08) : sur une fiche client, voir
+     « +229 » apparaître au premier appui rassure et fait gagner du temps. Sur
+     un identifiant de connexion, c'est l'inverse — le champ s'ouvre sur un
+     indicatif dont personne n'a besoin, et il faut poser le curseur après. On
+     laisse taper « 0169293143 » ; telPropre remet l'indicatif à la sortie du
+     champ, pour que la base garde partout la même forme. */
+  z.querySelector('#acTel').addEventListener('blur', e => {
+    e.target.value = telPropre(e.target.value);
+  });
   z.querySelector('[data-retour]').addEventListener('click', () => peindreListeAcces(v));
   z.querySelector('[data-fermer]').addEventListener('click', fermerModale);
   z.querySelector('#acProposer').addEventListener('click', () => {
@@ -11208,7 +11330,13 @@ async function vueJournal() {
   }
   brancherRecuperation();
   const { data } = await sb.auth.getSession();
-  if (data && data.session) await demarrer();
+  if (data && data.session) {
+    if (sessionPerimee()) {
+      await sb.auth.signOut();
+      try { localStorage.removeItem(CLE_ACTIVITE); } catch (ex) { /* rien à nettoyer */ }
+      toast('Reconnecte-toi : l’application est restée fermée un moment.');
+    } else await demarrer();
+  }
 })();
 </script>
 </body>
