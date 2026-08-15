@@ -1,17 +1,13 @@
 /* ==========================================================================
    OCR Brillance — service worker de l'app Atelier (atelier.ocrbrillance.com)
-
-   · L'app s'ouvre INSTANTANÉMENT : la page vient du téléphone, pas du réseau.
-   · Elle se met à jour quand même : la nouvelle version est téléchargée en
-     arrière-plan et, si elle diffère, un bandeau propose de l'appliquer.
-     C'est le seul moyen d'avoir les deux à la fois — avant, la page passait
-     toujours par le réseau d'abord : ~430 Ko à attendre à chaque ouverture,
-     ce qui donnait l'impression que « l'app tourne lentement » (13/08).
+   · L'app s'ouvre instantanément : la coquille vient du téléphone.
+   · Les PAGES passent TOUJOURS par le réseau d'abord. Règle absolue pour une
+     caisse : personne ne doit travailler sur une vieille version.
    · Les appels à la base (Supabase) ne sont JAMAIS mis en cache — ni les
      chiffres, ni les clients, ni les sessions. Hors ligne, l'app s'ouvre et
      affiche son bandeau « ⛔ Hors ligne », elle n'invente aucune donnée.
    ========================================================================== */
-const CACHE = 'ocr-atelier-v2';
+const CACHE = 'ocr-atelier-v1';
 const COQUILLE = ['/', 'icon.png', 'icon-192.png', 'icon-512.png', 'manifest.json'];
 
 self.addEventListener('install', e => {
@@ -26,54 +22,20 @@ self.addEventListener('activate', e => {
   );
 });
 
-// La version inscrite dans la page : c'est elle qui dit si le fichier a changé.
-// La version de l'ATELIER (vNN) — pas celle du socle partagé, qui apparaît
-// plus haut dans le fichier et vaut « 1.2.0 » (piège vu au test du 13/08).
-const versionDe = txt => (txt.match(/const VERSION = '(v\d+)'/) || [])[1] || String(txt.length);
-
-async function prevenirLesEcrans(version) {
-  const cs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  cs.forEach(c => c.postMessage({ type: 'ocr-nouvelle-version', version }));
-}
-
-// Va chercher la page à jour en arrière-plan, la range, et prévient l'écran
-// si elle est différente de celle qu'on vient de servir.
-async function rafraichirEnFond(requete, ancienTxt) {
-  try {
-    const r = await fetch(requete, { cache: 'no-store' });
-    if (!r || !r.ok) return;
-    const txt = await r.clone().text();
-    const c = await caches.open(CACHE);
-    await c.put('/', r.clone());
-    if (ancienTxt && versionDe(txt) !== versionDe(ancienTxt)) await prevenirLesEcrans(versionDe(txt));
-  } catch (e) { /* hors ligne : on garde ce qu'on a */ }
-}
-
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (url.host.includes('supabase.co')) return;   // données vivantes : jamais en cache
 
-  // PAGES : le cache d'abord (ouverture immédiate), le réseau derrière.
+  // pages : réseau d'abord, cache seulement si le réseau est tombé
   if (e.request.mode === 'navigate') {
-    e.respondWith((async () => {
-      const c = await caches.open(CACHE);
-      const enCache = await c.match('/');
-      if (enCache) {
-        const ancienTxt = await enCache.clone().text();
-        e.waitUntil(rafraichirEnFond(e.request, ancienTxt));
-        return enCache;
-      }
-      // première ouverture : rien en cache, on prend le réseau
-      try {
-        const r = await fetch(e.request);
-        c.put('/', r.clone());
+    e.respondWith(
+      fetch(e.request).then(r => {
+        const copie = r.clone();
+        caches.open(CACHE).then(c => c.put('/', copie));
         return r;
-      } catch (ex) {
-        return new Response('<h1>Hors ligne</h1><p>Reconnecte-toi une fois pour installer l’application.</p>',
-          { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
-      }
-    })());
+      }).catch(() => caches.match('/'))
+    );
     return;
   }
 
@@ -91,10 +53,25 @@ self.addEventListener('fetch', e => {
   }
 });
 
-/* L'écran nous interroge — « quelle version as-tu en réserve ? »
-   On répond seulement si elle diffère de la sienne. C'est la voie fiable :
-   le message poussé juste après un rechargement peut arriver avant que la
-   page n'ait eu le temps d'écouter (course vue au test du 13/08). */
+/* ── LA VERSION, ET COMMENT ON LA LIT (corrigé le 15/08) ──────────────────
+   Avant, on cherchait « const VERSION = 'v69' » dans le JavaScript de la
+   page. Depuis que le fichier publié est minifié, cette ligne est réécrite
+   (const VERSION="v70") : introuvable. On se rabattait alors sur le NOMBRE DE
+   CARACTÈRES du fichier — Edwin a vu « Nouvelle version 545981 prête », et le
+   bandeau revenait indéfiniment puisqu'un nombre de caractères n'égalera
+   jamais « v70 ».
+   Deux leçons, appliquées ici :
+     · on lit la version dans le HTML (<meta> ou commentaire), que la
+       minification ne touche pas ;
+     · plus AUCUN repli inventé. Pas de version lisible = on se tait. Un
+       bandeau qu'on ne peut pas faire disparaître est pire que pas de
+       bandeau du tout.
+   ────────────────────────────────────────────────────────────────────────── */
+const versionDe = txt =>
+  (txt.match(/name="ocr-version" content="(v\d+)"/) || [])[1] ||
+  (txt.match(/const VERSION = '(v\d+)'/) || [])[1] ||
+  null;
+
 self.addEventListener('message', e => {
   const d = e.data || {};
   if (d.type === 'ocr-appliquer') { self.skipWaiting(); return; }
