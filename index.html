@@ -441,6 +441,26 @@
      · aucun     — réglage système « réduire les animations » : on respecte.
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* ---- LE FIL DES ÉTAPES DE LA SAISIE ---- */
+.fil-etapes{display:flex;gap:4px;margin-bottom:var(--ocr-e4)}
+.fil-e{flex:1;min-width:0;background:none;border:0;padding:0;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;opacity:.42;
+  transition:opacity var(--ocr-transition)}
+.fil-e:disabled{cursor:default}
+.fil-e .fil-n{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;
+  border:1px solid var(--ocr-filet);background:var(--ocr-surface);
+  font:700 12px/1 var(--ocr-texte);color:var(--ocr-blanc);flex:none}
+.fil-e .fil-l{font:600 10px/1.2 var(--ocr-texte);letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ocr-argent-2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.fil-e.fait{opacity:1}
+.fil-e.fait .fil-n{background:var(--ocr-vert);border-color:transparent;color:#fff}
+.fil-e.ici{opacity:1}
+.fil-e.ici .fil-n{background:var(--ocr-grad-rouge);border-color:transparent;color:#fff}
+.fil-e.ici .fil-l{color:var(--ocr-blanc)}
+/* Chaque action de la dernière étape porte sa phrase : le bouton dit CE QU'IL
+   FAIT, la ligne en dessous dit CE QUI SE PASSERA ENSUITE. */
+.act-suite{font:var(--ocr-t-mini);color:var(--ocr-argent-2);margin:6px 0 var(--ocr-e4);text-align:center}
+
 /* ---- LE CALENDRIER « ALLER À UNE DATE » ---- */
 .cal-entete,.cal-grille{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .cal-entete span{text-align:center;font:var(--ocr-t-mini);color:var(--ocr-argent-2);padding-bottom:4px}
@@ -765,9 +785,15 @@ body{padding-bottom:env(safe-area-inset-bottom)}
 .presta[aria-pressed="true"] .coche{background:var(--ocr-rouge);border-color:var(--ocr-rouge)}
 .presta:disabled{opacity:.45;cursor:default}
 
+/* La barre collante empile depuis le 15/08 : le total d'abord, les boutons
+   dessous, pleine largeur. En ligne, « ▶ Enregistrer et démarrer » écrasait le
+   montant sur trois lignes (« 6 / 000 / F ») — or c'est le chiffre qu'on lit au
+   comptoir juste avant d'annoncer le prix au client. */
 .total-collant{position:sticky;bottom:78px;background:var(--ocr-surface-haute);
   border:1px solid var(--ocr-filet);border-radius:var(--ocr-r-m);padding:var(--ocr-e4);
-  display:flex;align-items:center;gap:var(--ocr-e3);margin-top:var(--ocr-e4)}
+  display:flex;flex-direction:column;gap:var(--ocr-e3);margin-top:var(--ocr-e4)}
+.total-collant .tc-actions{display:flex;flex-direction:column;gap:7px}
+.total-collant .tc-actions .ocr-btn{width:100%}
 
 .fiche{background:var(--ocr-surface);border:1px solid var(--ocr-filet);border-radius:var(--ocr-r-m);
   padding:13px 15px;margin-bottom:9px}
@@ -2237,6 +2263,29 @@ function creerClientDemo() {
   /* LAVAGES SANS PLAQUE (13/08) — copie fidèle de la vue v_sans_plaque :
      le parc d'un partenaire et les lavages repris du cahier en sont exclus,
      chez eux l'absence de plaque n'est pas un oubli. */
+  /* Même échelle qu'ocr_rang_gabarit en base : elle sert à savoir si une
+     correction de taille fait monter ou baisser la facture. */
+  const RANG_GAB = { camionnette: 0, moto: 1, petite: 2, berline: 3, grandsuv: 4 };
+  const rangGab = g => RANG_GAB[g] != null ? RANG_GAB[g] : 0;
+
+  /* Les tailles corrigées à la main, telles que la clôture les montre. */
+  const gabaritAVerifier = () => D.passages
+    .filter(p => p.gabarit_catalogue && !p.annule)
+    .map(p => {
+      const ve = D.vehicules.find(x => x.id === p.vehicule_id) || {};
+      const c = D.clients.find(x => x.id === p.client_id) || {};
+      const se = D.employes.find(x => x.id === p.saisi_par) || {};
+      const vp = D.employes.find(x => x.id === p.gabarit_valide_par) || {};
+      return { id: p.id, reference: p.reference, journee: p.journee, gabarit: p.gabarit,
+               gabarit_catalogue: p.gabarit_catalogue, gabarit_motif: p.gabarit_motif,
+               gabarit_verdict: p.gabarit_verdict || null,
+               gabarit_valide_le: p.gabarit_valide_le || null,
+               montant_total: p.montant_total,
+               marque: ve.marque || '', modele: ve.modele || '',
+               immatriculation: ve.immatriculation || null, client: c.nom || null,
+               saisi_par_nom: se.nom || '', valide_par_nom: vp.nom || '' };
+    });
+
   const sansPlaque = () => D.passages
     .filter(p => !p.annule && !p.parc_partenaire && (p.origine || 'caisse') !== 'import'
               && !p.retard_motif)
@@ -2298,6 +2347,7 @@ function creerClientDemo() {
       if (table === 'v_stats_parc')      return statsParc();
       if (table === 'v_lavages_sans_mesure')  return lavagesSansMesure();
       if (table === 'v_lavages_chronometres') return lavagesChronometres();
+      if (table === 'v_gabarit_a_verifier')   return gabaritAVerifier();
       if (table === 'v_parc_partenaire')      return parcPartenaire();
       if (table === 'v_sans_plaque')          return sansPlaque();
       if (table === 'v_cahier_jour')          return D.passages
@@ -3024,6 +3074,21 @@ function creerClientDemo() {
         if (remise !== attendu && !String(a.p_motif_remise || '').trim())
           throw new Error('Une remise doit être justifiée — indique le motif');
       }
+      /* LA TAILLE QUI CONTREDIT LE CATALOGUE (15/08) — c'est le serveur qui
+         tranche : la table des modèles fait foi quand elle connaît le couple
+         marque/modèle. On ne réclame de justification que si le prix BAISSE. */
+      let gabCat = String(a.p_gabarit_catalogue || '').trim() || null;
+      const auCat = D.modeles_vehicules.find(m =>
+        OCR.clefTexte(m.marque) === OCR.clefTexte(a.p_marque || '') &&
+        OCR.clefTexte(m.modele || '') === OCR.clefTexte(a.p_modele || ''));
+      if (auCat) gabCat = auCat.gabarit;
+      let gabMotif = null;
+      if (gabCat && (gabCat === a.p_gabarit || rangGab(a.p_gabarit) >= rangGab(gabCat))) gabCat = null;
+      if (gabCat) {
+        gabMotif = String(a.p_motif_gabarit || '').trim() || null;
+        if (!gabMotif) throw new Error('Dis pourquoi ce véhicule n’est pas un ' + gabCat +
+          ' comme le dit le catalogue — la direction vérifiera à la clôture');
+      }
       const id = uid(), r = ref();
       D.passages.push({ id, reference: r, journee: jour, client_id: cl ? cl.id : null,
         vehicule_id: parc || !ve ? null : ve.id,
@@ -3045,7 +3110,9 @@ function creerClientDemo() {
            « Non précisé » plutôt que rien — un trou se perd, une phrase se lit. */
         sans_plaque_motif: !plaque && !parc && !retard
           ? (String(a.p_motif_sans_plaque || '').trim() || 'Non précisé') : null,
-        sans_plaque_valide_par: null, sans_plaque_valide_le: null });
+        sans_plaque_valide_par: null, sans_plaque_valide_le: null,
+        gabarit_catalogue: gabCat, gabarit_motif: gabMotif,
+        gabarit_verdict: null, gabarit_valide_par: null, gabarit_valide_le: null });
       if (!D.journees.some(x => x.date === jour))
         D.journees.push({ date: jour, statut: 'ouverte', valide_par: null, valide_le: null, totaux: null });
       lignes.forEach(l => D.passage_lignes.push({ id: uid(), passage_id: id, ...l }));
@@ -3172,6 +3239,50 @@ function creerClientDemo() {
         qui_nom: 'Système', quoi: cibles.length + ' départ(s) non pointé(s) le ' + frJour(jour) +
         ' — fermé(s) automatiquement à 19h30', entite: 'pointage' });
       return cibles.length;
+    },
+    /* LE VERDICT DE LA DIRECTION (15/08) — mêmes issues qu'en base :
+       l'atelier a raison → le catalogue est corrigé pour tous les suivants ;
+       le catalogue a raison → la fiche du véhicule est remise d'équerre, sans
+       quoi la plaque reviendrait demain au mauvais prix, en silence. */
+    ocr_gabarit_verdict(a) {
+      const emp = D.employes.find(e => e.user_id === (session && session.user.id));
+      if (!emp) throw new Error('Accès réservé au personnel');
+      if (!['comptable', 'direction'].includes(emp.role))
+        throw new Error('Seuls la comptabilité et la direction tranchent une correction de taille');
+      if (!['atelier', 'catalogue'].includes(a.p_verdict)) throw new Error('Verdict inconnu');
+      const p = D.passages.find(x => x.id === a.p_passage);
+      if (!p) throw new Error('Lavage introuvable');
+      if (!p.gabarit_catalogue) throw new Error('Ce lavage n’a pas de correction de taille à trancher');
+      if (p.gabarit_valide_le)
+        throw new Error('Cette taille a déjà été tranchée. Pour revenir dessus : Direction ▸ Marques & modèles, ou la fiche du véhicule.');
+      const ve = D.vehicules.find(x => x.id === p.vehicule_id);
+      let res;
+      if (a.p_verdict === 'atelier') {
+        if (!ve || !String(ve.marque || '').trim())
+          throw new Error('Ce lavage n’a ni marque ni modèle : impossible de corriger le catalogue. Passe par Direction ▸ Marques & modèles.');
+        const m = D.modeles_vehicules.find(x =>
+          OCR.clefTexte(x.marque) === OCR.clefTexte(ve.marque) &&
+          OCR.clefTexte(x.modele || '') === OCR.clefTexte(ve.modele || ''));
+        if (m) m.gabarit = p.gabarit;
+        else D.modeles_vehicules.push({ id: uid(), marque: ve.marque, modele: ve.modele || '',
+          gabarit: p.gabarit, origine: 'atelier' });
+        res = 'Catalogue corrigé : ' + ve.marque + (ve.modele ? ' ' + ve.modele : '') +
+              ' est désormais un ' + p.gabarit;
+      } else {
+        if (ve && ve.gabarit !== p.gabarit_catalogue) {
+          ve.gabarit = p.gabarit_catalogue;
+          res = 'Le catalogue avait raison — la fiche du véhicule est remise en ' + p.gabarit_catalogue;
+        } else res = 'Le catalogue avait raison — rien à remettre d’équerre';
+      }
+      p.gabarit_verdict = a.p_verdict; p.gabarit_valide_par = emp.id;
+      p.gabarit_valide_le = new Date().toISOString();
+      D.journal.push({ id: uid(), quand: new Date().toISOString(), qui: emp.id, qui_nom: emp.nom,
+        quoi: 'Taille de ' + p.reference + ' tranchée — ' +
+              (a.p_verdict === 'atelier' ? 'l’atelier avait raison' : 'le catalogue avait raison') +
+              ' (catalogue ' + p.gabarit_catalogue + ' / facturé ' + p.gabarit +
+              ' · motif de la saisie : ' + (p.gabarit_motif || '—') + '). ' + res,
+        entite: 'passage', entite_id: p.id });
+      return res;
     },
     ocr_annuler_passage(a) {
       const emp = D.employes.find(e => e.user_id === (session && session.user.id));
@@ -3342,6 +3453,8 @@ function creerClientDemo() {
       if (bloq) throw new Error(bloq + ' anomalie(s) critique(s) non traitée(s)');
       const sp = sansPlaque().filter(r => r.journee === a.p_date && !r.sans_plaque_valide_le).length;
       if (sp) throw new Error(sp + ' lavage(s) sans plaque à valider avant de clôturer');
+      const gb = gabaritAVerifier().filter(r => r.journee === a.p_date && !r.gabarit_valide_le).length;
+      if (gb) throw new Error(gb + ' taille(s) corrigée(s) à la main restent à vérifier avant de clôturer');
       /* Comme le déclencheur trg_cloture_chrono en base (14/08) : on ne signe
          pas une journée dont un véhicule est encore « à démarrer ». */
       const enCoursJ = D.passages.filter(x => x.journee === a.p_date && !x.annule
@@ -3518,7 +3631,7 @@ const MODE_DEMO = new URLSearchParams(location.search).has('demo');
 const COMPTE_MTN = '01 69 40 85 84';
 // Le site affiché sur le tableau de bord — deviendra un choix quand il y aura plusieurs sites.
 const NOM_SITE = 'Station Oryx Saint Michel';
-const VERSION = 'v65';
+const VERSION = 'v67';
 // Épinglée sur l'écran d'accueil iOS : marge garantie sous l'heure/batterie.
 if (navigator.standalone === true) document.body.classList.add('plein-ecran');
 $('#marqueVersion').textContent = 'Atelier ' + VERSION +
@@ -4560,6 +4673,14 @@ const API = {
     { p_action: 'ajouter', p_employe: emp, p_jour: jour,
       p_debut: debut, p_fin: fin, p_motif: motif }),
   retirerSortie: id => sb.rpc('ocr_sortie', { p_action: 'supprimer', p_sortie: id }),
+  /* La taille corrigée à la main, tranchée par la direction (15/08). */
+  gabaritAVerifier(d) { return memo('gabarits:' + d, async () => {
+    const { data, error } = await sb.from('v_gabarit_a_verifier').select('*').eq('journee', d);
+    if (error) throw error;
+    return data || [];
+  }); },
+  gabaritVerdict: (id, verdict, note) => sb.rpc('ocr_gabarit_verdict',
+    { p_passage: id, p_verdict: verdict, p_note: note || null }),
   corrigerPointage(ligneId, empId, d, patch) {
     return ligneId
       ? sb.from('pointages').update(patch).eq('id', ligneId)
@@ -5566,12 +5687,139 @@ const form = { tel: '', nom: '', clientTrouve: null, gabarit: 'berline', marque:
                vehTrouve: null,   // véhicule retrouvé par sa plaque, pour rattacher le client
                parPlaque: false,  // le client a été reconnu par la plaque, pas par le téléphone
                gabaritManuel: false, gabaritDeduit: null, gabaritDesaccord: null,   // taille : choisie, déduite, ou en désaccord
+               motifTaille: '',        // pourquoi la taille choisie contredit le catalogue
                prestation: null, options: [], equipe: [], remise: 0, motifRemise: '', manuel: 0,
                quantite: 1,       // plusieurs véhicules identiques (parc Ehu Motors)
-               sansChrono: false, motifSansChrono: '',   // lavage déjà fait, saisi après coup
+
                jour: null, motifRetard: '',   // rattrapage : lavage d'un jour passé
                demarrer: false,   // la voiture entre en baie tout de suite
                note: '', reservation: null };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LA SAISIE EN QUATRE ÉTAPES (15/08)
+
+   Edwin, deux idées dans le même message, et elles se tiennent :
+
+   1. « On ne devrait pas enregistrer définitivement le client tant que le
+      lavage n'a pas débuté. Si le client doit finalement partir avant le début
+      du lavage, ça évite de l'enregistrer pour rien. »
+
+      Ce qu'on écrivait avant : un client, un véhicule, un passage — dès le
+      bouton Enregistrer, même si la voiture repartait dans la minute. Restaient
+      une fiche client fantôme et un lavage « à démarrer » qui, depuis le 14/08,
+      BLOQUE la clôture du soir. On payait au propre le prix d'un client pressé.
+
+      Maintenant RIEN n'est écrit tant qu'il ne s'est pas passé quelque chose de
+      vrai : le lavage démarre, le client paie, ou le lavage était déjà fait.
+      Trois portes, trois faits. Pas de quatrième — « enregistrer sans rien
+      faire » n'existe plus, et c'est volontaire : ce lavage-là n'existe pas.
+
+   2. « Je préfère qu'on ait plusieurs étapes très simples plutôt qu'une seule
+      page avec trop de boutons et d'options. L'objectif est vraiment qu'il
+      sache immédiatement quoi faire à chaque étape. »
+
+      Une question par écran, un grand bouton. C'est plus d'appuis qu'avant —
+      et c'est le bon échange : on remplace « comprendre » par « avancer ».
+   ══════════════════════════════════════════════════════════════════════════ */
+const ETAPES_SAISIE = ['Le véhicule', 'Le lavage', 'Le client', 'Que fait-on ?'];
+let etapeSaisie = 1;
+
+function barreEtapes() {
+  return `<div class="fil-etapes">${ETAPES_SAISIE.map((lab, i) => {
+    const n = i + 1;
+    return `<button class="fil-e ${n < etapeSaisie ? 'fait' : n === etapeSaisie ? 'ici' : ''}"
+      data-aller="${n}" ${n > etapeSaisie ? 'disabled' : ''}>
+      <span class="fil-n">${n < etapeSaisie ? '✓' : n}</span>
+      <span class="fil-l">${esc(lab)}</span></button>`;
+  }).join('')}</div>`;
+}
+
+/* Ce qui empêche de passer à l'étape suivante — une phrase, jamais un blocage
+   muet. Chaque garde vit sur l'écran où le choix se fait, pas à la fin. */
+function bloqueEtape(n, T) {
+  if (n === 1) {
+    if (form.jour && !String(form.motifRetard || '').trim())
+      return 'Dis pourquoi ce lavage est saisi en retard — Guénolé le verra à la clôture.';
+    const c = tailleContestee(form.marque, form.modele, form.gabarit, form.prestation);
+    if (c && !String(form.motifTaille || '').trim())
+      return 'Dis pourquoi ce véhicule n’est pas un ' +
+             ((OCR.gabarit(c.cat) || {}).nom || c.cat) + ' — la direction vérifiera ce soir.';
+  }
+  if (n === 2) {
+    if (!form.prestation) return 'Choisis une prestation.';
+    if (T.total <= 0) return 'Le montant doit être supérieur à zéro.';
+    if (Number(form.remise) > 0 && !String(form.motifRemise || '').trim())
+      return 'Indique le motif de la remise — il est inscrit au journal.';
+  }
+  return null;
+}
+
+/* Le pied de page : le total dès qu'il existe, puis le seul geste qui compte.
+   La dernière étape n'a pas de « Continuer » — ses trois actions sont l'écran. */
+function piedSaisie(T) {
+  return `<div class="total-collant">
+    ${etapeSaisie >= 2 ? `<div style="display:flex;align-items:baseline;gap:10px">
+      <div class="ocr-mini">Total à encaisser</div><span style="flex:1"></span>
+      <div style="font:700 22px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(T.total)}</div>
+    </div>
+    ${T.q > 1 ? `<div class="ocr-mini">${T.q} × ${OCR.fcfa(T.unite)} = ${OCR.fcfa(T.brut)}</div>` : ''}
+    ${T.remise ? `<div class="ocr-mini">${T.q > 1 ? '' : 'Brut ' + OCR.fcfa(T.brut) + ' '}− remise ${OCR.fcfa(T.remise)}${
+      T.partenaire ? ' · ' + esc(T.partenaire.nom) + ' ' + T.partenaire.remise_pct + ' %' : ''}</div>` : ''}` : ''}
+    <div class="tc-actions">
+      ${etapeSaisie < 4 ? `<button class="ocr-btn ocr-btn--primaire" data-etape="1">Continuer ›</button>` : ''}
+      ${etapeSaisie > 1 ? `<button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-etape="-1">‹ Retour</button>` : ''}
+    </div>
+  </div>`;
+}
+
+/* L'étape 4 : trois faits possibles, et la phrase qui dit ce qui se passera
+   après chacun. Rien d'autre sur l'écran. */
+function carteAction(T) {
+  const veh = [form.marque, form.modele].filter(Boolean).join(' ') ||
+              (OCR.gabarit(form.gabarit) || {}).nom || 'Véhicule';
+  const presta = form.prestation ? (OCR.prestation(form.prestation) || {}).nom : '';
+  const qui = form.clientTrouve ? form.clientTrouve.nom
+            : (form.nom || (form.tel ? telAffiche(form.tel) : ''));
+  const recap = `<div class="ocr-carte" style="padding:var(--ocr-e4);margin-bottom:var(--ocr-e4)">
+    <div style="font-weight:600">${esc(veh)}${form.immat ? ' · ' + esc(form.immat) : ''}</div>
+    <div class="ocr-mini">${esc(sansMoto(presta))}${T.q > 1 ? ' · ' + lotTexte(T.q, form.gabarit) : ''}
+      · ${OCR.fcfa(T.total)}${qui ? ' · ' + esc(qui) : ' · client à compléter'}</div>
+  </div>`;
+
+  if (form.jour) return `<div class="ocr-carte">
+    <div class="ocr-surtitre">Que fait-on ?</div>
+    ${recap}
+    <p class="ocr-petit" style="margin:0 0 var(--ocr-e4)">Ce lavage sera écrit sur la journée du
+      <strong style="color:var(--ocr-blanc)">${jourLong(form.jour)}</strong>, terminé sans chrono —
+      il n’en a jamais eu. Guénolé devra clôturer cette journée à nouveau.</p>
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-act="jour">Enregistrer sur le ${jourBref(form.jour)}</button>
+  </div>`;
+
+  return `<div class="ocr-carte">
+    <div class="ocr-surtitre">Que fait-on ?</div>
+    ${recap}
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-act="demarrer"
+      style="font-size:16px;padding:16px">▶ Démarrer le lavage</button>
+    <p class="act-suite">Le chrono part maintenant. Le client paiera à la fin.</p>
+
+    <button class="ocr-btn ocr-btn--secondaire ocr-btn--bloc" data-act="encaisser"
+      style="font-size:16px;padding:16px">Encaisser maintenant · ${OCR.fcfa(T.total)}</button>
+    <p class="act-suite">Le client paie avant. Le lavage restera à démarrer —
+      on te proposera de le lancer juste après.</p>
+
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-act="deja"
+      style="border:1px solid var(--ocr-filet)">⏱ Le lavage est déjà fait</button>
+    <p class="act-suite">Il n’aura pas de chrono, et tu diras pourquoi.
+      La direction le verra à la clôture.</p>
+
+    ${/* La phrase qui répond exactement à ce qu'Edwin demandait. Elle est là
+         pour Samuel, mais elle est aussi la règle du système. */''}
+    <div class="ocr-message" style="margin:var(--ocr-e4) 0 0"><span>🛈</span><div>
+      Tant que tu n’as choisi aucune de ces trois lignes, <strong>rien n’est enregistré</strong> —
+      ni le client, ni le véhicule, ni le lavage. Si la voiture repart, tu quittes cet écran et
+      il ne reste rien.</div></div>
+  </div>`;
+}
 
 /* « 1 lavage », « 3 lavages » — jamais « 1 lavage(s) ». Une parenthèse de
    politesse grammaticale sur chaque écran finit par donner l'air d'un
@@ -5697,6 +5945,18 @@ async function vueSaisie(j) {
   const opts = form.prestation ? OCR.optionsPour(form.prestation) : [];
 
   $('#vue').innerHTML = `
+  ${barreEtapes()}
+  ${/* Quand on sait déjà QUI est là — plaque reconnue, fiche client ouverte,
+       rendez-vous — on le dit à chaque étape. Sinon, en découpant l'écran, on
+       perdait la réponse à « pour qui je fais ça ? » dès qu'on quittait
+       l'étape du client. */''}
+  ${form.clientTrouve && etapeSaisie !== 3 ? `<div class="ocr-carte"
+    style="padding:10px var(--ocr-e4);margin-bottom:var(--ocr-e4);display:flex;align-items:center;gap:9px">
+    <span style="opacity:.6">👤</span>
+    <span style="min-width:0;flex:1;font-weight:600">${esc(form.clientTrouve.nom)}</span>
+    <span class="ocr-mini">${esc(telAffiche(form.clientTrouve.telephone) || 'sans numéro')}</span>
+  </div>` : ''}
+  ${etapeSaisie === 1 ? `
   ${form.reservation ? `<div class="ocr-message ocr-message--succes" style="margin-bottom:var(--ocr-e4)"><span>◷</span><div>
     <strong>Rendez-vous ${esc(form.reservation)}</strong><br>Fiche pré-remplie — le rendez-vous sera marqué honoré à l'enregistrement.</div></div>` : ''}
   ${/* LE PARC D'UN PARTENAIRE, EN TROIS APPUIS (13/08) — « pour Ehu Motors il
@@ -5744,14 +6004,12 @@ async function vueSaisie(j) {
         data-parc="${P.id}">◆ Parc ${esc(P.nom)}</button>`).join('')}
     </div>
   </div>` : ''}
-  <div class="deux">
-    <div>
       <!-- LA PLAQUE D'ABORD (13/08) : c'est le seul repère qui ne change pas,
            et il est écrit sur la voiture qui est devant nous. Le nom et le
            numéro, eux, dépendent de la bonne volonté du client au moment où
            il est pressé. Une plaque connue remplit tout le reste toute seule. -->
       <div class="ocr-carte">
-        <div class="ocr-surtitre">1 · Le véhicule</div>
+        <div class="ocr-surtitre">Le véhicule</div>
         <label class="ocr-champ" style="margin-top:var(--ocr-e4)">
           <span class="ocr-label">Immatriculation</span>
           <input class="ocr-saisie plaque plaque-grande" id="fImmat" value="${esc(form.immat)}"
@@ -5791,11 +6049,42 @@ async function vueSaisie(j) {
           <label class="ocr-champ" style="margin-bottom:0"><span class="ocr-label">Modèle</span>
             <input class="ocr-saisie" id="fModele" value="${esc(form.modele)}"></label>
         </div>
-      </div>
+        ${/* L'observation décrit l'ÉTAT DU VÉHICULE à la réception (« rayure sur
+             l'aile avant droite ») : elle appartient à cette étape-ci, pas à
+             celle du tarif où elle vivait par habitude. */''}
+        <label class="ocr-champ" style="margin:var(--ocr-e4) 0 0"><span class="ocr-label">Observation
+            <span style="text-transform:none;letter-spacing:0;color:var(--ocr-argent-2);font-weight:400">— facultatif</span></span>
+          <textarea class="ocr-saisie" id="fNote" rows="2" placeholder="Rayure signalée sur l’aile avant droite…">${esc(form.note)}</textarea></label>
+        ${(() => {
+          /* Elle n'apparaît que si le prix BAISSE. Pas de fenêtre qui s'ouvre,
+             pas de bouton de plus : la même mécanique que le motif de remise,
+             parce que c'en est une. */
+          const c = tailleContestee(form.marque, form.modele, form.gabarit, form.prestation);
+          if (!c) return '';
+          return `<div class="ocr-carte" style="padding:var(--ocr-e4);margin-top:var(--ocr-e4);border-color:rgba(245,166,35,.42)">
+            <p class="ocr-petit" style="margin:0 0 9px">⚠ Le catalogue dit que
+              <strong style="color:var(--ocr-blanc)">${esc(c.quoi)}</strong> est un
+              <strong style="color:var(--ocr-blanc)">${esc((OCR.gabarit(c.cat) || {}).nom || c.cat)}</strong>
+              (${OCR.fcfa(c.pCat)}). Tu as choisi
+              <strong style="color:var(--ocr-blanc)">${esc((OCR.gabarit(c.gab) || {}).nom || c.gab)}</strong>
+              (${OCR.fcfa(c.pChoisi)}) — <strong style="color:var(--ocr-ambre)">${OCR.fcfa(c.ecart)} de moins</strong>.<br>
+              Tu peux encaisser comme ça : dis juste pourquoi. La direction vérifie ce soir et
+              <strong style="color:var(--ocr-blanc)">corrige le catalogue si tu as raison</strong>.</p>
+            <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">
+              ${MOTIFS_TAILLE.map(([court, texte], i) => `<button class="ocr-chip" data-mt="${i}"
+                aria-pressed="${form.motifTaille === texte}">${esc(court)}</button>`).join('')}
+            </div>
+            <label class="ocr-champ" style="margin-bottom:0">
+              <span class="ocr-label" style="color:var(--ocr-rouge-texte)">Pourquoi cette taille — obligatoire</span>
+              <input class="ocr-saisie" id="fMotifTaille" value="${esc(form.motifTaille)}"
+                     placeholder="En deux mots"></label>
+          </div>`;
+        })()}
+      </div>` : ''}
 
-      <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
+      ${etapeSaisie === 3 ? `<div class="ocr-carte">
         <div style="display:flex;align-items:center;gap:8px">
-          <div class="ocr-surtitre">2 · Le client</div>
+          <div class="ocr-surtitre">Le client</div>
           <span style="flex:1"></span>
           ${form.clientTrouve ? '' : '<span class="ocr-mini">facultatif</span>'}
         </div>
@@ -5850,12 +6139,10 @@ async function vueSaisie(j) {
           </div>` : `<div class="ocr-mini" style="margin-top:8px">Véhicule personnel — la remise s’applique quand même.</div>`}
         </div></div>`;
         })()}
-      </div>
+      </div>` : ''}
 
-    </div>
-
-    <div class="ocr-carte">
-      <div class="ocr-surtitre">3 · Prestation</div>
+      ${etapeSaisie === 2 ? `<div class="ocr-carte">
+      <div class="ocr-surtitre">Le lavage</div>
       <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">Tarif ${esc(OCR.gabarit(form.gabarit).nom)}</p>
       ${/* Seulement ce qui s'applique à CE véhicule (14/08) : plus de lavages
            motos devant une berline, plus de « sur devis » qu'on ne vend pas.
@@ -5892,55 +6179,21 @@ async function vueSaisie(j) {
         <input class="ocr-saisie" id="fMotifRemise" value="${esc(form.motifRemise || '')}"
                placeholder="Geste commercial, reprise d’un défaut…">
         <span class="ocr-aide">Toute remise manuelle est justifiée et inscrite au journal.</span></label>` : ''}
-      ${/* DÉJÀ LAVÉ, SANS CHRONO (14/08) — « il doit être capable de saisir des
-           véhicules sans passer par commencer et fin, mais il doit aussi
-           justifier pourquoi » (Edwin). Le cas courant : l'atelier est débordé,
-           la voiture est lavée, et la saisie se fait après coup. Refuser
-           reviendrait à faire inventer des heures — donc on accepte, et on
-           écrit pourquoi. */''}
-      ${/* DÉMARRER TOUT DE SUITE (14/08) — le lavage le plus fréquent, c'est la
-           voiture qui entre en baie dans la seconde. Sans ça il faut aller la
-           retrouver dans Journée pour appuyer sur ▶ : un geste de plus, et
-           surtout LE geste qu'on oublie — c'est de là que viennent tous les
-           lavages sans chrono. Ce n'est PAS coché par défaut : quand trois
-           voitures attendent, démarrer les trois chronos gonflerait les temps. */''}
-      ${form.jour ? '' : `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:var(--ocr-e4)">
-        <button class="ocr-chip" data-dem aria-pressed="${form.demarrer}"
-          ${form.sansChrono ? 'disabled' : ''}>▶ Démarrer tout de suite</button>
-        <button class="ocr-chip" data-sc aria-pressed="${form.sansChrono}"
-          ${form.demarrer ? 'disabled' : ''}>⏱ Déjà lavé — sans chrono</button>
-      </div>`}
-      ${form.sansChrono ? `
-      <div class="ocr-carte" style="padding:var(--ocr-e4);margin-top:var(--ocr-e3);border-color:rgba(245,166,35,.38)">
-        <p class="ocr-mini" style="margin:0 0 9px">Le véhicule entrera directement en
-          <strong style="color:var(--ocr-blanc)">terminé</strong>, sans ▶ ni ✓. Il compte normalement
-          dans le chiffre d’affaires, mais il sera absent des moyennes de temps — et la direction
-          lira le motif dans Contrôle des temps.</p>
-        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px">
-          ${MOTIFS_DEJA_LAVE.map(([court, texte], i) => `<button class="ocr-chip" data-scm="${i}"
-            aria-pressed="${form.motifSansChrono === texte}">${esc(court)}</button>`).join('')}
-        </div>
-        <label class="ocr-champ" style="margin-bottom:0">
-          <span class="ocr-label" style="color:var(--ocr-rouge-texte)">Pourquoi le chrono n’a pas tourné — obligatoire</span>
-          <input class="ocr-saisie" id="fMotifSansChrono" value="${esc(form.motifSansChrono)}"
-                 placeholder="En deux mots"></label>
-      </div>` : ''}
-      <label class="ocr-champ" style="margin-bottom:0;margin-top:var(--ocr-e4)"><span class="ocr-label">Observation</span>
-        <textarea class="ocr-saisie" id="fNote" rows="2" placeholder="Rayure signalée sur l’aile avant droite…">${esc(form.note)}</textarea></label>
+      ${/* TROIS CHOIX → DEUX BOUTONS (15/08). Edwin : « je trouve que ces choix
+           peuvent porter à confusion pour Samuel lors de la saisie, il faut le
+           moins de boutons possible ».
+           Avant, deux pastilles à cocher (« Démarrer tout de suite », « Déjà
+           lavé — sans chrono ») puis un bouton Enregistrer : trois éléments,
+           un état à lire, et il fallait comprendre ce que chacun ferait.
+           Maintenant le BOUTON DIT LA CONSÉQUENCE, et il n'y a plus d'état.
+           « Déjà lavé » quitte la Saisie : le même geste existe déjà sur la
+           fiche du lavage dans Journée (« Terminé sans chrono… »), et c'est là
+           qu'il a du sens — quand on constate, pas quand on prévoit. */''}
 
-      <div class="total-collant">
-        <div>
-          <div class="ocr-mini">Total à encaisser</div>
-          <div style="font:700 22px/1 var(--ocr-texte);font-variant-numeric:tabular-nums">${OCR.fcfa(T.total)}</div>
-          ${T.q > 1 ? `<div class="ocr-mini">${T.q} × ${OCR.fcfa(T.unite)} = ${OCR.fcfa(T.brut)}</div>` : ''}
-          ${T.remise ? `<div class="ocr-mini">${T.q > 1 ? '' : 'Brut ' + OCR.fcfa(T.brut) + ' '}− remise ${OCR.fcfa(T.remise)}${
-            T.partenaire ? ' · ' + esc(T.partenaire.nom) + ' ' + T.partenaire.remise_pct + ' %' : ''}</div>` : ''}
-        </div>
-        <div style="flex:1"></div>
-        <button class="ocr-btn ocr-btn--primaire" id="btnEnregistrer" ${T.total > 0 ? '' : 'disabled'}>Enregistrer</button>
-      </div>
-    </div>
-  </div>`;
+    </div>` : ''}
+
+  ${etapeSaisie === 4 ? carteAction(T) : ''}
+  ${piedSaisie(T)}`;
 
   // liaisons
   const maj = (k, v) => { form[k] = v; vueSaisie(j); };
@@ -6023,7 +6276,7 @@ async function vueSaisie(j) {
     toast('Taille : ' + (OCR.gabarit(g) || {}).nom + ' (d’après ' + quoi + ')');
   });
   ['fNom:nom', 'fMarque:marque', 'fModele:modele', 'fNote:note', 'fMotifRemise:motifRemise',
-   'fMotifSansChrono:motifSansChrono', 'fMotifRetard:motifRetard'].forEach(p => {
+   'fMotifTaille:motifTaille', 'fMotifRetard:motifRetard'].forEach(p => {
     const [id, k] = p.split(':');
     const el = $('#' + id); if (el) el.addEventListener('input', e => { form[k] = e.target.value; });
   });
@@ -6103,31 +6356,92 @@ async function vueSaisie(j) {
   $('#vue').querySelectorAll('[data-mr]').forEach(b => b.addEventListener('click', () => {
     form.motifRetard = MOTIFS_RETARD[Number(b.dataset.mr)][1]; vueSaisie(j);
   }));
-  const bdem = $('#vue').querySelector('[data-dem]');
-  if (bdem) bdem.addEventListener('click', () => {
-    form.demarrer = !form.demarrer;
-    if (form.demarrer) { form.sansChrono = false; form.motifSansChrono = ''; }
-    vueSaisie(j);
-  });
-  const bsc = $('#vue').querySelector('[data-sc]');
-  if (bsc) bsc.addEventListener('click', () => {
-    form.sansChrono = !form.sansChrono;
-    if (!form.sansChrono) form.motifSansChrono = '';
-    vueSaisie(j);
-  });
-  $('#vue').querySelectorAll('[data-scm]').forEach(b => b.addEventListener('click', () => {
-    form.motifSansChrono = MOTIFS_DEJA_LAVE[Number(b.dataset.scm)][1]; vueSaisie(j);
+  $('#vue').querySelectorAll('[data-mt]').forEach(b => b.addEventListener('click', () => {
+    form.motifTaille = MOTIFS_TAILLE[Number(b.dataset.mt)][1]; vueSaisie(j);
   }));
   $('#vue').querySelectorAll('[data-parc]').forEach(b => b.addEventListener('click', () =>
     boiteParcPartenaire(PARTENAIRES.find(x => x.id === b.dataset.parc), j)));
-  $('#btnEnregistrer').addEventListener('click', enregistrer);
+  /* Avancer, reculer, ou revenir sur une étape déjà faite en touchant le fil.
+     On ne saute jamais en avant : chaque garde vit sur son écran. */
+  $('#vue').querySelectorAll('[data-etape]').forEach(b => b.addEventListener('click', () => {
+    const pas = Number(b.dataset.etape);
+    if (pas > 0) {
+      const souci = bloqueEtape(etapeSaisie, T);
+      if (souci) return toast(souci, true);
+    }
+    etapeSaisie = Math.max(1, Math.min(4, etapeSaisie + pas));
+    vueSaisie(j); window.scrollTo(0, 0);
+  }));
+  $('#vue').querySelectorAll('[data-aller]').forEach(b => b.addEventListener('click', () => {
+    etapeSaisie = Number(b.dataset.aller); vueSaisie(j); window.scrollTo(0, 0);
+  }));
+  $('#vue').querySelectorAll('[data-act]').forEach(b =>
+    b.addEventListener('click', () => enregistrer(b.dataset.act)));
   /* Chaque frappe met le brouillon à l'abri — les listeners « input » du dessus
      remplissent form sans repeindre, celui-ci recopie form dans le téléphone. */
   $('#vue').addEventListener('input', sauverBrouillon);
   sauverBrouillon();
 }
 
-async function enregistrer() {
+/* Les motifs d'un lavage déjà fait — la même liste que sur la fiche du jour,
+   parce que c'est la même chose qu'on explique. */
+function demanderMotifDejaFait() {
+  return new Promise(resolve => {
+    const v = modale(`
+      <h3 class="ocr-h2">Le lavage est déjà fait</h3>
+      <p class="ocr-petit" style="margin:8px 0 var(--ocr-e4)">Il entrera directement en
+        <strong style="color:var(--ocr-blanc)">terminé</strong>, sans ▶ ni ✓. Il compte normalement
+        dans le chiffre d’affaires, mais il sera absent des moyennes de temps — et la direction
+        lira ton motif dans Contrôle des temps.</p>
+      <div class="rangee-filtres" style="margin-bottom:var(--ocr-e3)">
+        ${MOTIFS_SANS_CHRONO.map((m, i) => `<button class="ocr-chip" data-mdf="${i}">${esc(m)}</button>`).join('')}
+      </div>
+      <label class="ocr-champ"><span class="ocr-label" style="color:var(--ocr-rouge-texte)">Pourquoi le chrono n’a pas tourné — obligatoire</span>
+        <input class="ocr-saisie" id="mdfTexte" placeholder="En deux mots"></label>
+      <div style="display:flex;gap:9px;margin-top:var(--ocr-e3)">
+        <button class="ocr-btn ocr-btn--fantome" data-fermer>Annuler</button>
+        <div style="flex:1"></div>
+        <button class="ocr-btn ocr-btn--primaire" data-ok>Enregistrer comme terminé</button></div>`);
+    v.querySelectorAll('[data-mdf]').forEach(b => b.addEventListener('click', () => {
+      v.querySelector('#mdfTexte').value = MOTIFS_SANS_CHRONO[Number(b.dataset.mdf)];
+      v.querySelectorAll('[data-mdf]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    }));
+    v.querySelector('[data-fermer]').addEventListener('click', () => { fermerModale(); resolve(null); });
+    v.querySelector('[data-ok]').addEventListener('click', () => {
+      const m = v.querySelector('#mdfTexte').value.trim();
+      if (!m) return toast('Le motif est obligatoire.', true);
+      fermerModale(); resolve(m);
+    });
+  });
+}
+
+/* Le client a payé d'avance : le lavage existe mais n'a pas commencé. On lui
+   propose le ▶ TOUT DE SUITE plutôt que de compter sur sa mémoire — c'est le
+   choix d'Edwin, et c'est le geste qu'on oublie le plus. */
+function boiteDemarrerApres(id, ref) {
+  const v = modale(`
+    <h3 class="ocr-h2">Encaissé ✓</h3>
+    <p class="ocr-petit" style="margin:8px 0 var(--ocr-e5)">${esc(ref)} est payé, mais le lavage
+      <strong style="color:var(--ocr-blanc)">n’a pas encore commencé</strong>.
+      Lance-le quand la voiture entre en baie.</p>
+    <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" data-ok
+      style="font-size:16px;padding:16px">▶ Démarrer le lavage</button>
+    <button class="ocr-btn ocr-btn--fantome ocr-btn--bloc" data-fermer style="margin-top:9px">Pas tout de suite</button>
+    <p class="ocr-mini" style="margin:9px 0 0">Tu pourras toujours le lancer depuis sa fiche dans Journée.
+      La clôture du soir le réclamera tant qu’il n’est pas fait.</p>`);
+  v.querySelector('[data-fermer]').addEventListener('click', () => { fermerModale(); rendre(); });
+  v.querySelector('[data-ok]').addEventListener('click', async e => {
+    e.target.disabled = true;
+    const { error } = await API.avancer(id, 'en_cours', null);
+    if (error) { toast(error.message, true); e.target.disabled = false; return; }
+    fermerModale(); memoVider(); toast('Chrono lancé ▶'); rendre();
+  });
+}
+
+/* `action` vaut 'demarrer', 'encaisser', 'deja' ou 'jour'. Il n'y a pas de
+   cinquième valeur, et surtout pas de « rien » : on n'écrit un lavage que
+   lorsqu'il s'est passé quelque chose de vrai (Edwin, 15/08). */
+async function enregistrer(action) {
   if (enCours) return;
   const T = totalForm();
   if (!form.prestation) return toast('Choisissez une prestation.', true);
@@ -6136,10 +6450,22 @@ async function enregistrer() {
   // le serveur la refuse aussi, ceci n'est que le message aimable.
   if (Number(form.remise) > 0 && !String(form.motifRemise || '').trim())
     return toast('Indique le motif de la remise — il est inscrit au journal.', true);
-  if (form.sansChrono && !String(form.motifSansChrono || '').trim())
-    return toast('Dis pourquoi le chrono n’a pas tourné — sinon ce lavage devient illisible dans un mois.', true);
   if (form.jour && !String(form.motifRetard || '').trim())
     return toast('Dis pourquoi ce lavage est saisi en retard — Guénolé le verra à la clôture.', true);
+  /* La taille qui contredit le catalogue EN BAISSANT le prix : même exigence
+     que la remise, et pour la même raison — c'en est une. Le serveur revérifie. */
+  const conteste = tailleContestee(form.marque, form.modele, form.gabarit, form.prestation);
+  if (conteste && !String(form.motifTaille || '').trim())
+    return toast('Dis pourquoi ce véhicule n’est pas un ' +
+      ((OCR.gabarit(conteste.cat) || {}).nom || conteste.cat) + ' — la direction vérifiera ce soir.', true);
+
+  /* Le motif du lavage déjà fait se demande AVANT d'écrire quoi que ce soit :
+     s'il renonce, il ne reste rien — c'est toute la règle du 15/08. */
+  let motifDeja = null;
+  if (action === 'deja') {
+    motifDeja = await demanderMotifDejaFait();
+    if (motifDeja === null) return;
+  }
   if (!navigator.onLine) return toast('Hors ligne — impossible d’enregistrer.', true);
 
   /* PAS DE PLAQUE (13/08) — « ça peut arriver, il faut juste qu'il mette un
@@ -6165,7 +6491,13 @@ async function enregistrer() {
   });
 
   enCours = true;
-  const b = $('#btnEnregistrer'); if (b) { b.disabled = true; b.textContent = 'Enregistrement…'; }
+  /* Les trois actions se verrouillent ensemble : un double appui pendant
+     l'aller-retour serveur créerait deux lavages. */
+  const boutons = [...$('#vue').querySelectorAll('[data-act]')];
+  boutons.forEach(x => { x.disabled = true; });
+  const b = boutons.find(x => x.dataset.act === action);
+  const libelle = b ? b.innerHTML : '';
+  if (b) b.textContent = 'Enregistrement…';
   try {
     const { data, error } = await API.enregistrer({
       p_client_nom: form.nom || null,
@@ -6183,33 +6515,37 @@ async function enregistrer() {
       p_motif_sans_plaque: motifSP,
       p_journee: form.jour,
       p_motif_retard: form.jour ? String(form.motifRetard).trim() : null,
+      /* La taille contestée voyage avec le lavage : la base revérifie de son
+         côté (elle relit la table des modèles) et refusera sans motif. */
+      p_gabarit_catalogue: conteste ? conteste.cat : null,
+      p_motif_gabarit: conteste ? String(form.motifTaille).trim() : null,
     });
     if (error) throw error;
     const r = Array.isArray(data) ? data[0] : data;
-    /* Lavage déjà fait : on le solde tout de suite, avec son motif. Si ce
-       deuxième appel échoue, le passage existe et reste « à démarrer » — la
-       fiche du jour propose alors « Terminé sans chrono… ». On le dit.
-       (Un rattrapage, lui, arrive déjà terminé : c'est la base qui le fait.) */
-    let scRate = null;
-    if (form.sansChrono && !form.jour) {
-      const { error: e2 } = await API.avancer(r.id, 'pret', String(form.motifSansChrono).trim());
-      if (e2) scRate = e2.message;
-    }
     /* Le chrono part avec l'enregistrement : l'heure de début reste tamponnée
        par le serveur, comme toujours — on épargne juste un aller-retour par
        l'écran Journée, et surtout l'oubli du ▶. */
     let demRate = null;
-    if (form.demarrer && !form.jour) {
+    if (action === 'demarrer' && !form.jour) {
       const { error: e3 } = await API.avancer(r.id, 'en_cours', null);
       if (e3) demRate = e3.message;
+    }
+    /* Lavage déjà fait : on le solde tout de suite, avec son motif. Si ce
+       deuxième appel échoue, le passage existe et reste « à démarrer » — la
+       fiche du jour propose alors « Terminé sans chrono… ». On le dit. */
+    let scRate = null;
+    if (action === 'deja' && !form.jour) {
+      const { error: e2 } = await API.avancer(r.id, 'pret', motifDeja);
+      if (e2) scRate = e2.message;
     }
     const sansClient = !form.tel && !(form.clientTrouve && form.clientTrouve.id);
     toast(r.reference + ' enregistré · ' + (T.q > 1 ? T.q + ' véhicules · ' : '') + OCR.fcfa(r.montant_total) +
       (sansClient && form.immat ? ' — fiche « Véhicule ' + form.immat +' » à compléter' : '') +
       (motifSP ? ' — sans plaque, à valider à la clôture' : '') +
       (form.jour ? ' — écrit sur le ' + jourBref(form.jour) : '') +
-      (form.sansChrono && !form.jour && !scRate ? ' — terminé, sans chrono' : '') +
-      (form.demarrer && !form.jour && !demRate ? ' — chrono lancé ▶' : ''));
+      (conteste ? ' — taille à vérifier à la clôture' : '') +
+      (action === 'demarrer' && !form.jour && !demRate ? ' — chrono lancé ▶' : '') +
+      (action === 'deja' && !form.jour && !scRate ? ' — terminé, sans chrono' : ''));
     if (demRate) toast('Enregistré, mais le chrono n’a pas démarré : ' + demRate +
       ' — appuie sur ▶ sur la fiche du jour.', true);
     if (scRate) toast('Enregistré, mais resté « à démarrer » : ' + scRate +
@@ -6217,9 +6553,18 @@ async function enregistrer() {
     Object.assign(form, { quantite: 1, tel: '', nom: '', clientTrouve: null, marque: '', modele: '', immat: '',
                           vehTrouve: null,
                           prestation: null, options: [], remise: 0, motifRemise: '', manuel: 0,
-                          sansChrono: false, motifSansChrono: '', demarrer: false,
+                          motifTaille: '',
                           note: '', reservation: null });
+    etapeSaisie = 1;                       // la saisie suivante repart du véhicule
     effacerBrouillon();
+    /* Le client paie AVANT : le lavage existe, il n'a pas commencé, et on ne
+       fait surtout pas semblant du contraire. La caisse s'ouvre sur lui, puis
+       on propose le ▶ (Edwin, 15/08 : « le paiement doit être enregistré sans
+       considérer que le lavage a déjà commencé, pour éviter tout doublon »). */
+    if (action === 'encaisser') {
+      boiteEncaissement(r.id, r.montant_total, () => boiteDemarrerApres(r.id, r.reference));
+      return;
+    }
     /* On NE remet PAS form.jour à aujourd'hui : quand on rattrape hier, on a
        presque toujours plusieurs lavages à rattraper d'affilée. La barre orange
        reste bien visible, et « Revenir à aujourd'hui » est à côté. */
@@ -6234,7 +6579,8 @@ async function enregistrer() {
     else toast(m, true);
   } finally {
     enCours = false;
-    const bb = $('#btnEnregistrer'); if (bb) { bb.disabled = false; bb.textContent = 'Enregistrer'; }
+    boutons.forEach(x => { x.disabled = false; });
+    if (b && libelle) b.innerHTML = libelle;
   }
 }
 
@@ -6641,7 +6987,7 @@ function boiteAnnulation(id, ref, paye) {
   });
 }
 
-function boiteEncaissement(id, montant) {
+function boiteEncaissement(id, montant, apres) {
   const v = modale(`
     <h3 class="ocr-h2">Encaisser</h3>
     <p class="ocr-petit" style="margin:8px 0 var(--ocr-e5)"><strong style="color:var(--ocr-blanc)">${OCR.fcfa(montant)}</strong></p>
@@ -6675,7 +7021,8 @@ function boiteEncaissement(id, montant) {
     if (error) { toast(error.message, true); b.disabled = false; return; }
     fermerModale();
     toast(mode === 'especes' ? 'Encaissé en espèces — dépôt à faire sur le ' + COMPTE_MTN : 'Encaissement enregistré');
-    rendre();
+    memoVider();
+    if (apres) apres(); else rendre();
   }));
 }
 
@@ -6716,10 +7063,11 @@ function calculerAnomalies(ps) {
 
 async function vueCloture(j) {
   const d = jourVu;
-  const [T, ps, sansP, ptsJ] = await Promise.all([
+  const [T, ps, sansP, ptsJ, gabs] = await Promise.all([
     API.totaux(d), API.passages(d), API.sansPlaque(d).catch(() => []),
-    API.pointagesJour(d).catch(() => [])]);
+    API.pointagesJour(d).catch(() => []), API.gabaritAVerifier(d).catch(() => [])]);
   const aValider = sansP.filter(x => !x.sans_plaque_valide_le);
+  const gabsATrancher = gabs.filter(x => !x.gabarit_valide_le);
 
   if (j.statut === 'ouverte' && ps.length) {
     const calc = calculerAnomalies(ps).map(a => ({ ...a, journee: d }));
@@ -6972,6 +7320,49 @@ async function vueCloture(j) {
         ${a.traitee ? '' : '<div class="ac"><button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-justifier="' + a.id + '">Justifier</button></div>'}
       </div>`).join('') : '<div class="ocr-carte vide">Aucune anomalie détectée.</div>'}
 
+    ${(() => {
+      /* LA TAILLE CORRIGÉE À LA MAIN (15/08). Edwin : « ça doit nous revenir
+         avec les détails du véhicule pour qu'on vérifie et qu'on modifie
+         directement le catalogue ». C'est ici, une fois par jour, et la
+         journée ne se signe pas tant que ce n'est pas tranché. */
+      if (!gabs.length) return '';
+      const nom = g => (OCR.gabarit(g) || {}).nom || g || '—';
+      return `<div class="ocr-carte" style="margin-bottom:var(--ocr-e4);border-color:${
+        gabsATrancher.length ? 'rgba(245,166,35,.42)' : 'rgba(46,160,102,.35)'}">
+        <div class="ocr-surtitre">Tailles corrigées à la main · ${
+          gabsATrancher.length ? gabsATrancher.length + ' à vérifier' : 'toutes tranchées'}</div>
+        <p class="ocr-petit" style="margin:10px 0 var(--ocr-e3)">${gabsATrancher.length
+          ? 'L’atelier a facturé une taille que le catalogue contredit, et il a dit pourquoi. À toi de trancher : si l’atelier a raison, <strong style="color:var(--ocr-blanc)">le catalogue se corrige tout seul</strong> pour tous les véhicules suivants. Sinon, la fiche du véhicule est remise d’équerre pour qu’il ne revienne pas au mauvais prix. <strong style="color:var(--ocr-blanc)">La clôture attend.</strong>'
+          : 'Tranchées — elles n’empêchent plus la clôture.'}</p>
+        ${gabs.map(r => `
+        <div style="padding:10px 0;border-bottom:1px solid var(--ocr-sep)">
+          <div style="display:flex;gap:10px;align-items:flex-start">
+            <span style="min-width:0;flex:1">
+              <span style="font-weight:600;display:block">${esc([r.marque, r.modele].filter(Boolean).join(' ') || r.client || 'Véhicule')}
+                ${r.immatriculation ? '<span class="ocr-mini" style="font-weight:400">· ' + esc(r.immatriculation) + '</span>' : ''}</span>
+              <span class="ocr-mini" style="display:block">Catalogue : <strong style="color:var(--ocr-blanc)">${esc(nom(r.gabarit_catalogue))}</strong>
+                → facturé <strong style="color:var(--ocr-blanc)">${esc(nom(r.gabarit))}</strong> · ${OCR.fcfa(r.montant_total)}
+                ${r.saisi_par_nom ? ' · ' + esc(r.saisi_par_nom) : ''}</span>
+              <span class="ocr-mini" style="display:block;color:var(--ocr-argent-2)">Motif : ${esc(r.gabarit_motif || 'non précisé')}</span>
+            </span>
+            <span class="ocr-pastille ocr-pastille--${r.gabarit_valide_le ? 'succes' : 'marque'}">${
+              r.gabarit_valide_le
+                ? (r.gabarit_verdict === 'atelier' ? '✓ atelier' : '✓ catalogue') +
+                  (r.valide_par_nom ? ' · ' + esc(r.valide_par_nom) : '')
+                : 'à trancher'}</span>
+          </div>
+          ${r.gabarit_valide_le ? '' : `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">
+            <button class="ocr-btn ocr-btn--secondaire ocr-btn--petit" data-gv="atelier" data-gid="${r.id}">
+              L’atelier a raison — corriger le catalogue</button>
+            <button class="ocr-btn ocr-btn--fantome ocr-btn--petit" data-gv="catalogue" data-gid="${r.id}">
+              Le catalogue a raison</button>
+          </div>`}
+        </div>`).join('')}
+        <p class="ocr-mini" style="margin:var(--ocr-e3) 0 0">Dans les deux cas le lavage reste vendu au
+          prix encaissé — le client est parti, on ne réécrit pas une facture.</p>
+      </div>`;
+    })()}
+
     <div class="ocr-carte" style="margin-top:var(--ocr-e5);border-color:${bloquantes || pasFinisCl.length ? 'rgba(232,82,78,.45)' : 'rgba(214,32,30,.35)'}">
       <div class="ocr-h3">Validation de la journée</div>
       <p class="ocr-petit" style="margin:10px 0 var(--ocr-e4)">${pasFinisCl.length
@@ -6982,11 +7373,16 @@ async function vueCloture(j) {
         : aValider.length
         ? '<strong style="color:var(--ocr-ambre)">' + pluriel(aValider.length, 'lavage') +
           ' sans plaque</strong> ' + (aValider.length > 1 ? 'attendent' : 'attend') + ' ta confirmation, juste au-dessus.'
+        : gabsATrancher.length
+        ? '<strong style="color:var(--ocr-ambre)">' + pluriel(gabsATrancher.length, 'taille') +
+          ' corrigée' + (gabsATrancher.length > 1 ? 's' : '') + ' à la main</strong> ' +
+          (gabsATrancher.length > 1 ? 'attendent' : 'attend') + ' ton verdict, juste au-dessus.'
         : 'La validation fige définitivement la journée. Plus aucune saisie ne sera possible, y compris depuis la base.'}</p>
-      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnCloturer" ${bloquantes || aValider.length || pasFinisCl.length ? 'disabled' : ''}>
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="btnCloturer" ${bloquantes || aValider.length || gabsATrancher.length || pasFinisCl.length ? 'disabled' : ''}>
         ${pasFinisCl.length ? 'Termine d’abord ' + (pasFinisCl.length > 1 ? 'les lavages' : 'le lavage')
           : bloquantes ? 'Clôture bloquée'
           : aValider.length ? 'Valide d’abord ' + (aValider.length > 1 ? 'les lavages' : 'le lavage') + ' sans plaque'
+          : gabsATrancher.length ? 'Tranche d’abord ' + (gabsATrancher.length > 1 ? 'les tailles' : 'la taille')
           : 'Valider et clôturer la journée'}</button>
     </div>`;
 
@@ -7011,6 +7407,14 @@ async function vueCloture(j) {
       if (error) return toast(error.message, true);
       fermerModale(); toast('Justification enregistrée'); rendre();
     });
+  }));
+
+  $('#vue').querySelectorAll('[data-gv]').forEach(b => b.addEventListener('click', async () => {
+    $('#vue').querySelectorAll('[data-gv]').forEach(x => { x.disabled = true; });
+    const { data, error } = await API.gabaritVerdict(b.dataset.gid, b.dataset.gv, null);
+    if (error) { toast(error.message, true);
+      $('#vue').querySelectorAll('[data-gv]').forEach(x => { x.disabled = false; }); return; }
+    memoVider(); toast(String(data || 'Taille tranchée ✓')); rendre();
   }));
 
   const bsp = $('#btnValiderSP');
@@ -7326,6 +7730,55 @@ function telechargerFichier(nom, contenu, type) {
    On ne réécrit pas l'histoire dans des journées signées pour un mot : on le
    retire à l'affichage, et le type de véhicule est de toute façon à côté. */
 const sansMoto = t => String(t || '').replace(/\s+moto$/i, '');
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LA TAILLE CORRIGÉE À LA MAIN (15/08)
+
+   Edwin : « Une Toyota Prado est normalement un Grand SUV : on ne devrait donc
+   pas pouvoir la passer simplement en Petite sans justification. Il peut faire
+   la modification et encaisser avec la justification, mais à la clôture ça sera
+   vérifié par nos soins. Il peut s'avérer qu'un véhicule dans le catalogue soit
+   dans le mauvais gabarit, mais ça doit être justifié pour qu'on lui donne
+   raison. »
+
+   Ce qui se jouait, sans que rien ne le dise : Grand SUV → Petite, c'est
+   10 000 F qui deviennent 3 500 F. Une remise de 6 500 F sans motif, sans
+   trace, et — si la plaque est neuve — écrite DÉFINITIVEMENT sur la fiche du
+   véhicule. Le prochain lavage repartait faux tout seul.
+
+   La règle retenue : on ne réclame de justification que si le prix BAISSE.
+   Corriger en notre faveur ne se justifie pas — freiner Samuel quand il nous
+   rend service, c'est la meilleure façon de lui apprendre à contourner.
+   ══════════════════════════════════════════════════════════════════════════ */
+const MOTIFS_TAILLE = [
+  ['Le catalogue se trompe', 'Le catalogue se trompe sur ce modèle — j’ai vérifié le véhicule'],
+  ['Version plus petite', 'Version plus petite du même modèle'],
+  ['Modèle approchant', 'Le modèle tapé est approchant, ce n’est pas exactement celui-là'],
+];
+
+/* Le repère de prix d'une taille : la prestation en cours si elle existe des
+   deux côtés, sinon le Lavage Signature — celui que tout le monde a en tête.
+   Une camionnette est sur devis : elle vaut zéro repère, donc y basculer se
+   justifie comme une baisse (le prix devient libre). */
+function prixRepere(gab, presta) {
+  if (gab === 'camionnette') return 0;
+  const p = presta ? OCR.prix(presta, gab) : null;
+  if (p != null && p > 0) return p;
+  const l = OCR.prestationsPour(gab);
+  const sig = l.find(x => /signature/i.test(x.id)) || l[0];
+  return sig ? (OCR.prix(sig.id, gab) || 0) : 0;
+}
+
+/* Ce que le catalogue dit du véhicule tapé, quand ça contredit la taille
+   choisie ET que ça coûte moins cher. Rend null le reste du temps. */
+function tailleContestee(marque, modele, gab, presta) {
+  const cat = OCR.gabaritDe(marque, modele);
+  if (!cat || cat === gab) return null;
+  const pCat = prixRepere(cat, presta), pChoisi = prixRepere(gab, presta);
+  if (pChoisi >= pCat) return null;          // le prix monte : rien à justifier
+  return { cat, gab, pCat, pChoisi, ecart: pCat - pChoisi,
+           quoi: [marque, modele].filter(Boolean).join(' ').trim() };
+}
 
 const fmtDuree = min => {
   if (min == null || min <= 0) return '—';
@@ -11119,16 +11572,15 @@ function boiteJourPasse(j) {
 /* Deux mots sur la pastille, la phrase entière dans le champ : au comptoir on
    vise une cible courte, mais c'est la phrase que la direction relira dans
    trois mois. Les deux ne servent pas la même personne. */
-const MOTIFS_DEJA_LAVE = [
-  ['Atelier débordé',      'Atelier débordé — saisi après coup'],
-  ['Commencé avant',       'Lavage commencé avant la saisie'],
-  ['Client pressé',        'Client pressé, véhicule repris tout de suite'],
-  ['Téléphone ou réseau',  'Panne de téléphone ou de réseau'],
-];
-
+/* Le 15/08, « Déjà lavé — sans chrono » a quitté la Saisie : le même geste
+   existait déjà ici, sur la fiche du lavage, et c'est là qu'il a du sens — on
+   constate qu'il n'y a pas eu de chrono, on ne le prévoit pas. Les deux listes
+   de motifs n'en font donc plus qu'une, celle-ci ; « atelier débordé », qui
+   n'existait que côté Saisie, y est repris pour ne rien perdre. */
 const MOTIFS_SANS_CHRONO = [
   'Chrono oublié au démarrage',
   'Lavage commencé avant la saisie',
+  'Atelier débordé — saisi après coup',
   'Téléphone déchargé / pas de réseau',
   'Client pressé, véhicule repris tout de suite',
 ];
@@ -11924,7 +12376,58 @@ function consigneAcces(z, e, mdp) {
    les deux applications.
    ══════════════════════════════════════════════════════════════════════════ */
 let cataQ = '', cataFiltre = 'tout';
+/* ══════════════════════════════════════════════════════════════════════════
+   LA RECHERCHE NE SE REDESSINE PLUS SOUS LES DOIGTS (15/08)
+
+   Edwin : « Dès que je tape une première lettre dans le champ de recherche, ça
+   se met à charger et je ne peux pas directement taper la deuxième. Je tape
+   « T », ça actualise, puis je dois à nouveau sélectionner le champ pour taper
+   « O ». Avec plusieurs lettres ça devient très lent. »
+
+   Mesuré avant correction : sur six lettres tapées, le focus est perdu six fois
+   et le champ ne contient que « T ».
+
+   La cause était nette : à chaque frappe on refaisait `$('#vue').innerHTML`,
+   donc on DÉTRUISAIT le champ dans lequel Samuel était en train d'écrire, pour
+   en recréer un vide. Le navigateur ne peut pas garder le curseur dans un
+   élément qui n'existe plus.
+
+   La règle qu'on en tire, et qui vaut partout : un écran qui contient un champ
+   de saisie ne se redessine jamais en entier pendant qu'on y écrit. On sépare
+   l'en-tête, dessiné une fois, de la liste des résultats, seule à se repeindre.
+   ══════════════════════════════════════════════════════════════════════════ */
 async function vueCatalogue() {
+  const total = (await API.catalogue()).length;
+  const nbAtelier = (await API.catalogue()).filter(l => l.origine === 'atelier').length;
+  $('#vue').innerHTML = `
+    ${retourDirection()}
+    <div class="ocr-carte">
+      <div class="ocr-surtitre">Marques & modèles</div>
+      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">
+        ${total} modèles au catalogue, dont ${nbAtelier} ajoutés par l'atelier.
+        La <strong style="color:var(--ocr-blanc)">taille</strong> d'un modèle fait son prix :
+        la corriger ici la corrige partout, y compris dans l'application des clients.</p>
+      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="cataAjout">＋ Ajouter une marque ou un modèle</button>
+      <label class="ocr-champ" style="margin:var(--ocr-e4) 0 0"><span class="ocr-label">Chercher</span>
+        <input class="ocr-saisie" id="cataQ" value="${esc(cataQ)}" placeholder="Toyota, Hilux, Changan…"
+               autocomplete="off" enterkeyhint="search"></label>
+      <div class="rangee-filtres" id="cataFiltres"></div>
+    </div>
+    <div id="cataListe"><div class="vide"><span class="tourne"></span></div></div>`;
+
+  brancherRetourDirection();
+  $('#cataAjout').addEventListener('click', () => boiteCatalogue());
+  let mn;
+  $('#cataQ').addEventListener('input', e => {
+    cataQ = e.target.value;
+    clearTimeout(mn);
+    mn = setTimeout(() => { if (onglet === 'catalogue') peindreCatalogue(); }, 220);
+  });
+  peindreCatalogue();
+}
+
+async function peindreCatalogue() {
+  const zone = $('#cataListe'); if (!zone) return;
   const lignes = await API.catalogue();
   const q = OCR.clefTexte(cataQ);
   const filtrees = lignes.filter(l =>
@@ -11944,26 +12447,22 @@ async function vueCatalogue() {
   const parMarque = {};
   visibles.forEach(l => (parMarque[l.marque] || (parMarque[l.marque] = [])).push(l));
   const marques = Object.keys(parMarque).sort((a, b) => a.localeCompare(b, 'fr'));
-  const nbAtelier = lignes.filter(l => l.origine === 'atelier').length;
 
-  $('#vue').innerHTML = `
-    ${retourDirection()}
-    <div class="ocr-carte">
-      <div class="ocr-surtitre">Marques & modèles</div>
-      <p class="ocr-mini" style="margin:8px 0 var(--ocr-e4)">
-        ${lignes.length} modèles au catalogue, dont ${nbAtelier} ajoutés par l'atelier.
-        La <strong style="color:var(--ocr-blanc)">taille</strong> d'un modèle fait son prix :
-        la corriger ici la corrige partout, y compris dans l'application des clients.</p>
-      <button class="ocr-btn ocr-btn--primaire ocr-btn--bloc" id="cataAjout">＋ Ajouter une marque ou un modèle</button>
-      <label class="ocr-champ" style="margin:var(--ocr-e4) 0 0"><span class="ocr-label">Chercher</span>
-        <input class="ocr-saisie" id="cataQ" value="${esc(cataQ)}" placeholder="Toyota, Hilux, Changan…" autocomplete="off"></label>
-      <div class="rangee-filtres">
-        ${[['tout', 'Tout'], ['atelier', 'Ajoutés ici'], ...OCR.GABARITS.map(g => [g.id, g.court])]
-          .map(([id, lab]) => `<button class="ocr-chip" data-catafiltre="${id}"
-            aria-pressed="${cataFiltre === id}">${esc(lab)}</button>`).join('')}
-      </div>
-    </div>
+  /* Les pastilles de filtre vivent hors de la liste : elles ne bougent pas de
+     place quand les résultats changent, et surtout leur redessin ne touche pas
+     au champ de recherche. */
+  const filtres = $('#cataFiltres');
+  if (filtres) {
+    filtres.innerHTML = [['tout', 'Tout'], ['atelier', 'Ajoutés ici'],
+      ...OCR.GABARITS.map(g => [g.id, g.court])]
+      .map(([id, lab]) => `<button class="ocr-chip" data-catafiltre="${id}"
+        aria-pressed="${cataFiltre === id}">${esc(lab)}</button>`).join('');
+    filtres.querySelectorAll('[data-catafiltre]').forEach(b => b.addEventListener('click', () => {
+      cataFiltre = b.dataset.catafiltre; peindreCatalogue();
+    }));
+  }
 
+  zone.innerHTML = `
     ${marques.length ? marques.map(ma => `
       <div class="ocr-carte" style="margin-top:var(--ocr-e4)">
         <div style="display:flex;align-items:center;gap:8px">
@@ -11988,20 +12487,9 @@ async function vueCatalogue() {
       ${filtrees.length} modèles correspondent — les ${PLAFOND} premiers sont affichés.
       Écris le nom de la marque ou du modèle plus haut pour trouver le tien.</p>` : ''}`;
 
-  brancherRetourDirection();
-  $('#cataAjout').addEventListener('click', () => boiteCatalogue());
-  let mn;
-  $('#cataQ').addEventListener('input', e => {
-    cataQ = e.target.value;
-    clearTimeout(mn);
-    mn = setTimeout(() => { if (onglet === 'catalogue') vueCatalogue(); }, 280);
-  });
-  $('#vue').querySelectorAll('[data-catafiltre]').forEach(b => b.addEventListener('click', () => {
-    cataFiltre = b.dataset.catafiltre; vueCatalogue();
-  }));
-  $('#vue').querySelectorAll('[data-cataedit]').forEach(b => b.addEventListener('click', () =>
+  zone.querySelectorAll('[data-cataedit]').forEach(b => b.addEventListener('click', () =>
     boiteCatalogue(lignes.find(l => l.id === b.dataset.cataedit))));
-  $('#vue').querySelectorAll('[data-catasup]').forEach(b => b.addEventListener('click', () =>
+  zone.querySelectorAll('[data-catasup]').forEach(b => b.addEventListener('click', () =>
     boiteCatalogueRetrait(lignes.find(l => l.id === b.dataset.catasup))));
 }
 
@@ -12049,7 +12537,7 @@ function boiteCatalogue(ligne) {
       await chargerCatalogue();
       fermerModale();
       toast(r.cree ? ma + ' ajouté au catalogue ✓' : 'Taille corrigée ✓');
-      vueCatalogue();
+      if (onglet === 'catalogue') peindreCatalogue();
     } catch (ex) { toast(ex.message, true); e.target.disabled = false; }
   });
 }
