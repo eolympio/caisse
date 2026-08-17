@@ -60,6 +60,13 @@ self.addEventListener('fetch', e => {
    CARACTÈRES du fichier — Edwin a vu « Nouvelle version 545981 prête », et le
    bandeau revenait indéfiniment puisqu'un nombre de caractères n'égalera
    jamais « v70 ».
+   DEPUIS LE 17/08, LES NUMÉROS ONT CHANGÉ DE FORME : l'atelier est passé de
+   « v99 » à « 1.0 », le jour de sa mise en production réelle. Le motif accepte
+   donc les deux écritures — les téléphones de l'équipe portent encore
+   l'ancienne au moment de la bascule. Ce qu'il refuse toujours, et c'est tout
+   ce qui compte : un nombre nu (« 545981 »), qui n'est pas une version. Il
+   faut un « v » devant, ou un point au milieu.
+
    Deux leçons, appliquées ici :
      · on lit la version dans le HTML (<meta> ou commentaire), que la
        minification ne touche pas ;
@@ -68,8 +75,8 @@ self.addEventListener('fetch', e => {
        bandeau du tout.
    ────────────────────────────────────────────────────────────────────────── */
 const versionDe = txt =>
-  (txt.match(/name="ocr-version" content="(v\d+)"/) || [])[1] ||
-  (txt.match(/const VERSION = '(v\d+)'/) || [])[1] ||
+  (txt.match(/name="ocr-version" content="(v\d+|\d+\.\d+(?:\.\d+)?)"/) || [])[1] ||
+  (txt.match(/const VERSION = '(v\d+|\d+\.\d+(?:\.\d+)?)'/) || [])[1] ||
   null;
 
 self.addEventListener('message', e => {
