@@ -26,6 +26,13 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (url.host.includes('supabase.co')) return;   // données vivantes : jamais en cache
+  /* LA SONDE DE VERSION PASSE SANS S'ARRÊTER (17/08, vers minuit).
+     L'app demande « index.html?maj=… » toutes les quinze minutes pour savoir si
+     une nouvelle version est en ligne — c'est la seule détection qui voie un
+     index.html publié seul. Chaque adresse étant unique, elle ne trouverait
+     jamais le cache ; en revanche elle y DÉPOSERAIT une copie à chaque fois.
+     Quatre-vingt-seize copies par jour dans la mémoire du téléphone. */
+  if (url.searchParams.has('maj')) return;
 
   // pages : réseau d'abord, cache seulement si le réseau est tombé
   if (e.request.mode === 'navigate') {
